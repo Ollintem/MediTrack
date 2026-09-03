@@ -1,0 +1,32 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('movimientos_inventario', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('producto_id')->constrained('productos_inventario')->onDelete('cascade');
+            $table->foreignId('personal_id')->constrained('personals')->onDelete('cascade');
+            $table->integer('cantidad');
+            $table->enum('tipo', ['Entrada', 'Salida', 'Ajuste']);
+            $table->string('motivo', 255)->nullable();
+            $table->timestamps();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('movimientos_inventario');
+    }
+};
