@@ -6,6 +6,8 @@ use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use App\Models\Rol;
+use App\Models\Modulo;
 
 class DatabaseSeeder extends Seeder
 {
@@ -16,15 +18,27 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // 1. Crear el Super Admin inicial (Garantiza que obtenga el ID 1)
-        User::create([
-            'nombre' => 'Administrador',
-            'apellido' => 'Principal',
-            'email' => 'admin@meditrack.com',
-            'password' => Hash::make('meditrack'), // <-- Aquí defines la contraseña encriptada
-            'estado' => 'Activo',
-            'clinica_id' => null, // El ID 1 tiene acceso global
-            'rol_id' => null,
-        ]);
+        $modulos = ['Pacientes', 'Citas', 'Facturación', 'Reportes', 'Inventario', 'Usuarios', 'Personal'];
+        foreach ($modulos as $mod) {
+         Modulo::firstOrCreate(['nombre' => $mod]);
+        }
+
+        $rolesDefault = ['Administrador', 'Doctor', 'Enfermero', 'Recepcionista'];
+        foreach ($rolesDefault as $rolNombre) {
+        Rol::firstOrCreate(['nombre' => $rolNombre]);
+        }
+        // 1. Garantizar la creación inmutable del Super Admin
+        User::firstOrCreate(
+            ['id' => 1], // Condición de búsqueda única
+            [
+                'nombre'     => 'Administrador',
+                'apellido'   => 'Principal',
+                'email'      => 'admin@meditrack.com',
+                'password'   => Hash::make('meditrack'),
+                'estado'     => 'Activo',
+                'clinica_id' => null, // Acceso global
+                'rol_id'     => null,
+            ]
+        );
     }
 }

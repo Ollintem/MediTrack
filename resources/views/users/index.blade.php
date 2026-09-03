@@ -1,3 +1,4 @@
+//Proteccion superusuario
 @foreach($usuarios as $usuario)
     <tr>
         <td>{{ $usuario->nombre_completo }}</td>
