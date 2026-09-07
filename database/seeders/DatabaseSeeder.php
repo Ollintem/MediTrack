@@ -8,6 +8,7 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use App\Models\Rol;
 use App\Models\Modulo;
+use App\Models\Clinica;
 
 class DatabaseSeeder extends Seeder
 {
@@ -18,6 +19,11 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        Clinica::firstOrCreate(
+        ['id' => 1],
+        ['nombre' => 'Clínica Principal MediTrack', 'estado' => 'Activo']
+        );
+
         $modulos = ['Pacientes', 'Citas', 'Facturación', 'Reportes', 'Inventario', 'Usuarios', 'Personal'];
         foreach ($modulos as $mod) {
          Modulo::firstOrCreate(['nombre' => $mod]);

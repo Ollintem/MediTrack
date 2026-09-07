@@ -3,38 +3,73 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Foundation\Auth\AuthenticatesUsers;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class LoginController extends Controller
 {
-    /*
-    |--------------------------------------------------------------------------
-    | Login Controller
-    |--------------------------------------------------------------------------
-    |
-    | This controller handles authenticating users for the application and
-    | redirecting them to your home screen. The controller uses a trait
-    | to conveniently provide its functionality to your applications.
-    |
-    */
-
-    use AuthenticatesUsers;
-
     /**
-     * Where to redirect users after login.
-     *
-     * @var string
+     * Muestra la vista de inicio de sesión.
      */
-    protected $redirectTo = '/home';
-
-    /**
-     * Create a new controller instance.
-     *
-     * @return void
-     */
-    public function __construct()
+    public function showLoginForm()
     {
-        $this->middleware('guest')->except('logout');
-        $this->middleware('auth')->only('logout');
+        if (Auth::check()) {
+            return redirect()->route('personal.index');
+        }
+
+        return view('auth.login');
+    }
+
+    /**
+     * Procesa la solicitud de autenticación.
+     */
+    public function login(Request $request)
+    {
+        // 1. Validar que vengan los datos requeridos
+        $request->validate([
+            'email'    => 'required|string',
+            'password' => 'required|string|size:8',
+        ], [
+            'email.required'    => 'Ingresa tu correo o usuario.',
+            'password.required' => 'Ingresa tu contraseña.',
+            'password.size'     => 'La contraseña debe tener exactamente 8 caracteres.',
+        ]);
+
+        // 2. Formatear correo si ingresaron solo el usuario
+        $inputEmail = strtolower(trim($request->email));
+
+        if (!str_contains($inputEmail, '@')) {
+            $inputEmail .= '@meditrack.com';
+        }
+
+        $credentials = [
+            'email'    => $inputEmail,
+            'password' => $request->password,
+        ];
+
+        // 3. Intentar autenticar
+        if (Auth::attempt($credentials, $request->boolean('remember'))) {
+            $request->session()->regenerate();
+            
+            // Redirigir de forma explícita a la ruta nombrada de personal
+            return redirect()->route('personal.index');
+        }
+
+        // 4. Si falla, regresar con error
+        return back()->withErrors([
+            'email' => 'Las credenciales ingresadas no coinciden con nuestros registros.',
+        ])->onlyInput('email');
+    }
+
+    /**
+     * Cierra la sesión activa.
+     */
+    public function logout(Request $request)
+    {
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect()->route('login');
     }
 }

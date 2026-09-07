@@ -18,6 +18,14 @@ Route::get('/', function () {
 | Rutas Web - MediTrack
 |--------------------------------------------------------------------------
 */
+Route::get('/login', function () {
+    return view('auth.login');
+})->name('login');
+
+
+Route::post('/roles', [RolController::class, 'store'])->name('roles.store');
+
+Route::delete('/roles/{id}', [RolController::class, 'destroy'])->name('roles.destroy');
 
 // 1. Redirigir la ruta raíz (/) directamente a la pantalla de Login
 Route::get('/', function () {
@@ -39,8 +47,12 @@ Route::get('/probando-usuarios', function () {
     return view('users.index', compact('usuarios'));
 })->middleware('auth')->name('users.index');
 
-
+//
 Route::middleware(['auth'])->group(function () {
     Route::resource('roles', App\Http\Controllers\RolController::class);
     Route::resource('personal', App\Http\Controllers\PersonalController::class);
+});
+
+Route::middleware(['auth'])->group(function () {
+    Route::resource('personal', PersonalController::class);
 });

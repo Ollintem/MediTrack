@@ -12,26 +12,20 @@ class Personal extends Model
     protected $table = 'personals';
 
     protected $fillable = [
-        'usuario_id',
+        'user_id',
         'clinica_id',
-        'fecha_nacimiento',
-        'fecha_ingreso',
-        'rut',
         'nombre_completo',
-        'genero',
+        'rut',
         'telefono',
-        'correo',
-        'direccion',
-        'rol_profesional',
         'numero_registro',
+        'especialidad_principal',
         'turno',
         'estado',
-        'foto_url'
     ];
 
     public function usuario()
     {
-        return $this->belongsTo(User::class, 'usuario_id');
+        return $this->belongsTo(User::class, 'user_id');
     }
 
     public function clinica()
@@ -43,4 +37,5 @@ class Personal extends Model
     {
         return $this->belongsToMany(Especialidad::class, 'personal_especialidad', 'personal_id', 'especialidad_id');
     }
+
 }
