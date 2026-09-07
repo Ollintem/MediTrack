@@ -7,9 +7,19 @@
             <h2 class="text-2xl font-bold text-gray-800">Directorio de Personal Médico</h2>
             <p class="text-sm text-gray-500">Gestiona la información del personal de la clínica.</p>
         </div>
-        <a href="{{ route('personal.create') }}" class="bg-teal-600 hover:bg-teal-700 text-white font-semibold px-4 py-2 rounded-lg text-sm shadow-sm flex items-center gap-2">
-            <i class="bi bi-person-plus"></i> Registrar Personal
-        </a>
+        
+        <!-- Agrupación de botones -->
+        <div class="flex items-center gap-3">
+            <!-- Botón Gestionar Roles -->
+    <a href="{{ route('roles.index') }}" class="bg-white hover:bg-gray-50 text-teal-700 font-semibold px-4 py-2 rounded-lg text-sm border border-teal-200 shadow-sm transition flex items-center gap-2">
+        <i class="bi bi-gear text-teal-600"></i> Gestionar Roles
+    </a>
+
+            <!-- Botón Registrar Personal -->
+            <a href="{{ route('personal.create') }}" class="bg-teal-600 hover:bg-teal-700 text-white font-semibold px-4 py-2 rounded-lg text-sm shadow-sm transition flex items-center gap-2">
+                <i class="bi bi-person-plus"></i> Registrar Personal
+            </a>
+        </div>
     </div>
 
     @if (session('success'))

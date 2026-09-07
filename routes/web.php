@@ -1,58 +1,42 @@
 <?php
 
-
-use Illuminate\Support\Facades\Route;//Creacion de direcciones
-use Illuminate\Support\Facades\Auth;//creacion de autenticacion
-use App\Models\User;//consulta usuario
-use App\Http\Controllers\HomeController; //acceso directo ddentro del archivo (importar clase)
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Auth;
+use App\Models\User;
+use App\Http\Controllers\HomeController;
 use App\Http\Controllers\RolController;
 use App\Http\Controllers\PersonalController;
-
-
-Route::get('/', function () {
-    return view('welcome');
-});
 
 /*
 |--------------------------------------------------------------------------
 | Rutas Web - MediTrack
 |--------------------------------------------------------------------------
 */
-Route::get('/login', function () {
-    return view('auth.login');
-})->name('login');
 
-
-Route::post('/roles', [RolController::class, 'store'])->name('roles.store');
-
-Route::delete('/roles/{id}', [RolController::class, 'destroy'])->name('roles.destroy');
-
-// 1. Redirigir la ruta raíz (/) directamente a la pantalla de Login
+// 1. Redirigir la ruta raíz (/) directamente al Login
 Route::get('/', function () {
     return redirect()->route('login');
 });
 
-// 2. Rutas automáticas de Autenticación (Login, Registro, Recuperar contraseña, Logout)
+// 2. Rutas automáticas de Autenticación (Login, Logout)
 Auth::routes([
-    'reset' => false, // Desactiva las rutas de recuperación de contraseña
-    'register' => false, // Opcional: desactiva el registro público si tampoco lo usas
+    'reset' => false,    // Desactiva la recuperación de contraseña
+    'register' => false, // Desactiva el registro público
 ]);
 
-// 3. Panel Principal (Dashboard) tras iniciar sesión
-Route::get('/home', [HomeController::class, 'index'])->name('home');
-
-// 4. Ruta para probar y ver la lista de usuarios (Protegida con login)
-Route::get('/probando-usuarios', function () {
-    $usuarios = User::all();
-    return view('users.index', compact('usuarios'));
-})->middleware('auth')->name('users.index');
-
-//
+// 3. Rutas Protegidas por Autenticación
 Route::middleware(['auth'])->group(function () {
-    Route::resource('roles', App\Http\Controllers\RolController::class);
-    Route::resource('personal', App\Http\Controllers\PersonalController::class);
-});
 
-Route::middleware(['auth'])->group(function () {
+    // Panel Principal (Dashboard)
+    Route::get('/home', [HomeController::class, 'index'])->name('home');
+
+    // Gestión de Usuarios (Prueba)
+    Route::get('/probando-usuarios', function () {
+        $usuarios = User::all();
+        return view('users.index', compact('usuarios'));
+    })->name('users.index');
+
+    // Módulos CRUD completados (Incluye index, create, store, edit, update, destroy)
+    Route::resource('roles', RolController::class);
     Route::resource('personal', PersonalController::class);
 });

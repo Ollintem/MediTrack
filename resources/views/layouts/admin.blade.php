@@ -6,8 +6,27 @@
     <title>MediTrack - Sistema Médico</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- Alpine.js para el control de modales y toggles -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body class="bg-gray-50 flex h-screen overflow-hidden font-sans">
+
+    @php
+        // Obtener permisos del usuario autenticado
+        $user = Auth::user();
+        $isSuperAdmin = ($user->id === 1); // El Super Admin id=1 ve todo por defecto
+
+        // Función Helper para validar si el rol tiene acceso a un módulo específico
+        $tienePermiso = function($nombreModulo) use ($user, $isSuperAdmin) {
+            if ($isSuperAdmin) return true;
+            if (!$user || !$user->rol) return false;
+
+            return $user->rol->permisos()
+                ->whereHas('modulo', fn($q) => $q->where('nombre', $nombreModulo))
+                ->where('puede_ver', 1)
+                ->exists();
+        };
+    @endphp
 
     <!-- SIDEBAR DE MEDITRACK -->
     <aside class="w-64 bg-white border-r border-gray-200 flex flex-col justify-between p-4">
@@ -18,50 +37,78 @@
             </div>
 
             <nav class="space-y-1">
-                <a href="{{ route('home') }}" class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-teal-50 text-teal-700 font-medium">
+                <!-- Dashboard siempre visible -->
+                <a href="{{ route('home') }}" class="flex items-center gap-3 px-3 py-2.5 rounded-lg {{ request()->routeIs('home') ? 'bg-teal-50 text-teal-700 font-medium' : 'text-gray-600 hover:bg-gray-100' }} transition">
                     <i class="bi bi-grid-fill"></i> Dashboard
                 </a>
+
+                @if($tienePermiso('Pacientes'))
                 <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 hover:bg-gray-100 transition">
                     <i class="bi bi-people"></i> Pacientes
                 </a>
+                @endif
+
+                @if($tienePermiso('Citas'))
                 <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 hover:bg-gray-100 transition">
                     <i class="bi bi-calendar-event"></i> Citas
                 </a>
+                @endif
+
+                @if($tienePermiso('Facturación'))
                 <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 hover:bg-gray-100 transition">
                     <i class="bi bi-credit-card"></i> Facturación
                 </a>
+                @endif
+
+                @if($tienePermiso('Inventario'))
                 <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 hover:bg-gray-100 transition">
                     <i class="bi bi-box-seam"></i> Inventario
                 </a>
-                <a href="{{ route('personal.index') }}" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 hover:bg-gray-100 transition">
+                @endif
+
+                @if($tienePermiso('Personal'))
+                <a href="{{ route('personal.index') }}" class="flex items-center gap-3 px-3 py-2.5 rounded-lg {{ request()->routeIs('personal.*') ? 'bg-teal-50 text-teal-700 font-medium' : 'text-gray-600 hover:bg-gray-100' }} transition">
                     <i class="bi bi-person-badge"></i> Personal
                 </a>
+                @endif
+
+                @if($tienePermiso('Roles'))
+                <a href="{{ route('roles.index') }}" class="flex items-center gap-3 px-3 py-2.5 rounded-lg {{ request()->routeIs('roles.*') ? 'bg-teal-50 text-teal-700 font-medium' : 'text-gray-600 hover:bg-gray-100' }} transition">
+                    <i class="bi bi-shield-lock"></i> Roles y Permisos
+                </a>
+                @endif
+
+                @if($tienePermiso('Reportes'))
                 <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 hover:bg-gray-100 transition">
                     <i class="bi bi-graph-up"></i> Reportes
                 </a>
+                @endif
+
+                @if($tienePermiso('Configuración'))
                 <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 hover:bg-gray-100 transition">
                     <i class="bi bi-gear"></i> Configuración
                 </a>
+                @endif
             </nav>
         </div>
 
         <div class="border-t pt-4 flex items-center justify-between px-2">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold">
-                    {{ substr(Auth::user()->nombre ?? 'A', 0, 1) }}
+                    {{ substr($user->nombre ?? 'A', 0, 1) }}
                 </div>
                 <div>
                     <p class="text-sm font-semibold text-gray-800 leading-tight">
-                        {{ Auth::user()->nombre ?? 'Usuario' }}
+                        {{ $user->nombre ?? 'Usuario' }}
                     </p>
                     <p class="text-xs text-gray-500">
-                        {{ Auth::user()->id === 1 ? 'Super Admin' : 'Personal' }}
+                        {{ $user->rol->nombre ?? ($isSuperAdmin ? 'Super Admin' : 'Personal') }}
                     </p>
                 </div>
             </div>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
-                <button type="submit" class="text-gray-400 hover:text-red-500">
+                <button type="submit" class="text-gray-400 hover:text-red-500" title="Cerrar Sesión">
                     <i class="bi bi-box-arrow-right text-lg"></i>
                 </button>
             </form>
@@ -87,7 +134,7 @@
             </div>
         </header>
 
-        <!-- AQUÍ SE INYECTAN LAS VISTAS COMO DASH/INDEX -->
+        <!-- CONTENIDO DINÁMICO -->
         <main class="p-8 space-y-6">
             @yield('content')
         </main>

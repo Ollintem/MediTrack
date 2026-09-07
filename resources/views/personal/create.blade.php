@@ -11,6 +11,13 @@
             <i class="bi bi-arrow-left"></i> Volver al directorio
         </a>
     </div>
+    
+    <div class="flex items-center justify-between mb-1">
+    <label for="rol_id" class="block text-sm font-medium text-gray-700">Cargo / Rol Profesional</label>
+    <a href="{{ route('roles.create') }}" class="text-xs text-teal-600 hover:text-teal-800 font-semibold flex items-center gap-1">
+        <i class="bi bi-gear"></i> Gestionar Roles
+    </a>
+</div>
 
     @if ($errors->any())
         <div class="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
@@ -86,14 +93,7 @@
                     <select name="rol_profesional" id="select_rol_profesional" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white">
                         <option value="" disabled {{ old('rol_profesional') ? '' : 'selected' }}>Selecciona un rol...</option>
                         
-                        <!-- Opciones estáticas -->
-                        <option value="Medico General" {{ old('rol_profesional') == 'Medico General' ? 'selected' : '' }}>Médico General</option>
-                        <option value="Enfermero/a" {{ old('rol_profesional') == 'Enfermero/a' ? 'selected' : '' }}>Enfermero/a</option>
-                        <option value="Recepcionista" {{ old('rol_profesional') == 'Recepcionista' ? 'selected' : '' }}>Recepcionista</option>
-                        <option value="Laboratorista" {{ old('rol_profesional') == 'Laboratorista' ? 'selected' : '' }}>Laboratorista</option>
-                        <option value="Administrativo" {{ old('rol_profesional') == 'Administrativo' ? 'selected' : '' }}>Administrativo</option>
-
-                        <!-- Carga dinámica desde la base de datos (tabla roles) -->
+                        <!-- Carga  desde la base de datos -->
                         @if(isset($roles))
                             @foreach($roles as $rol)
                                 <option value="{{ $rol->nombre }}" {{ old('rol_profesional') == $rol->nombre ? 'selected' : '' }}>{{ $rol->nombre }}</option>
