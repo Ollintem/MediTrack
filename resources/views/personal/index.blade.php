@@ -4,8 +4,8 @@
 <div class="space-y-6">
     <div class="flex items-center justify-between">
         <div>
-            <h2 class="text-2xl font-bold text-gray-800">Directorio de Personal Médico</h2>
-            <p class="text-sm text-gray-500">Gestiona la información del personal de la clínica.</p>
+            <h2 class="text-2xl font-bold text-gray-800">Directorio de Personal</h2>
+            <p class="text-sm text-gray-500">Gestión de información del personal.</p>
         </div>
         
         <!-- Agrupación de botones -->
@@ -56,17 +56,23 @@
                         <td class="px-6 py-4 text-gray-600">{{ $persona->telefono ?? 'N/A' }}</td>
                         <td class="px-6 py-4">
                             <div class="flex items-center justify-center gap-2">
-                                <a href="{{ route('personal.edit', $persona->id) }}" class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 font-medium px-3 py-1.5 rounded-lg text-xs transition">
-                                    <i class="bi bi-pencil-square"></i> Editar
-                                </a>
-                                <form action="{{ route('personal.destroy', $persona->id) }}" method="POST" onsubmit="return confirm('¿Confirmas eliminar a este personal?');">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button type="submit" class="inline-flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-medium px-3 py-1.5 rounded-lg text-xs transition">
-                                        <i class="bi bi-trash"></i> Eliminar
-                                    </button>
-                                </form>
-                            </div>
+    <!-- Botón Editar -->
+    <a href="{{ route('personal.edit', $persona->id) }}" class="inline-flex items-center gap-1 bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 font-medium px-3 py-1.5 rounded-lg text-xs transition">
+        <i class="bi bi-pencil-square"></i> Editar
+    </a>
+
+    <!-- Formulario con clase "contents" -->
+    <form id="form-delete-{{ $persona->id }}" action="{{ route('personal.destroy', $persona->id) }}" method="POST" class="contents">
+        @csrf
+        @method('DELETE')
+        <button type="button" 
+            onclick="eliminarPersonal({{ $persona->id }}, {{ json_encode($persona->nombre_completo) }})" 
+            class="inline-flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-medium px-3 py-1.5 rounded-lg text-xs transition" 
+            title="Eliminar personal">
+        <i class="bi bi-trash"></i> Eliminar
+</button>
+    </form>
+</div>
                         </td>
                     </tr>
                 @empty
@@ -79,3 +85,42 @@
     </div>
 </div>
 @endsection
+
+<!-- boton SweetAlert2 -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+function eliminarPersonal(id, nombre) {
+    Swal.fire({
+        title: '¿Eliminar personal?',
+        text: `Estás a punto de borrar a "${nombre}". Esta acción no se puede deshacer.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#0d9488', // 
+        cancelButtonColor: '#ef4444', //
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            fetch(`/personal/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json'
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire('Eliminado', data.message || 'El registro fue eliminado.', 'success').then(() => {
+                        window.location.reload();
+                    });
+                } else {
+                    Swal.fire('Error', data.message || 'No se pudo eliminar el registro.', 'error');
+                }
+            })
+            .catch(err => Swal.fire('Error', err.message, 'error'));
+        }
+    });
+}
+</script>

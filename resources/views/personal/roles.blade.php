@@ -3,13 +3,15 @@
 @section('content')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
+<!-- Envoltorio Alpine.js para abrir/cerrar el modal -->
 <div class="space-y-6" x-data="{ openModal: false }">
     <!-- Encabezado de la Sección -->
     <div class="flex items-center justify-between">
         <div>
             <h2 class="text-2xl font-bold text-gray-800">Gestión de Roles y Permisos</h2>
-            <p class="text-sm text-gray-500">Define qué acciones puede realizar cada cargo dentro de cada módulo del sistema.</p>
         </div>
+        
+        <!-- Botón para abrir el Modal Compartido -->
         <button @click="openModal = true" type="button" class="bg-teal-600 hover:bg-teal-700 text-white font-semibold px-4 py-2 rounded-lg text-sm shadow-sm transition flex items-center gap-2">
             <i class="bi bi-plus-lg"></i> Nuevo Rol
         </button>
@@ -25,7 +27,8 @@
     <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
         <div class="flex items-center gap-3 text-blue-800 text-sm font-medium">
             <i class="bi bi-info-circle-fill text-blue-600 text-lg"></i>
-            <span>Visualiza los accesos configurados por cada rol en el sistema.</span>
+            <span>Define y visualiza las acciones puede realizar cada cargo dentro de los módulos del sistema.
+</span>
         </div>
     </div>
 
@@ -47,50 +50,60 @@
                 </thead>
                 <tbody class="divide-y divide-gray-200 text-sm text-gray-700">
                     @forelse ($roles as $rol)
-                        @if ($modulos->count() > 0)
+                        @if (isset($modulos) && $modulos->count() > 0)
                             @foreach ($modulos as $index => $modulo)
-                                @php
-                                    $permiso = $rol->permisos->firstWhere('modulo_id', $modulo->id);
-                                @endphp
-                                <tr class="hover:bg-gray-50 transition border-b border-gray-100">
-                                    @if ($index === 0)
-                                        <td rowspan="{{ $modulos->count() }}" class="px-6 py-4 font-bold text-gray-900 align-top border-r border-gray-200 bg-gray-50/50">
-                                            <div class="flex flex-col gap-1 sticky top-20">
-                                                <span class="text-xs font-mono text-gray-400">#{{ $rol->id }}</span>
-                                                <span class="text-base text-gray-800">{{ $rol->nombre }}</span>
-                                            </div>
-                                        </td>
-                                    @endif
+    @php
+        // Buscar el permiso del rol actual para el módulo específico
+        $permiso = $rol->permisos->firstWhere('modulo_id', $modulo->id);
+    @endphp
+    <tr class="hover:bg-gray-50 transition border-b border-gray-100">
+        @if ($index === 0)
+            <td rowspan="{{ $modulos->count() }}" class="px-6 py-4 font-bold text-gray-900 align-top border-r border-gray-200 bg-gray-50/50">
+                <div class="flex flex-col gap-1 sticky top-20">
+                    <span class="text-xs font-mono text-gray-400">#{{ $rol->id }}</span>
+                    <span class="text-base text-gray-800">{{ $rol->nombre }}</span>
+                </div>
+            </td>
+        @endif
 
-                                    <td class="px-6 py-3 font-semibold text-gray-800 bg-white">
-                                        {{ $modulo->nombre }}
-                                    </td>
+        <td class="px-6 py-3 font-semibold text-gray-800 bg-white">
+            {{ $modulo->nombre }}
+        </td>
 
-                                    <td class="px-4 py-3 text-center">
-                                        <input type="checkbox" disabled {{ ($permiso && $permiso->puede_ver) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded">
-                                    </td>
-                                    <td class="px-4 py-3 text-center">
-                                        <input type="checkbox" disabled {{ ($permiso && $permiso->puede_ver) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded">
-                                    </td>
-                                    <td class="px-4 py-3 text-center">
-                                        <input type="checkbox" disabled {{ ($permiso && $permiso->puede_crear) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded">
-                                    </td>
-                                    <td class="px-4 py-3 text-center">
-                                        <input type="checkbox" disabled {{ ($permiso && $permiso->puede_editar) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded">
-                                    </td>
-                                    <td class="px-4 py-3 text-center">
-                                        <input type="checkbox" disabled {{ ($permiso && $permiso->puede_eliminar) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded">
-                                    </td>
+        <!-- MOSTRAR / VER -->
+        <td class="px-4 py-3 text-center">
+            <input type="checkbox" disabled {{ ($permiso && $permiso->puede_ver) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded cursor-not-allowed">
+        </td>
 
-                                    @if ($index === 0)
-                                        <td rowspan="{{ $modulos->count() }}" class="px-6 py-4 text-center align-middle border-l border-gray-200 bg-gray-50/50">
-                                            <button type="button" onclick="confirmarEliminacion({{ $rol->id }}, '{{ $rol->nombre }}')" class="inline-flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-medium px-3 py-1.5 rounded-lg text-xs transition">
-                                                <i class="bi bi-trash"></i> Eliminar
-                                            </button>
-                                        </td>
-                                    @endif
-                                </tr>
-                            @endforeach
+        <!-- DETALLE (Misma variable de lectura 'puede_ver') -->
+        <td class="px-4 py-3 text-center">
+            <input type="checkbox" disabled {{ ($permiso && $permiso->puede_ver) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded cursor-not-allowed">
+        </td>
+
+        <!-- ALTA / CREAR -->
+        <td class="px-4 py-3 text-center">
+            <input type="checkbox" disabled {{ ($permiso && $permiso->puede_crear) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded cursor-not-allowed">
+        </td>
+
+        <!-- EDITAR -->
+        <td class="px-4 py-3 text-center">
+            <input type="checkbox" disabled {{ ($permiso && $permiso->puede_editar) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded cursor-not-allowed">
+        </td>
+
+        <!-- ELIMINAR -->
+        <td class="px-4 py-3 text-center">
+            <input type="checkbox" disabled {{ ($permiso && $permiso->puede_eliminar) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded cursor-not-allowed">
+        </td>
+
+        @if ($index === 0)
+            <td rowspan="{{ $modulos->count() }}" class="px-6 py-4 text-center align-middle border-l border-gray-200 bg-gray-50/50">
+                <button type="button" onclick="confirmarEliminacion({{ $rol->id }}, '{{ $rol->nombre }}')" class="inline-flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-medium px-3 py-1.5 rounded-lg text-xs transition">
+                    <i class="bi bi-trash"></i> Eliminar
+                </button>
+            </td>
+        @endif
+    </tr>
+@endforeach
                         @else
                             <tr class="hover:bg-gray-50 transition">
                                 <td class="px-6 py-4 font-bold text-gray-900">#{{ $rol->id }} - {{ $rol->nombre }}</td>
@@ -112,68 +125,8 @@
         </div>
     </div>
 
-    <!-- Modal para Crear Nuevo Rol con Permisos -->
-    <div x-show="openModal" class="fixed inset-0 z-50 overflow-y-auto bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4" x-cloak>
-        <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 space-y-6">
-            <div class="flex justify-between items-center border-b pb-3">
-                <h3 class="text-lg font-bold text-gray-800">Crear Nuevo Cargo / Rol</h3>
-                <button @click="openModal = false" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
-            </div>
-
-            <form action="{{ route('roles.store') }}" method="POST" class="space-y-4">
-                @csrf
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Nombre del Rol *</label>
-                    <input type="text" name="nombre" required placeholder="Ej. Odontólogo, Recepcionista" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-teal-500 focus:border-teal-500">
-                </div>
-
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Asignar Permisos por Módulo</label>
-                    <div class="border border-gray-200 rounded-lg overflow-hidden">
-                        <table class="w-full text-left text-xs">
-                            <thead class="bg-gray-100 text-gray-700 uppercase">
-                                <tr>
-                                    <th class="p-3">Módulo</th>
-                                    <th class="p-3 text-center">Ver</th>
-                                    <th class="p-3 text-center">Crear</th>
-                                    <th class="p-3 text-center">Editar</th>
-                                    <th class="p-3 text-center">Eliminar</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-200">
-                                @forelse ($modulos as $mod)
-                                    <tr>
-                                        <td class="p-3 font-semibold text-gray-800">{{ $mod->nombre }}</td>
-                                        <td class="p-3 text-center">
-                                            <input type="checkbox" name="permisos[{{ $mod->id }}][ver]" value="1" class="w-4 h-4 text-teal-600 rounded">
-                                        </td>
-                                        <td class="p-3 text-center">
-                                            <input type="checkbox" name="permisos[{{ $mod->id }}][crear]" value="1" class="w-4 h-4 text-teal-600 rounded">
-                                        </td>
-                                        <td class="p-3 text-center">
-                                            <input type="checkbox" name="permisos[{{ $mod->id }}][editar]" value="1" class="w-4 h-4 text-teal-600 rounded">
-                                        </td>
-                                        <td class="p-3 text-center">
-                                            <input type="checkbox" name="permisos[{{ $mod->id }}][eliminar]" value="1" class="w-4 h-4 text-teal-600 rounded">
-                                        </td>
-                                    </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="5" class="p-4 text-center text-gray-500">No hay módulos disponibles en la base de datos.</td>
-                                    </tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div class="flex justify-end gap-3 pt-4 border-t">
-                    <button type="button" @click="openModal = false" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold">Cancelar</button>
-                    <button type="submit" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-semibold shadow-sm">Guardar Rol</button>
-                </div>
-            </form>
-        </div>
-    </div>
+    <!--INCLUIR  MODAL COMPARTIDO DE LA MISMA CARPETA -->
+    @include('personal.modalRoles')
 </div>
 
 <script>
@@ -205,7 +158,8 @@ function confirmarEliminacion(id, nombre) {
                 } else {
                     Swal.fire('Error', data.message, 'error');
                 }
-            });
+            })
+            .catch(err => Swal.fire('Error', err.message, 'error'));
         }
     });
 }

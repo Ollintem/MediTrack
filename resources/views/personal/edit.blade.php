@@ -80,19 +80,24 @@
 
             <!-- Desplegable de Roles / Especialidad -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Cargo / Rol Profesional</label>
-                    <select name="rol_profesional" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white">
-                        @php
-                            $rol = old('rol_profesional', $personal->especialidad_principal);
-                        @endphp
-                        <option value="Medico General" {{ $rol == 'Medico General' ? 'selected' : '' }}>Médico General</option>
-                        <option value="Enfermero/a" {{ $rol == 'Enfermero/a' ? 'selected' : '' }}>Enfermero/a</option>
-                        <option value="Recepcionista" {{ $rol == 'Recepcionista' ? 'selected' : '' }}>Recepcionista</option>
-                        <option value="Laboratorista" {{ $rol == 'Laboratorista' ? 'selected' : '' }}>Laboratorista</option>
-                        <option value="Administrativo" {{ $rol == 'Administrativo' ? 'selected' : '' }}>Administrativo</option>
-                    </select>
-                </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Cargo / Rol Profesional</label>
+                <select name="rol_profesional" id="select_rol_profesional" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white">
+                <option value="" disabled>Selecciona un rol...</option>
+        
+                    @if(isset($roles))
+                        @foreach($roles as $rol)
+                            @php
+                                // Asume el valor previo ingresado (old) o, en su defecto, el valor de la base de datos
+                                $rolSeleccionado = old('rol_profesional', $personal->especialidad_principal ?? $personal->rol_profesional);
+                            @endphp
+                            <option value="{{ $rol->nombre }}" {{ $rolSeleccionado == $rol->nombre ? 'selected' : '' }}>
+                                {{ $rol->nombre }}
+                            </option>
+                        @endforeach
+                    @endif
+                </select>
+            </div>
 
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Teléfono</label>

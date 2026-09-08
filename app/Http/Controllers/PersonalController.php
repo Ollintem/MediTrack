@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use App\Models\Rol;
+use App\Models\Modulo;
 
 class PersonalController extends Controller
 {
@@ -22,7 +23,8 @@ class PersonalController extends Controller
 {
     // Cargar los roles existentes
     $roles = Rol::all();
-    return view('personal.create', compact('roles'));
+    $modulos = Modulo::all(); //Obtener los módulos de la BD
+    return view('personal.create', compact('roles', 'modulos'));
 }
 
     public function store(Request $request)
