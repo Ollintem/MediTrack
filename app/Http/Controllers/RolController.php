@@ -12,66 +12,103 @@ class RolController extends Controller
 {
     public function index()
     {
+        // Verificar si tiene permiso para ver Roles
+        if (!auth()->check() || !auth()->user()->tienePermiso('Roles', 'ver')) {
+            abort(403, 'No tienes permisos para acceder al módulo de Roles.');
+        }
+
         $roles = Rol::with('permisos.modulo')->get();
-        $modulos = Modulo::all();
+        $modulos = Modulo::all(); 
 
         return view('personal.roles', compact('roles', 'modulos'));
     }
 
     public function store(Request $request)
     {
+        // Validación de Permisos
+        if (!auth()->check() || !auth()->user()->tienePermiso('Roles', 'crear')) {
+            abort(403, 'No tienes permisos para crear roles.');
+        }
+
         try {
             $request->validate([
                 'nombre' => 'required|string|unique:roles,nombre|max:100',
-            ], [
-                'nombre.required' => 'El nombre del rol es obligatorio.',
-                'nombre.unique'   => 'Este rol ya se encuentra registrado.',
             ]);
 
             $rol = Rol::create([
                 'nombre' => trim($request->nombre),
             ]);
 
-            // Guardar casillas de verificación marcadas por cada módulo
             if ($request->has('permisos')) {
                 foreach ($request->permisos as $modulo_id => $acciones) {
                     Permiso::create([
-                        'rol_id'         => $rol->id,
-                        'modulo_id'      => $modulo_id,
-                        'puede_ver'      => isset($acciones['ver']),
-                        'puede_crear'    => isset($acciones['crear']),
-                        'puede_editar'   => isset($acciones['editar']),
+                        'rol_id'       => $rol->id,
+                        'modulo_id'    => $modulo_id,
+                        'puede_ver'    => isset($acciones['ver']),
+                        'puede_crear'  => isset($acciones['crear']),
+                        'puede_editar' => isset($acciones['editar']),
                         'puede_eliminar' => isset($acciones['eliminar']),
                     ]);
                 }
             }
 
-            // Si la petición viene vía AJAX (Fetch/JSON), retornar respuesta JSON
-            if ($request->expectsJson()) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Rol y permisos creados exitosamente.',
-                    'rol'     => $rol
-                ], 200);
-            }
-
-            // Si es un submit convencional, hacer la redirección estándar
-            return redirect()->route('roles.index')->with('success', 'Rol y permisos creados exitosamente.');
+            return redirect()->route('roles.index')->with('success', 'Rol y permisos creados correctamente.');
 
         } catch (Throwable $e) {
-            if ($request->expectsJson()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $e->getMessage()
-                ], 422);
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+    }
+
+    public function update(Request $request, $id)
+    {
+        // Validación de Permisos
+        if (!auth()->check() || !auth()->user()->tienePermiso('Roles', 'editar')) {
+            abort(403, 'No tienes permisos para editar roles.');
+        }
+
+        try {
+            $request->validate([
+                'nombre' => 'required|string|max:100|unique:roles,nombre,' . $id,
+            ]);
+
+            $rol = Rol::findOrFail($id);
+            $rol->update([
+                'nombre' => trim($request->nombre),
+            ]);
+
+            // Reemplazar permisos asignados
+            Permiso::where('rol_id', $rol->id)->delete();
+
+            if ($request->has('permisos')) {
+                foreach ($request->permisos as $modulo_id => $acciones) {
+                    Permiso::create([
+                        'rol_id'       => $rol->id,
+                        'modulo_id'    => $modulo_id,
+                        'puede_ver'    => isset($acciones['ver']),
+                        'puede_crear'  => isset($acciones['crear']),
+                        'puede_editar' => isset($acciones['editar']),
+                        'puede_eliminar' => isset($acciones['eliminar']),
+                    ]);
+                }
             }
 
+            return redirect()->route('roles.index')->with('success', 'Rol y permisos actualizados correctamente.');
+
+        } catch (Throwable $e) {
             return back()->withErrors(['error' => $e->getMessage()]);
         }
     }
 
     public function destroy($id)
     {
+        // Validación de Permisos
+        if (!auth()->check() || !auth()->user()->tienePermiso('Roles', 'eliminar')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No tienes permisos para eliminar roles.'
+            ], 403);
+        }
+
         try {
             $rol = Rol::findOrFail($id);
             $rol->delete();

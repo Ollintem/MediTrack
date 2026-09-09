@@ -10,15 +10,19 @@
         
         <!-- Agrupación de botones -->
         <div class="flex items-center gap-3">
-            <!-- Botón Gestionar Roles -->
-    <a href="{{ route('roles.index') }}" class="bg-white hover:bg-gray-50 text-teal-700 font-semibold px-4 py-2 rounded-lg text-sm border border-teal-200 shadow-sm transition flex items-center gap-2">
-        <i class="bi bi-gear text-teal-600"></i> Gestionar Roles
-    </a>
+            <!-- Botón Gestionar Roles (visible solo si tiene acceso a Roles) -->
+            @if(auth()->user()->tienePermiso('Roles', 'ver'))
+                <a href="{{ route('roles.index') }}" class="bg-white hover:bg-gray-50 text-teal-700 font-semibold px-4 py-2 rounded-lg text-sm border border-teal-200 shadow-sm transition flex items-center gap-2">
+                    <i class="bi bi-gear text-teal-600"></i> Gestionar Roles
+                </a>
+            @endif
 
-            <!-- Botón Registrar Personal -->
-            <a href="{{ route('personal.create') }}" class="bg-teal-600 hover:bg-teal-700 text-white font-semibold px-4 py-2 rounded-lg text-sm shadow-sm transition flex items-center gap-2">
-                <i class="bi bi-person-plus"></i> Registrar Personal
-            </a>
+            <!-- Botón Registrar Personal (protegido con permiso 'crear') -->
+            @if(auth()->user()->tienePermiso('Personal', 'crear'))
+                <a href="{{ route('personal.create') }}" class="bg-teal-600 hover:bg-teal-700 text-white font-semibold px-4 py-2 rounded-lg text-sm shadow-sm transition flex items-center gap-2">
+                    <i class="bi bi-person-plus"></i> Registrar Personal
+                </a>
+            @endif
         </div>
     </div>
 
@@ -56,23 +60,32 @@
                         <td class="px-6 py-4 text-gray-600">{{ $persona->telefono ?? 'N/A' }}</td>
                         <td class="px-6 py-4">
                             <div class="flex items-center justify-center gap-2">
-    <!-- Botón Editar -->
-    <a href="{{ route('personal.edit', $persona->id) }}" class="inline-flex items-center gap-1 bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 font-medium px-3 py-1.5 rounded-lg text-xs transition">
-        <i class="bi bi-pencil-square"></i> Editar
-    </a>
+                                <!-- Botón Editar (protegido con permiso 'editar') -->
+                                @if(auth()->user()->tienePermiso('Personal', 'editar'))
+                                    <a href="{{ route('personal.edit', $persona->id) }}" class="inline-flex items-center gap-1 bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 font-medium px-3 py-1.5 rounded-lg text-xs transition">
+                                        <i class="bi bi-pencil-square"></i> Editar
+                                    </a>
+                                @endif
 
-    <!-- Formulario con clase "contents" -->
-    <form id="form-delete-{{ $persona->id }}" action="{{ route('personal.destroy', $persona->id) }}" method="POST" class="contents">
-        @csrf
-        @method('DELETE')
-        <button type="button" 
-            onclick="eliminarPersonal({{ $persona->id }}, {{ json_encode($persona->nombre_completo) }})" 
-            class="inline-flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-medium px-3 py-1.5 rounded-lg text-xs transition" 
-            title="Eliminar personal">
-        <i class="bi bi-trash"></i> Eliminar
-</button>
-    </form>
-</div>
+                                <!-- Botón Eliminar (protegido con permiso 'eliminar') -->
+                                @if(auth()->user()->tienePermiso('Personal', 'eliminar'))
+                                    <form id="form-delete-{{ $persona->id }}" action="{{ route('personal.destroy', $persona->id) }}" method="POST" class="contents">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="button" 
+                                                onclick="eliminarPersonal({{ $persona->id }}, {{ json_encode($persona->nombre_completo) }})" 
+                                                class="inline-flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-medium px-3 py-1.5 rounded-lg text-xs transition" 
+                                                title="Eliminar personal">
+                                            <i class="bi bi-trash"></i> Eliminar
+                                        </button>
+                                    </form>
+                                @endif
+
+                                <!-- Si no tiene permisos de edición ni eliminación -->
+                                @if(!auth()->user()->tienePermiso('Personal', 'editar') && !auth()->user()->tienePermiso('Personal', 'eliminar'))
+                                    <span class="text-xs text-gray-400 italic">Sin acciones</span>
+                                @endif
+                            </div>
                         </td>
                     </tr>
                 @empty
@@ -86,7 +99,7 @@
 </div>
 @endsection
 
-<!-- boton SweetAlert2 -->
+<!-- Script SweetAlert2 -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
@@ -96,8 +109,8 @@ function eliminarPersonal(id, nombre) {
         text: `Estás a punto de borrar a "${nombre}". Esta acción no se puede deshacer.`,
         icon: 'warning',
         showCancelButton: true,
-        confirmButtonColor: '#0d9488', // 
-        cancelButtonColor: '#ef4444', //
+        confirmButtonColor: '#0d9488',
+        cancelButtonColor: '#ef4444',
         confirmButtonText: 'Sí, eliminar',
         cancelButtonText: 'Cancelar'
     }).then((result) => {

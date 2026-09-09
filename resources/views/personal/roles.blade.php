@@ -3,130 +3,380 @@
 @section('content')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
-<!-- Envoltorio Alpine.js para abrir/cerrar el modal -->
-<div class="space-y-6" x-data="{ openModal: false }">
-    <!-- Encabezado de la Sección -->
-    <div class="flex items-center justify-between">
-        <div>
-            <h2 class="text-2xl font-bold text-gray-800">Gestión de Roles y Permisos</h2>
-        </div>
+<style>
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px) scale(0.98);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+    .animate-stagger {
+        animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        opacity: 0;
+    }
+</style>
+
+<div class="space-y-8" x-data="{ 
+    openCreateModal: false, 
+    openEditModal: false,
+    editRolId: null,
+    editRolNombre: '',
+    editPermisos: {},
+
+    toggleCheckboxes(containerId, value) {
+        const container = document.getElementById(containerId);
+        if (container) {
+            const checkboxes = container.querySelectorAll('input[type=checkbox]');
+            checkboxes.forEach(cb => cb.checked = value);
+        }
+    },
+
+    cargarEdicion(rol) {
+        this.editRolId = rol.id;
+        this.editRolNombre = rol.nombre;
+        this.editPermisos = {};
         
-        <!-- Botón para abrir el Modal Compartido -->
-        <button @click="openModal = true" type="button" class="bg-teal-600 hover:bg-teal-700 text-white font-semibold px-4 py-2 rounded-lg text-sm shadow-sm transition flex items-center gap-2">
-            <i class="bi bi-plus-lg"></i> Nuevo Rol
-        </button>
+        if (rol.permisos) {
+            rol.permisos.forEach(p => {
+                this.editPermisos[p.modulo_id] = {
+                    ver: p.puede_ver == 1,
+                    crear: p.puede_crear == 1,
+                    editar: p.puede_editar == 1,
+                    eliminar: p.puede_eliminar == 1
+                };
+            });
+        }
+        this.openEditModal = true;
+    }
+}">
+    
+    <!-- BANNER HERO PREMIUM -->
+    <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-teal-800 via-teal-600 to-emerald-600 p-8 text-white shadow-xl shadow-teal-900/10 animate-stagger" style="animation-delay: 0ms;">
+        <div class="absolute -right-10 -top-10 h-64 w-64 rounded-full bg-white/10 blur-3xl pointer-events-none"></div>
+        <div class="absolute right-40 -bottom-20 h-48 w-48 rounded-full bg-emerald-400/20 blur-2xl pointer-events-none"></div>
+
+        <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div class="space-y-2">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-teal-100 text-xs font-semibold backdrop-blur-md">
+                    <i class="bi bi-shield-check text-emerald-300"></i> Control de Seguridad & Accesos
+                </div>
+                <h2 class="text-3xl font-extrabold tracking-tight">Gestión de Roles y Permisos</h2>
+                <p class="text-sm text-teal-100/90 max-w-xl">
+                    Establece el alcance operativo de cada cargo dentro de los módulos del sistema MediTrack.
+                </p>
+            </div>
+
+            <!-- Botón Crear (Protegido por Permiso) -->
+            @if(auth()->user()->tienePermiso('Roles', 'crear'))
+                <button @click="openCreateModal = true" type="button" class="group bg-white text-teal-800 hover:bg-teal-50 font-bold px-5 py-3 rounded-2xl text-sm shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2 transform hover:-translate-y-0.5">
+                    <i class="bi bi-plus-circle-fill text-teal-600 group-hover:rotate-90 transition-transform duration-300 text-base"></i>
+                    <span>Nuevo Cargo / Rol</span>
+                </button>
+            @endif
+        </div>
+    </div>
+
+    <!-- TARJETAS DE MÉTRICAS -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-5 animate-stagger" style="animation-delay: 100ms;">
+        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center text-xl font-bold border border-teal-100">
+                <i class="bi bi-person-badge-fill"></i>
+            </div>
+            <div>
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Roles Registrados</p>
+                <h3 class="text-2xl font-bold text-gray-800">{{ $roles->count() }}</h3>
+            </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center text-xl font-bold border border-sky-100">
+                <i class="bi bi-grid-3x3-gap-fill"></i>
+            </div>
+            <div>
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Módulos del Sistema</p>
+                <h3 class="text-2xl font-bold text-gray-800">{{ $modulos->count() }}</h3>
+            </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl font-bold border border-emerald-100">
+                <i class="bi bi-check-all"></i>
+            </div>
+            <div>
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Estado del Sistema</p>
+                <span class="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 mt-1">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Activo & Sincronizado
+                </span>
+            </div>
+        </div>
     </div>
 
     @if (session('success'))
-        <div class="p-4 mb-4 text-sm text-teal-800 bg-teal-100 rounded-lg border border-teal-200">
-            {{ session('success') }}
+        <div class="p-4 text-sm text-teal-900 bg-teal-50/90 rounded-2xl border border-teal-200 shadow-sm flex items-center gap-3 animate-stagger" style="animation-delay: 150ms;">
+            <i class="bi bi-check-circle-fill text-teal-600 text-xl"></i>
+            <span class="font-medium">{{ session('success') }}</span>
         </div>
     @endif
 
-    <!-- Banner Informativo -->
-    <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-        <div class="flex items-center gap-3 text-blue-800 text-sm font-medium">
-            <i class="bi bi-info-circle-fill text-blue-600 text-lg"></i>
-            <span>Define y visualiza las acciones puede realizar cada cargo dentro de los módulos del sistema.
-</span>
-        </div>
-    </div>
+    <!-- GRID DE TARJETAS DE ROLES -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        @forelse ($roles as $index => $rol)
+            <div class="group bg-white rounded-3xl border border-gray-200/70 shadow-sm hover:shadow-xl hover:border-teal-300 transition-all duration-300 flex flex-col justify-between overflow-hidden animate-stagger transform hover:-translate-y-1" style="animation-delay: {{ 200 + ($index * 80) }}ms;">
+                <div>
+                    <!-- Encabezado de la Tarjeta -->
+                    <div class="p-6 border-b border-gray-100 bg-gradient-to-r from-slate-50 via-teal-50/30 to-emerald-50/20 flex items-center justify-between">
+                        <div class="flex items-center gap-3.5">
+                            <div class="w-11 h-11 rounded-2xl bg-teal-600 text-white flex items-center justify-center font-bold text-xl shadow-md shadow-teal-600/20 group-hover:scale-105 transition-transform duration-300">
+                                <i class="bi bi-person-badge"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-extrabold text-gray-800 text-lg leading-snug group-hover:text-teal-700 transition-colors">{{ $rol->nombre }}</h3>
+                                <span class="text-[11px] text-teal-700 font-semibold bg-teal-100/70 px-2.5 py-0.5 rounded-md border border-teal-200/50">Cargo Activo</span>
+                            </div>
+                        </div>
 
-    <!-- Tabla Principal de Roles -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse">
-                <thead>
-                    <tr class="text-xs uppercase text-white font-bold tracking-wider">
-                        <th class="px-6 py-4 bg-slate-800">ID / Rol</th>
-                        <th class="px-6 py-4 bg-slate-800">Módulo</th>
-                        <th class="px-4 py-4 bg-slate-800 text-center">Mostrar</th>
-                        <th class="px-4 py-4 bg-slate-900 text-center">Detalle</th>
-                        <th class="px-4 py-4 bg-emerald-950 text-center">Alta</th>
-                        <th class="px-4 py-4 bg-amber-950 text-center">Editar</th>
-                        <th class="px-4 py-4 bg-rose-950 text-center">Eliminar</th>
-                        <th class="px-6 py-4 bg-slate-800 text-center">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-200 text-sm text-gray-700">
-                    @forelse ($roles as $rol)
-                        @if (isset($modulos) && $modulos->count() > 0)
-                            @foreach ($modulos as $index => $modulo)
-    @php
-        // Buscar el permiso del rol actual para el módulo específico
-        $permiso = $rol->permisos->firstWhere('modulo_id', $modulo->id);
-    @endphp
-    <tr class="hover:bg-gray-50 transition border-b border-gray-100">
-        @if ($index === 0)
-            <td rowspan="{{ $modulos->count() }}" class="px-6 py-4 font-bold text-gray-900 align-top border-r border-gray-200 bg-gray-50/50">
-                <div class="flex flex-col gap-1 sticky top-20">
-                    <span class="text-xs font-mono text-gray-400">#{{ $rol->id }}</span>
-                    <span class="text-base text-gray-800">{{ $rol->nombre }}</span>
+                        <!-- Botones de Acción Verticales (Protegidos por Permisos) -->
+                        <div class="flex flex-col gap-1.5">
+                            @if(auth()->user()->tienePermiso('Roles', 'editar'))
+                                <button type="button" @click="cargarEdicion({{ json_encode($rol) }})" class="bg-amber-500 hover:bg-amber-600 text-white p-2 rounded-xl text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center justify-center" title="Editar Permisos">
+                                    <i class="bi bi-pencil-square"></i>
+                                </button>
+                            @endif
+
+                            @if(auth()->user()->tienePermiso('Roles', 'eliminar'))
+                                <button type="button" onclick="confirmarEliminacion({{ $rol->id }}, '{{ $rol->nombre }}')" class="bg-rose-500 hover:bg-rose-600 text-white p-2 rounded-xl text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center justify-center" title="Eliminar Rol">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            @endif
+                        </div>
+                    </div>
+
+                    <!-- Módulos del Sidebar y Permisos -->
+                    <div class="p-6 space-y-3">
+                        <div class="flex items-center justify-between mb-1">
+                            <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">Módulos Asignados</p>
+                            <span class="text-[11px] font-semibold text-gray-500">{{ $modulos->count() }} Módulos</span>
+                        </div>
+                        
+                        @forelse ($modulos as $mod)
+                            @php
+                                $permiso = $rol->permisos->firstWhere('modulo_id', $mod->id);
+                                $tieneAcceso = $permiso && ($permiso->puede_ver || $permiso->puede_crear || $permiso->puede_editar || $permiso->puede_eliminar);
+                                
+                                $iconos = [
+                                    'Pacientes' => 'bi-people-fill',
+                                    'Citas' => 'bi-calendar-event-fill',
+                                    'Facturación' => 'bi-credit-card-fill',
+                                    'Inventario' => 'bi-box-seam-fill',
+                                    'Personal' => 'bi-person-badge-fill',
+                                    'Roles' => 'bi-shield-lock-fill',
+                                    'Reportes' => 'bi-graph-up-arrow',
+                                    'Configuración' => 'bi-gear-fill'
+                                ];
+                                $iconoModulo = $iconos[$mod->nombre] ?? 'bi-app-indicator';
+                            @endphp
+                            
+                            <div class="p-3 rounded-2xl border transition-all duration-200 {{ $tieneAcceso ? 'bg-slate-50/70 border-gray-200/80 hover:border-teal-200 hover:bg-teal-50/20' : 'bg-gray-50/30 border-dashed border-gray-200 opacity-60' }} flex items-center justify-between">
+                                <span class="text-xs font-bold {{ $tieneAcceso ? 'text-gray-800' : 'text-gray-400' }} flex items-center gap-2.5">
+                                    <i class="bi {{ $iconoModulo }} {{ $tieneAcceso ? 'text-teal-600' : 'text-gray-300' }} text-sm"></i> 
+                                    {{ $mod->nombre }}
+                                </span>
+
+                                <div class="flex gap-1 text-[10px] font-bold">
+                                    <span class="px-2 py-0.5 rounded-md transition-colors {{ ($permiso && $permiso->puede_ver) ? 'bg-teal-100 text-teal-800 border border-teal-200/80 shadow-2xs' : 'bg-gray-100 text-gray-300' }}">V</span>
+                                    <span class="px-2 py-0.5 rounded-md transition-colors {{ ($permiso && $permiso->puede_crear) ? 'bg-emerald-100 text-emerald-800 border border-emerald-200/80 shadow-2xs' : 'bg-gray-100 text-gray-300' }}">C</span>
+                                    <span class="px-2 py-0.5 rounded-md transition-colors {{ ($permiso && $permiso->puede_editar) ? 'bg-amber-100 text-amber-800 border border-amber-200/80 shadow-2xs' : 'bg-gray-100 text-gray-300' }}">E</span>
+                                    <span class="px-2 py-0.5 rounded-md transition-colors {{ ($permiso && $permiso->puede_eliminar) ? 'bg-rose-100 text-rose-800 border border-rose-200/80 shadow-2xs' : 'bg-gray-100 text-gray-300' }}">D</span>
+                                </div>
+                            </div>
+                        @empty
+                            <p class="text-xs text-gray-400 italic text-center py-4">No hay módulos configurados.</p>
+                        @endforelse
+                    </div>
                 </div>
-            </td>
-        @endif
-
-        <td class="px-6 py-3 font-semibold text-gray-800 bg-white">
-            {{ $modulo->nombre }}
-        </td>
-
-        <!-- MOSTRAR / VER -->
-        <td class="px-4 py-3 text-center">
-            <input type="checkbox" disabled {{ ($permiso && $permiso->puede_ver) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded cursor-not-allowed">
-        </td>
-
-        <!-- DETALLE (Misma variable de lectura 'puede_ver') -->
-        <td class="px-4 py-3 text-center">
-            <input type="checkbox" disabled {{ ($permiso && $permiso->puede_ver) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded cursor-not-allowed">
-        </td>
-
-        <!-- ALTA / CREAR -->
-        <td class="px-4 py-3 text-center">
-            <input type="checkbox" disabled {{ ($permiso && $permiso->puede_crear) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded cursor-not-allowed">
-        </td>
-
-        <!-- EDITAR -->
-        <td class="px-4 py-3 text-center">
-            <input type="checkbox" disabled {{ ($permiso && $permiso->puede_editar) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded cursor-not-allowed">
-        </td>
-
-        <!-- ELIMINAR -->
-        <td class="px-4 py-3 text-center">
-            <input type="checkbox" disabled {{ ($permiso && $permiso->puede_eliminar) ? 'checked' : '' }} class="w-5 h-5 text-teal-600 rounded cursor-not-allowed">
-        </td>
-
-        @if ($index === 0)
-            <td rowspan="{{ $modulos->count() }}" class="px-6 py-4 text-center align-middle border-l border-gray-200 bg-gray-50/50">
-                <button type="button" onclick="confirmarEliminacion({{ $rol->id }}, '{{ $rol->nombre }}')" class="inline-flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-medium px-3 py-1.5 rounded-lg text-xs transition">
-                    <i class="bi bi-trash"></i> Eliminar
-                </button>
-            </td>
-        @endif
-    </tr>
-@endforeach
-                        @else
-                            <tr class="hover:bg-gray-50 transition">
-                                <td class="px-6 py-4 font-bold text-gray-900">#{{ $rol->id }} - {{ $rol->nombre }}</td>
-                                <td colspan="6" class="px-6 py-4 text-gray-400 italic">No hay módulos registrados en la base de datos.</td>
-                                <td class="px-6 py-4 text-center">
-                                    <button type="button" onclick="confirmarEliminacion({{ $rol->id }}, '{{ $rol->nombre }}')" class="inline-flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-medium px-3 py-1.5 rounded-lg text-xs transition">
-                                        <i class="bi bi-trash"></i> Eliminar
-                                    </button>
-                                </td>
-                            </tr>
-                        @endif
-                    @empty
-                        <tr>
-                            <td colspan="8" class="px-6 py-8 text-center text-gray-500">No hay roles registrados en el sistema.</td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
+            </div>
+        @empty
+            <div class="col-span-full bg-white rounded-3xl p-12 border border-gray-200 text-center text-gray-500 animate-stagger" style="animation-delay: 200ms;">
+                <i class="bi bi-shield-x text-4xl text-gray-300 mb-2 block"></i>
+                <p class="font-semibold text-gray-700">No hay roles registrados en el sistema.</p>
+            </div>
+        @endforelse
     </div>
 
-    <!--INCLUIR  MODAL COMPARTIDO DE LA MISMA CARPETA -->
-    @include('personal.modalRoles')
+    <!-- MODAL CREAR NUEVO ROL (TELEPORTADO AL BODY) -->
+    @if(auth()->user()->tienePermiso('Roles', 'crear'))
+        <template x-teleport="body">
+            <div x-show="openCreateModal" 
+                 x-transition:enter="transition ease-out duration-300"
+                 x-transition:enter-start="opacity-0 scale-95"
+                 x-transition:enter-end="opacity-100 scale-100"
+                 x-transition:leave="transition ease-in duration-200"
+                 x-transition:leave-start="opacity-100 scale-100"
+                 x-transition:leave-end="opacity-0 scale-95"
+                 class="fixed inset-0 z-[9999] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4" x-cloak>
+                
+                <div class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full h-[80vh] max-h-[620px] border border-teal-100 flex flex-col overflow-hidden my-auto">
+                    <!-- Header Fijo -->
+                    <div class="flex justify-between items-center border-b border-gray-100 px-6 py-4 bg-white flex-shrink-0">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-2xl bg-teal-100 text-teal-800 flex items-center justify-center font-bold">
+                                <i class="bi bi-plus-circle-fill text-xl text-teal-600"></i>
+                            </div>
+                            <h3 class="text-lg font-extrabold text-gray-800">Crear Nuevo Cargo / Rol</h3>
+                        </div>
+                        <button @click="openCreateModal = false" class="text-gray-400 hover:text-gray-600 text-2xl font-bold transition-colors">&times;</button>
+                    </div>
+
+                    <!-- Formulario Flex -->
+                    <form action="{{ route('roles.store') }}" method="POST" id="formCrearRol" class="flex flex-col flex-1 overflow-hidden">
+                        @csrf
+                        <div class="p-6 space-y-4 flex-1 flex flex-col overflow-hidden">
+                            <!-- Campo Nombre -->
+                            <div class="flex-shrink-0">
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Nombre del Rol *</label>
+                                <input type="text" name="nombre" required placeholder="Ej. Odontólogo, Recepcionista" class="w-full border border-gray-300 rounded-2xl p-3 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 focus:outline-none transition-all">
+                            </div>
+
+                            <!-- Cabecera de Permisos -->
+                            <div class="flex items-center justify-between flex-shrink-0">
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider">Asignar Permisos</label>
+                                <div class="flex gap-2">
+                                    <button type="button" @click="toggleCheckboxes('formCrearRol', true)" class="text-xs bg-teal-100/80 text-teal-800 hover:bg-teal-200/80 font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1">
+                                        <i class="bi bi-check-all"></i> Marcar Todos
+                                    </button>
+                                    <button type="button" @click="toggleCheckboxes('formCrearRol', false)" class="text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1">
+                                        <i class="bi bi-x"></i> Desmarcar Todos
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Tabla con Scroll Exclusivo Interno -->
+                            <div class="border border-gray-200/80 rounded-2xl flex-1 overflow-y-auto min-h-0 shadow-2xs">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-teal-800 text-white uppercase font-bold sticky top-0 z-10">
+                                        <tr>
+                                            <th class="p-3.5">Módulo del Sidebar</th>
+                                            <th class="p-3.5 text-center">Ver</th>
+                                            <th class="p-3.5 text-center">Crear</th>
+                                            <th class="p-3.5 text-center">Editar</th>
+                                            <th class="p-3.5 text-center">Eliminar</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100 bg-white">
+                                        @foreach ($modulos as $mod)
+                                            <tr class="hover:bg-teal-50/40 transition-colors">
+                                                <td class="p-3.5 font-bold text-gray-800">{{ $mod->nombre }}</td>
+                                                <td class="p-3.5 text-center"><input type="checkbox" name="permisos[{{ $mod->id }}][ver]" value="1" class="w-4 h-4 text-teal-600 rounded border-gray-300 focus:ring-teal-500"></td>
+                                                <td class="p-3.5 text-center"><input type="checkbox" name="permisos[{{ $mod->id }}][crear]" value="1" class="w-4 h-4 text-teal-600 rounded border-gray-300 focus:ring-teal-500"></td>
+                                                <td class="p-3.5 text-center"><input type="checkbox" name="permisos[{{ $mod->id }}][editar]" value="1" class="w-4 h-4 text-teal-600 rounded border-gray-300 focus:ring-teal-500"></td>
+                                                <td class="p-3.5 text-center"><input type="checkbox" name="permisos[{{ $mod->id }}][eliminar]" value="1" class="w-4 h-4 text-teal-600 rounded border-gray-300 focus:ring-teal-500"></td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Footer Fijo -->
+                        <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex-shrink-0">
+                            <button type="button" @click="openCreateModal = false" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-2xl text-sm font-semibold transition-all">Cancelar</button>
+                            <button type="submit" class="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl text-sm font-bold shadow-lg shadow-teal-600/20 transition-all">Guardar Rol</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </template>
+    @endif
+
+    <!-- MODAL EDITAR ROL Y PERMISOS (TELEPORTADO AL BODY) -->
+    @if(auth()->user()->tienePermiso('Roles', 'editar'))
+        <template x-teleport="body">
+            <div x-show="openEditModal" 
+                 x-transition:enter="transition ease-out duration-300"
+                 x-transition:enter-start="opacity-0 scale-95"
+                 x-transition:enter-end="opacity-100 scale-100"
+                 x-transition:leave="transition ease-in duration-200"
+                 x-transition:leave-start="opacity-100 scale-100"
+                 x-transition:leave-end="opacity-0 scale-95"
+                 class="fixed inset-0 z-[9999] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4" x-cloak>
+                
+                <div class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full h-[80vh] max-h-[620px] border border-teal-100 flex flex-col overflow-hidden my-auto">
+                    <!-- Header Fijo -->
+                    <div class="flex justify-between items-center border-b border-gray-100 px-6 py-4 bg-white flex-shrink-0">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                                <i class="bi bi-pencil-square text-xl text-amber-600"></i>
+                            </div>
+                            <h3 class="text-lg font-extrabold text-gray-800">Editar Rol y Permisos</h3>
+                        </div>
+                        <button @click="openEditModal = false" class="text-gray-400 hover:text-gray-600 text-2xl font-bold transition-colors">&times;</button>
+                    </div>
+
+                    <!-- Formulario Flex -->
+                    <form :action="`/roles/${editRolId}`" method="POST" id="formEditarRol" class="flex flex-col flex-1 overflow-hidden">
+                        @csrf
+                        @method('PUT')
+                        <div class="p-6 space-y-4 flex-1 flex flex-col overflow-hidden">
+                            <!-- Campo Nombre -->
+                            <div class="flex-shrink-0">
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Nombre del Rol *</label>
+                                <input type="text" name="nombre" x-model="editRolNombre" required class="w-full border border-gray-300 rounded-2xl p-3 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 focus:outline-none transition-all">
+                            </div>
+
+                            <!-- Cabecera de Permisos -->
+                            <div class="flex items-center justify-between flex-shrink-0">
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider">Modificar Permisos</label>
+                                <div class="flex gap-2">
+                                    <button type="button" @click="toggleCheckboxes('formEditarRol', true)" class="text-xs bg-teal-100/80 text-teal-800 hover:bg-teal-200/80 font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1">
+                                        <i class="bi bi-check-all"></i> Marcar Todos
+                                    </button>
+                                    <button type="button" @click="toggleCheckboxes('formEditarRol', false)" class="text-xs bg-gray-100 text-gray-600 hover:bg-gray-200 font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1">
+                                        <i class="bi bi-x"></i> Desmarcar Todos
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Tabla con Scroll Exclusivo Interno -->
+                            <div class="border border-gray-200/80 rounded-2xl flex-1 overflow-y-auto min-h-0 shadow-2xs">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-teal-800 text-white uppercase font-bold sticky top-0 z-10">
+                                        <tr>
+                                            <th class="p-3.5">Módulo del Sidebar</th>
+                                            <th class="p-3.5 text-center">Ver</th>
+                                            <th class="p-3.5 text-center">Crear</th>
+                                            <th class="p-3.5 text-center">Editar</th>
+                                            <th class="p-3.5 text-center">Eliminar</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100 bg-white">
+                                        @foreach ($modulos as $mod)
+                                            <tr class="hover:bg-teal-50/40 transition-colors">
+                                                <td class="p-3.5 font-bold text-gray-800">{{ $mod->nombre }}</td>
+                                                <td class="p-3.5 text-center"><input type="checkbox" name="permisos[{{ $mod->id }}][ver]" value="1" :checked="editPermisos[{{ $mod->id }}]?.ver" class="w-4 h-4 text-teal-600 rounded border-gray-300 focus:ring-teal-500"></td>
+                                                <td class="p-3.5 text-center"><input type="checkbox" name="permisos[{{ $mod->id }}][crear]" value="1" :checked="editPermisos[{{ $mod->id }}]?.crear" class="w-4 h-4 text-teal-600 rounded border-gray-300 focus:ring-teal-500"></td>
+                                                <td class="p-3.5 text-center"><input type="checkbox" name="permisos[{{ $mod->id }}][editar]" value="1" :checked="editPermisos[{{ $mod->id }}]?.editar" class="w-4 h-4 text-teal-600 rounded border-gray-300 focus:ring-teal-500"></td>
+                                                <td class="p-3.5 text-center"><input type="checkbox" name="permisos[{{ $mod->id }}][eliminar]" value="1" :checked="editPermisos[{{ $mod->id }}]?.eliminar" class="w-4 h-4 text-teal-600 rounded border-gray-300 focus:ring-teal-500"></td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Footer Fijo -->
+                        <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex-shrink-0">
+                            <button type="button" @click="openEditModal = false" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-2xl text-sm font-semibold transition-all">Cancelar</button>
+                            <button type="submit" class="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl text-sm font-bold shadow-lg shadow-teal-600/20 transition-all">Actualizar Rol</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </template>
+    @endif
 </div>
 
 <script>
@@ -158,8 +408,7 @@ function confirmarEliminacion(id, nombre) {
                 } else {
                     Swal.fire('Error', data.message, 'error');
                 }
-            })
-            .catch(err => Swal.fire('Error', err.message, 'error'));
+            });
         }
     });
 }

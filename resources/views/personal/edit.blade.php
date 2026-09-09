@@ -1,7 +1,8 @@
 @extends('layouts.admin')
 
 @section('content')
-<div class="max-w-3xl mx-auto space-y-6">
+<!-- Se añade x-data al contenedor principal -->
+<div class="max-w-3xl mx-auto space-y-6" x-data="{ openModal: false }">
     <div class="flex items-center justify-between">
         <div>
             <h2 class="text-2xl font-bold text-gray-800">Editar Información de Personal</h2>
@@ -42,7 +43,7 @@
                 </div>
             </div>
 
-            <!-- Usuario de Correo con sufijo @meditrack.com -->
+            <!-- Usuario de Correo -->
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Usuario de Acceso (Correo)</label>
                 @php
@@ -58,7 +59,7 @@
                         @meditrack.com
                     </span>
                 </div>
-                <p class="text-xs text-gray-400 mt-1">Modifica el usuario solo si es estrictamente necesario.</p>
+                <p class="text-xs text-gray-400 mt-1">Modifica el usuario solo si es strictly necesario.</p>
             </div>
 
             <!-- Contraseñas -->
@@ -78,32 +79,32 @@
                 <i class="bi bi-briefcase"></i> INFORMACIÓN PROFESIONAL
             </h3>
 
-            <!-- Desplegable de Roles / Especialidad -->
+           <!-- Rol / Especialidad -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-1">Cargo / Rol Profesional</label>
-                <select name="rol_profesional" id="select_rol_profesional" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white">
-                <option value="" disabled>Selecciona un rol...</option>
-        
-                    @if(isset($roles))
-                        @foreach($roles as $rol)
-                            @php
-                                // Asume el valor previo ingresado (old) o, en su defecto, el valor de la base de datos
-                                $rolSeleccionado = old('rol_profesional', $personal->especialidad_principal ?? $personal->rol_profesional);
-                            @endphp
-                            <option value="{{ $rol->nombre }}" {{ $rolSeleccionado == $rol->nombre ? 'selected' : '' }}>
-                                {{ $rol->nombre }}
-                            </option>
-                        @endforeach
-                    @endif
-                </select>
-            </div>
-
                 <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Teléfono</label>
-                    <input type="text" name="telefono" value="{{ old('telefono', $personal->telefono) }}" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block text-sm font-semibold text-gray-700">Cargo / Rol Profesional</label>
+                        <button type="button" @click="openModal = true" class="text-xs text-teal-600 hover:text-teal-700 font-semibold flex items-center gap-1 focus:outline-none">
+                            <i class="bi bi-gear"></i> Gestionar Roles
+                        </button>
+                    </div>
+                    <select name="rol_id" id="select_rol_id" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white">
+                        <option value="">Selecciona un rol...</option>
+                        @if(isset($roles))
+                            @foreach($roles as $rol)
+                                <option value="{{ $rol->id }}" 
+                                    {{ old('rol_id', $personal->usuario->rol_id ?? '') == $rol->id ? 'selected' : '' }}>
+                                    {{ $rol->nombre }}
+                                </option>
+                            @endforeach
+                        @endif
+                    </select>
                 </div>
-            </div>
+            <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-1">Teléfono</label>
+        <input type="text" name="telefono" value="{{ old('telefono', $personal->telefono) }}" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none">
+    </div>
+</div>
 
             <!-- Botones -->
             <div class="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
@@ -116,5 +117,8 @@
             </div>
         </form>
     </div>
+
+    <!-- Incluir el modal dentro del ámbito de x-data -->
+    @include('personal.modalRoles')
 </div>
 @endsection

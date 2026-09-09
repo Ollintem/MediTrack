@@ -77,22 +77,21 @@
             <!-- Rol / Especialidad con Dropdown + Botón Modal con Alpine -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <div class="flex items-center justify-between mb-1">
-                        <label class="block text-sm font-semibold text-gray-700">Cargo / Rol Profesional</label>
-                        <button type="button" @click="openModal = true" class="text-xs text-teal-600 hover:text-teal-700 font-semibold flex items-center gap-1 focus:outline-none">
-                            <i class="bi bi-gear"></i> Gestionar Roles
-                        </button>
-                    </div>
-                    <select name="rol_profesional" id="select_rol_profesional" required class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white">
-                        <option value="" disabled {{ old('rol_profesional') ? '' : 'selected' }}>Selecciona un rol...</option>
-                        
-                        @if(isset($roles))
-                            @foreach($roles as $rol)
-                                <option value="{{ $rol->nombre }}" {{ old('rol_profesional') == $rol->nombre ? 'selected' : '' }}>{{ $rol->nombre }}</option>
-                            @endforeach
-                        @endif
-                    </select>
-                </div>
+    <div class="flex items-center justify-between mb-2">
+        <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+            Cargo / Rol Profesional *
+        </label>
+        <a href="{{ route('roles.index') }}" class="text-xs font-semibold text-teal-600 hover:text-teal-700 flex items-center gap-1">
+            <i class="bi bi-gear"></i> Gestionar Roles
+        </a>
+    </div>
+    <select name="rol_id" required class="w-full border border-gray-300 rounded-2xl p-3 text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none">
+        <option value="" disabled selected>Selecciona un rol...</option>
+        @foreach($roles as $rol)
+            <option value="{{ $rol->id }}">{{ $rol->nombre }}</option>
+        @endforeach
+    </select>
+</div>
 
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Turno Asignado</label>
@@ -131,5 +130,5 @@
 
     <!-- Incluir el modal compartido con el diseño y la matriz requerida -->
     @include('personal.modalRoles')
-</div>
-@endsection
+    </div>
+    @endsection
