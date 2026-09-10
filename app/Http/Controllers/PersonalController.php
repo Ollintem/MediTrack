@@ -28,48 +28,60 @@ class PersonalController extends Controller
 
     public function store(Request $request)
     {
-        // 1. Concatenar el usuario enviado con el dominio automático
-        $emailCompleto = strtolower(trim($request->username)) . '@meditrack.com';
-        $request->merge(['email' => $emailCompleto]);
+        $requiereAcceso = $request->boolean('requiere_acceso');
+        $emailCompleto = null;
 
-        // 2. Validación de datos (se elimina la regla obligatoria para 'rol_profesional')
+        // 1. Validaciones condicionales si requiere acceso al sistema
+        if ($requiereAcceso) {
+            $emailCompleto = strtolower(trim($request->username)) . '@meditrack.com';
+            $request->merge(['email' => $emailCompleto]);
+
+            $request->validate([
+                'username' => 'required|string|alpha_dash|max:50',
+                'email'    => 'required|email|unique:users,email',
+                'password' => 'required|size:8|confirmed',
+            ], [
+                'username.required' => 'Ingresa un nombre de usuario para el correo.',
+                'email.unique'      => 'Este usuario de correo ya está registrado.',
+                'password.size'     => 'La contraseña debe tener exactamente 8 caracteres.',
+            ]);
+        }
+
+        // 2. Validaciones generales de la ficha de personal
         $request->validate([
             'nombre'   => 'required|string|max:80',
             'apellido' => 'required|string|max:80',
-            'username' => 'required|string|alpha_dash|max:50',
-            'email'    => 'required|email|unique:users,email',
-            'password' => 'required|size:8|confirmed',
             'rol_id'   => 'required|exists:roles,id',
             'rut'      => 'nullable|unique:personals,rut',
             'turno'    => 'required|in:Mañana,Tarde,Completo,Noche',
         ], [
-            'password.size'     => 'La contraseña debe tener exactamente 8 caracteres.',
-            'username.required' => 'Ingresa un nombre de usuario para el correo.',
-            'email.unique'      => 'Este usuario de correo ya está registrado.',
-            'rol_id.required'   => 'Debes seleccionar un rol para el sistema.',
+            'rol_id.required' => 'Debes seleccionar un rol para el sistema.',
         ]);
 
-        // 3. Buscar el nombre del rol a partir del ID seleccionado
         $rol = Rol::findOrFail($request->rol_id);
         $nombreRol = $rol->nombre;
         $nombreCompleto = trim($request->nombre . ' ' . $request->apellido);
 
-        DB::transaction(function () use ($request, $emailCompleto, $nombreCompleto, $nombreRol) {
+        DB::transaction(function () use ($request, $emailCompleto, $nombreCompleto, $nombreRol, $requiereAcceso) {
             $clinicaId = DB::table('clinicas')->value('id') ?? 1;
+            $userId = null;
 
-            // 4. Crear credenciales del usuario asociando el rol_id
-            $usuario = User::create([
-                'nombre'     => $request->nombre,
-                'apellido'   => $request->apellido,
-                'email'      => $emailCompleto,
-                'rol_id'     => $request->rol_id,
-                'password'   => Hash::make($request->password),
-                'clinica_id' => $clinicaId,
-            ]);
+            // 3. Crear credenciales de usuario SOLO si el switch está encendido
+            if ($requiereAcceso) {
+                $usuario = User::create([
+                    'nombre'     => $request->nombre,
+                    'apellido'   => $request->apellido,
+                    'email'      => $emailCompleto,
+                    'rol_id'     => $request->rol_id,
+                    'password'   => Hash::make($request->password),
+                    'clinica_id' => $clinicaId,
+                ]);
+                $userId = $usuario->id;
+            }
 
-            // 5. Crear registro de personal usando el nombre del rol como especialidad principal
+            // 4. Crear registro de personal (user_id será null si no requiere acceso)
             $personal = Personal::create([
-                'user_id'                => $usuario->id,
+                'user_id'                => $userId,
                 'clinica_id'             => $clinicaId,
                 'nombre_completo'        => $nombreCompleto,
                 'rut'                    => $request->rut,
@@ -80,22 +92,22 @@ class PersonalController extends Controller
                 'estado'                 => 'Activo',
             ]);
 
-            // 6. Registrar en la bitácora
+            // 5. Registrar evento en Bitácora
             Bitacora::registrar(
                 'Personal',
                 'Crear',
-                "Se dio de alta al nuevo miembro del personal: {$nombreCompleto}",
+                "Se dio de alta al personal: {$nombreCompleto}" . ($requiereAcceso ? ' (Con acceso a sistema)' : ' (Sin acceso a sistema)'),
                 [
-                    'personal_id' => $personal->id,
-                    'user_id'     => $usuario->id,
-                    'correo'      => $emailCompleto,
-                    'rol'         => $nombreRol,
-                    'turno'       => $request->turno,
+                    'personal_id'     => $personal->id,
+                    'user_id'         => $userId,
+                    'correo'          => $emailCompleto,
+                    'rol'             => $nombreRol,
+                    'requiere_acceso' => $requiereAcceso
                 ]
             );
         });
 
-        return redirect()->route('personal.index')->with('success', 'Personal dado de alta correctamente.');
+        return redirect()->route('personal.index')->with('success', 'Personal registrado correctamente.');
     }
 
     public function edit($id)
@@ -110,37 +122,72 @@ class PersonalController extends Controller
     public function update(Request $request, $id)
     {
         $personal = Personal::findOrFail($id);
-        $usuario = User::findOrFail($personal->user_id);
+        $requiereAcceso = $request->boolean('requiere_acceso');
+        $usuario = $personal->user_id ? User::find($personal->user_id) : null;
 
-        $emailCompleto = strtolower(trim($request->username)) . '@meditrack.com';
-        $request->merge(['email' => $emailCompleto]);
-
+        // 1. Validaciones base
         $request->validate([
             'nombre_completo' => 'required|string|max:150',
-            'username'        => 'required|string|alpha_dash|max:50',
-            'email'           => 'required|email|unique:users,email,' . $usuario->id,
             'rol_id'          => 'required|exists:roles,id',
-            'password'        => 'nullable|size:8|confirmed',
         ], [
-            'password.size'   => 'La contraseña debe tener exactamente 8 caracteres.',
-            'email.unique'    => 'Este usuario de correo ya está en uso.',
             'rol_id.required' => 'Debes seleccionar un rol para el sistema.',
         ]);
+
+        $emailCompleto = null;
+
+        // 2. Validar credenciales si tiene acceso activado
+        if ($requiereAcceso) {
+            $emailCompleto = strtolower(trim($request->username)) . '@meditrack.com';
+            $request->merge(['email' => $emailCompleto]);
+
+            $request->validate([
+                'username' => 'required|string|alpha_dash|max:50',
+                'email'    => 'required|email|unique:users,email,' . ($usuario ? $usuario->id : 'NULL'),
+                'password' => 'nullable|size:8|confirmed',
+            ], [
+                'password.size' => 'La contraseña debe tener exactamente 8 caracteres.',
+                'email.unique'  => 'Este usuario de correo ya está en uso.',
+            ]);
+        }
 
         $rol = Rol::findOrFail($request->rol_id);
         $nombreRol = $rol->nombre;
 
-        DB::transaction(function () use ($request, $personal, $usuario, $emailCompleto, $nombreRol) {
-            // Actualizar usuario
-            $usuario->email  = $emailCompleto;
-            $usuario->rol_id = $request->rol_id;
+        DB::transaction(function () use ($request, $personal, $usuario, $emailCompleto, $nombreRol, $requiereAcceso) {
+            $clinicaId = DB::table('clinicas')->value('id') ?? 1;
 
-            if ($request->filled('password')) {
-                $usuario->password = Hash::make($request->password);
+            if ($requiereAcceso) {
+                if ($usuario) {
+                    // Actualizar credenciales existentes
+                    $usuario->email  = $emailCompleto;
+                    $usuario->rol_id = $request->rol_id;
+                    if ($request->filled('password')) {
+                        $usuario->password = Hash::make($request->password);
+                    }
+                    $usuario->save();
+                } else {
+                    // Crear nuevo usuario si antes no tenía acceso
+                    $partesNombre = explode(' ', $request->nombre_completo, 2);
+                    $nuevoUsuario = User::create([
+                        'nombre'     => $partesNombre[0],
+                        'apellido'   => $partesNombre[1] ?? '',
+                        'email'      => $emailCompleto,
+                        'rol_id'     => $request->rol_id,
+                        'password'   => Hash::make($request->password),
+                        'clinica_id' => $clinicaId,
+                    ]);
+                    $personal->user_id = $nuevoUsuario->id;
+                }
+            } else {
+                // Si apagan el switch y tenía usuario previo, lo eliminamos y desvinculamos
+                if ($usuario) {
+                    $personal->user_id = null;
+                    $personal->save();
+                    $usuario->delete();
+                }
             }
-            $usuario->save();
 
-            // Actualizar ficha de personal
+            // Actualizar datos del personal
             $personal->update([
                 'nombre_completo'        => $request->nombre_completo,
                 'telefono'               => $request->telefono,
@@ -153,10 +200,11 @@ class PersonalController extends Controller
                 'Editar',
                 "Se actualizó la información del personal: {$request->nombre_completo}",
                 [
-                    'personal_id'       => $personal->id,
-                    'correo'            => $emailCompleto,
-                    'rol'               => $nombreRol,
-                    'password_cambiado' => $request->filled('password')
+                    'personal_id'      => $personal->id,
+                    'correo'           => $emailCompleto,
+                    'rol'              => $nombreRol,
+                    'requiere_acceso'  => $requiereAcceso,
+                    'password_cambiado'=> $request->filled('password')
                 ]
             );
         });
@@ -199,7 +247,7 @@ class PersonalController extends Controller
                 ], 200);
             }
 
-            return redirect()->route('personal.index')->with('success', 'Personal y usuario eliminados correctamente.');
+            return redirect()->route('personal.index')->with('success', 'Personal eliminado correctamente.');
         }
 
         if (request()->expectsJson()) {

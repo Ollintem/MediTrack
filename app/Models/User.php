@@ -70,56 +70,54 @@ class User extends Authenticatable
      * Determina si el usuario tiene permiso para realizar una acción en un módulo.
      */
     public function tienePermiso($nombreModulo, $accion = 'ver')
-    {
-        // 1. SI ES EL USUARIO ID 1 (SUPER ADMIN PRINCIPAL) -> ACCESO TOTAL SIEMPRE
-        if ($this->id === 1) {
-            return true;
-        }
-
-        // Cargar la relación con el rol y los permisos si no se ha cargado
-        if (!$this->relationLoaded('rol')) {
-            $this->load('rol.permisos.modulo');
-        }
-
-        // Si el usuario no tiene rol asignado
-        if (!$this->rol) {
-            return false;
-        }
-
-        // 2. SI EL NOMBRE DEL ROL ES ADMINISTRADOR / ADMIN -> ACCESO TOTAL SIEMPRE
-        $nombreRol = strtolower(trim($this->rol->nombre));
-        if (in_array($nombreRol, ['administrador', 'admin', 'super admin', 'superadministrador', 'pendejo'])) {
-            return true;
-        }
-
-        // 3. VERIFICAR PERMISOS ESPECÍFICOS EN LA BASE DE DATOS PARA OTROS ROLES
-        $permisos = $this->rol->permisos;
-        if (!$permisos) {
-            return false;
-        }
-
-        $permiso = $permisos->first(function ($p) use ($nombreModulo) {
-            return $p->modulo && strtolower(trim($p->modulo->nombre)) === strtolower(trim($nombreModulo));
-        });
-
-        if (!$permiso) {
-            return false;
-        }
-
-        switch (strtolower($accion)) {
-            case 'ver':
-                return (bool) $permiso->puede_ver;
-            case 'crear':
-                return (bool) $permiso->puede_crear;
-            case 'editar':
-                return (bool) $permiso->puede_editar;
-            case 'eliminar':
-                return (bool) $permiso->puede_eliminar;
-            default:
-                return false;
-        }
+{
+    // 1. EL SUPER ADMIN INICIAL (ID 1) TIENE ACCESO TOTAL SIEMPRE
+    if ($this->id === 1) {
+        return true;
     }
 
+    // Cargar la relación si aún no está en memoria
+    if (!$this->relationLoaded('rol')) {
+        $this->load('rol.permisos.modulo');
+    }
+
+    if (!$this->rol) {
+        return false;
+    }
+
+    // 2. SOLO ADMINISTRADORES GLOBALES TIENEN ACCESO TOTAL AUTOMÁTICO
+    $nombreRol = strtolower(trim($this->rol->nombre));
+    if (in_array($nombreRol, ['administrador', 'admin', 'super admin', 'superadministrador'])) {
+        return true;
+    }
+
+    // 3. EVALUACIÓN DE REGISTROS EN BD PARA TODOS LOS DEMÁS ROLES
+    $permisos = $this->rol->permisos;
+    if (!$permisos) {
+        return false;
+    }
+
+    $permiso = $permisos->first(function ($p) use ($nombreModulo) {
+        return $p->modulo && strtolower(trim($p->modulo->nombre)) === strtolower(trim($nombreModulo));
+    });
+
+    if (!$permiso) {
+        return false;
+    }
+
+    switch (strtolower($accion)) {
+        case 'ver':
+            return (bool) $permiso->puede_ver;
+        case 'crear':
+            return (bool) $permiso->puede_crear;
+        case 'editar':
+            return (bool) $permiso->puede_editar;
+        case 'eliminar':
+            return (bool) $permiso->puede_eliminar;
+        default:
+            return false;
+    }
+}
     /**
      * Determina si el usuario es el Super Admin del sistema.
      */

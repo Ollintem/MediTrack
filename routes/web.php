@@ -6,6 +6,11 @@ use App\Models\User;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\RolController;
 use App\Http\Controllers\PersonalController;
+use App\Http\Controllers\PacienteController;
+use App\Http\Controllers\RecetaController;
+use App\Http\Controllers\ConsultaController;
+use App\Http\Controllers\ConsultorioController;
+use App\Http\Controllers\BitacoraController;
 
 /*
 |--------------------------------------------------------------------------
@@ -24,6 +29,11 @@ Auth::routes([
     'register' => false, // Desactiva el registro público
 ]);
 
+Route::middleware(['auth'])->group(function () {
+    Route::get('recetas/{id}/pdf', [RecetaController::class, 'pdf'])->name('recetas.pdf');
+    Route::resource('recetas', RecetaController::class)->except(['create', 'edit', 'show']);
+});
+
 // 3. Rutas Protegidas por Autenticación
 Route::middleware(['auth'])->group(function () {
 
@@ -36,7 +46,12 @@ Route::middleware(['auth'])->group(function () {
         return view('users.index', compact('usuarios'));
     })->name('users.index');
 
-    // Módulos CRUD completados (Incluye index, create, store, edit, update, destroy)
+    // Módulos del Sistema (CRUDs)
     Route::resource('roles', RolController::class);
     Route::resource('personal', PersonalController::class);
+    Route::resource('pacientes', PacienteController::class);
+    Route::resource('recetas', RecetaController::class)->except(['create', 'edit', 'show']);
+    Route::resource('consultas', ConsultaController::class);
+    Route::resource('consultorios', ConsultorioController::class);
+    Route::get('bitacora', [BitacoraController::class, 'index'])->name('bitacora.index');
 });
