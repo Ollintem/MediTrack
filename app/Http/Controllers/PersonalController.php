@@ -8,7 +8,6 @@ use App\Models\Rol;
 use App\Models\Modulo;
 use App\Models\Bitacora;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 
 class PersonalController extends Controller
@@ -73,13 +72,13 @@ class PersonalController extends Controller
                     'apellido'   => $request->apellido,
                     'email'      => $emailCompleto,
                     'rol_id'     => $request->rol_id,
-                    'password'   => Hash::make($request->password),
+                    'password'   => $request->password, // Modelo User aplica el hash automáticamente
                     'clinica_id' => $clinicaId,
                 ]);
                 $userId = $usuario->id;
             }
 
-            // 4. Crear registro de personal (user_id será null si no requiere acceso)
+            // 4. Crear registro de personal
             $personal = Personal::create([
                 'user_id'                => $userId,
                 'clinica_id'             => $clinicaId,
@@ -162,7 +161,7 @@ class PersonalController extends Controller
                     $usuario->email  = $emailCompleto;
                     $usuario->rol_id = $request->rol_id;
                     if ($request->filled('password')) {
-                        $usuario->password = Hash::make($request->password);
+                        $usuario->password = $request->password; // Modelo User aplica el hash automáticamente
                     }
                     $usuario->save();
                 } else {
@@ -173,7 +172,7 @@ class PersonalController extends Controller
                         'apellido'   => $partesNombre[1] ?? '',
                         'email'      => $emailCompleto,
                         'rol_id'     => $request->rol_id,
-                        'password'   => Hash::make($request->password),
+                        'password'   => $request->password, // Modelo User aplica el hash automáticamente
                         'clinica_id' => $clinicaId,
                     ]);
                     $personal->user_id = $nuevoUsuario->id;

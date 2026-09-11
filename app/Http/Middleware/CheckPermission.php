@@ -5,11 +5,10 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
-use App\Models\Permiso;
 
 class CheckPermission
 {
-    public function handle(Request $request, Closure $next, string $modulo, string $accion = 'puede_ver'): Response
+    public function handle(Request $request, Closure $next, string $modulo, string $accion = 'ver'): Response
     {
         $user = $request->user();
 
@@ -18,23 +17,12 @@ class CheckPermission
             return redirect()->route('login');
         }
 
-        // 2. Si es el Super Admin (ID 1), otorgar acceso inmediato
-        if ($user->id === 1) {
+        // 2. Usar el método tienePermiso de tu modelo User (cubre ID 1, Administradores y permisos de BD)
+        if ($user->tienePermiso($modulo, $accion)) {
             return $next($request);
         }
 
-        // 3. Para otros usuarios, consultar sus permisos según su rol y módulo
-        $tienePermiso = Permiso::where('rol_id', $user->rol_id)
-            ->whereHas('modulo', function ($query) use ($modulo) {
-                $query->where('nombre', $modulo);
-            })
-            ->where($accion, true)
-            ->exists();
-
-        if (!$tienePermiso) {
-            abort(403, 'No tienes permisos para acceder a este recurso.');
-        }
-
-        return $next($request);
+        // 3. Si no tiene permiso, abortar con error 403
+        abort(403, 'No tienes permisos para acceder a este recurso.');
     }
 }

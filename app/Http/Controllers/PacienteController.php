@@ -33,20 +33,23 @@ class PacienteController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'nombre'           => 'required|string|max:255',
+            'primer_nombre'    => 'required|string|max:80',
+            'apellido_paterno' => 'required|string|max:80',
+            'apellido_materno' => 'nullable|string|max:80',
             'telefono'         => 'nullable|string|max:20',
-            'email'            => 'nullable|email|max:255',
+            'email'            => 'nullable|email|max:150',
             'fecha_nacimiento' => 'nullable|date',
         ]);
 
-        // Generar un código único simple para el expediente (ej. PAC-84920)
+        // 1. Concatenar los nombres recibidos en una sola cadena limpia
+        $nombreCompleto = trim("{$request->primer_nombre} {$request->apellido_paterno} {$request->apellido_materno}");
         $codigoGenerado = 'PAC-' . str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT);
 
-        // 1. Inserción de los datos principales del paciente
+        // 2. Inserción de los datos principales del paciente
         $paciente = Paciente::create([
             'codigo'                  => $codigoGenerado,
-            'nombre_completo'         => $request->nombre,
-            'rut'                     => $request->rut,
+            'nombre_completo'         => $nombreCompleto,
+            'rut'                     => strtoupper(trim($request->rut)), // CURP en mayúsculas
             'fecha_nacimiento'        => $request->fecha_nacimiento,
             'genero'                  => $request->genero,
             'estado_civil'            => $request->estado_civil,
@@ -65,7 +68,7 @@ class PacienteController extends Controller
             'estado'                  => 'Activo',
         ]);
 
-        // 2. Guardar Alergias
+        // 3. Guardar Alergias
         if ($request->has('alergias') && is_array($request->alergias)) {
             foreach ($request->alergias as $alergia) {
                 if (!empty(trim($alergia))) {
@@ -74,7 +77,7 @@ class PacienteController extends Controller
             }
         }
 
-        // 3. Guardar Condiciones
+        // 4. Guardar Condiciones
         if ($request->has('condiciones') && is_array($request->condiciones)) {
             foreach ($request->condiciones as $condicion) {
                 if (!empty(trim($condicion))) {
@@ -83,7 +86,7 @@ class PacienteController extends Controller
             }
         }
 
-        // 4. Guardar Medicamentos
+        // 5. Guardar Medicamentos
         if ($request->has('medicamentos') && is_array($request->medicamentos)) {
             foreach ($request->medicamentos as $medicamento) {
                 if (!empty(trim($medicamento))) {
@@ -113,16 +116,26 @@ class PacienteController extends Controller
         $request->validate([
             'nombre'           => 'required|string|max:255',
             'telefono'         => 'nullable|string|max:20',
-            'email'            => 'nullable|email|max:255',
+            'email'            => 'nullable|email|max:150',
             'fecha_nacimiento' => 'nullable|date',
         ]);
 
         // 1. Actualizar datos base
         $paciente->update([
-            'nombre_completo'  => $request->nombre,
-            'telefono'         => $request->telefono,
-            'email'            => $request->email,
-            'fecha_nacimiento' => $request->fecha_nacimiento,
+            'nombre_completo'         => $request->nombre,
+            'rut'                     => strtoupper(trim($request->rut)),
+            'fecha_nacimiento'        => $request->fecha_nacimiento,
+            'genero'                  => $request->genero,
+            'estado_civil'            => $request->estado_civil,
+            'nacionalidad'            => $request->nacionalidad,
+            'grupo_sanguineo'         => $request->grupo_sanguineo,
+            'telefono'                => $request->telefono,
+            'celular'                 => $request->celular,
+            'email'                   => $request->email,
+            'direccion'               => $request->direccion,
+            'contacto_emerg_nombre'   => $request->contacto_emerg_nombre,
+            'contacto_emerg_relacion' => $request->contacto_emerg_relacion,
+            'contacto_emerg_telefono' => $request->contacto_emerg_telefono,
         ]);
 
         // 2. Sincronizar Alergias

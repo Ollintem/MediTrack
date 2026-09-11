@@ -14,7 +14,7 @@ class LoginController extends Controller
     public function showLoginForm()
     {
         if (Auth::check()) {
-            return redirect()->route('personal.index');
+            return redirect()->route('home'); // Redirige al inicio/dashboard si ya hay sesión
         }
 
         return view('auth.login');
@@ -35,29 +35,36 @@ class LoginController extends Controller
             'password.size'     => 'La contraseña debe tener exactamente 8 caracteres.',
         ]);
 
-        // 2. Formatear correo si ingresaron solo el usuario
+        // 2. Formatear correo si ingresaron solo el nombre de usuario
         $inputEmail = strtolower(trim($request->email));
 
         if (!str_contains($inputEmail, '@')) {
             $inputEmail .= '@meditrack.com';
         }
 
+        // 3. Credenciales incluyendo verificación explícita del estado "Activo"
         $credentials = [
             'email'    => $inputEmail,
             'password' => $request->password,
+            'estado'   => 'Activo',
         ];
 
-        // 3. Intentar autenticar
+        // 4. Intentar autenticar
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
             
-            // Redirigir de forma explícita a la ruta nombrada de personal
-            return redirect()->route('personal.index');
+            // Actualizar fecha/hora del último inicio de sesión
+            $user = Auth::user();
+            $user->ultimo_login = now();
+            $user->save();
+
+            // Redirigir de forma neutral al Dashboard general
+            return redirect()->intended(route('home'));
         }
 
-        // 4. Si falla, regresar con error
+        // 5. Si falla, regresar con mensaje explícito
         return back()->withErrors([
-            'email' => 'Las credenciales ingresadas no coinciden con nuestros registros.',
+            'email' => 'Las credenciales ingresadas no coinciden o la cuenta está inactiva.',
         ])->onlyInput('email');
     }
 

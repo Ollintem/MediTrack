@@ -67,57 +67,77 @@ class User extends Authenticatable
     }
 
     /**
+     * Accessor para obtener el nombre completo del médico desde la tabla 'personals' o 'users'.
+     */
+    /**
+ * Obtener el nombre completo del médico desde la tabla 'personals' o 'users'.
+ */
+    public function getNombreCompletoAttribute(): string
+    {
+    // 1. Obtener directamente de la tabla 'personals' (columna nombre_completo)
+    if ($this->personal && !empty($this->personal->nombre_completo)) {
+        return $this->personal->nombre_completo;
+    }
+
+    // 2. Si no tiene registro en 'personals', tomar de la tabla 'users'
+    $nombreUser = $this->nombre_completo ?? $this->nombre ?? $this->name ?? '';
+
+    return !empty($nombreUser) ? $nombreUser : 'Médico en Sesión';
+    }
+
+    /**
      * Determina si el usuario tiene permiso para realizar una acción en un módulo.
      */
     public function tienePermiso($nombreModulo, $accion = 'ver')
-{
-    // 1. EL SUPER ADMIN INICIAL (ID 1) TIENE ACCESO TOTAL SIEMPRE
-    if ($this->id === 1) {
-        return true;
-    }
+    {
+        // 1. EL SUPER ADMIN INICIAL (ID 1) TIENE ACCESO TOTAL SIEMPRE
+        if ($this->id === 1) {
+            return true;
+        }
 
-    // Cargar la relación si aún no está en memoria
-    if (!$this->relationLoaded('rol')) {
-        $this->load('rol.permisos.modulo');
-    }
+        // Cargar la relación si aún no está en memoria
+        if (!$this->relationLoaded('rol')) {
+            $this->load('rol.permisos.modulo');
+        }
 
-    if (!$this->rol) {
-        return false;
-    }
-
-    // 2. SOLO ADMINISTRADORES GLOBALES TIENEN ACCESO TOTAL AUTOMÁTICO
-    $nombreRol = strtolower(trim($this->rol->nombre));
-    if (in_array($nombreRol, ['administrador', 'admin', 'super admin', 'superadministrador'])) {
-        return true;
-    }
-
-    // 3. EVALUACIÓN DE REGISTROS EN BD PARA TODOS LOS DEMÁS ROLES
-    $permisos = $this->rol->permisos;
-    if (!$permisos) {
-        return false;
-    }
-
-    $permiso = $permisos->first(function ($p) use ($nombreModulo) {
-        return $p->modulo && strtolower(trim($p->modulo->nombre)) === strtolower(trim($nombreModulo));
-    });
-
-    if (!$permiso) {
-        return false;
-    }
-
-    switch (strtolower($accion)) {
-        case 'ver':
-            return (bool) $permiso->puede_ver;
-        case 'crear':
-            return (bool) $permiso->puede_crear;
-        case 'editar':
-            return (bool) $permiso->puede_editar;
-        case 'eliminar':
-            return (bool) $permiso->puede_eliminar;
-        default:
+        if (!$this->rol) {
             return false;
+        }
+
+        // 2. SOLO ADMINISTRADORES GLOBALES TIENEN ACCESO TOTAL AUTOMÁTICO
+        $nombreRol = strtolower(trim($this->rol->nombre));
+        if (in_array($nombreRol, ['administrador', 'admin', 'super admin', 'superadministrador'])) {
+            return true;
+        }
+
+        // 3. EVALUACIÓN DE REGISTROS EN BD PARA TODOS LOS DEMÁS ROLES
+        $permisos = $this->rol->permisos;
+        if (!$permisos) {
+            return false;
+        }
+
+        $permiso = $permisos->first(function ($p) use ($nombreModulo) {
+            return $p->modulo && strtolower(trim($p->modulo->nombre)) === strtolower(trim($nombreModulo));
+        });
+
+        if (!$permiso) {
+            return false;
+        }
+
+        switch (strtolower($accion)) {
+            case 'ver':
+                return (bool) $permiso->puede_ver;
+            case 'crear':
+                return (bool) $permiso->puede_crear;
+            case 'editar':
+                return (bool) $permiso->puede_editar;
+            case 'eliminar':
+                return (bool) $permiso->puede_eliminar;
+            default:
+                return false;
+        }
     }
-}
+
     /**
      * Determina si el usuario es el Super Admin del sistema.
      */

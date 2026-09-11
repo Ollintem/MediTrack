@@ -90,7 +90,7 @@
         }
         .firma-box {
             display: inline-block;
-            width: 260px;
+            width: 280px;
             text-align: center;
         }
         .firma-espacio {
@@ -130,6 +130,10 @@
 </head>
 <body>
 
+    @php
+        $medicoImpresion = $receta->personal->nombre_completo ?? auth()->user()->personal->nombre_completo ?? auth()->user()->nombre_completo;
+    @endphp
+
     <!-- Encabezado -->
     <div class="header">
         <table>
@@ -140,7 +144,7 @@
                 </td>
                 <td style="text-align: right;">
                     <strong style="color: #0d9488; font-size: 13px;">N° Receta: #{{ str_pad($receta->id, 5, '0', STR_PAD_LEFT) }}</strong><br>
-                    <span style="color: #64748b;">Fecha: {{ \Carbon\Carbon::parse($receta->fecha_emision)->format('d/m/Y') }}</span>
+                    <span style="color: #64748b;">Fecha: {{ \Carbon\Carbon::parse($receta->fecha_emision ?? $receta->fecha)->format('d/m/Y') }}</span>
                 </td>
             </tr>
         </table>
@@ -150,11 +154,13 @@
     <div class="info-box">
         <table>
             <tr>
-                <td><strong>Paciente:</strong> {{ $receta->paciente->nombre ?? 'N/A' }} {{ $receta->paciente->apellido ?? '' }}</td>
+                <td><strong>Paciente:</strong> {{ $receta->paciente->nombre_completo ?? trim(($receta->paciente->nombre ?? 'N/A') . ' ' . ($receta->paciente->apellido ?? '')) }}</td>
                 <td><strong>Edad:</strong> {{ $receta->paciente->edad ?? 'N/A' }}</td>
             </tr>
             <tr>
-                <td colspan="2"><strong>Atendido Por:</strong> {{ $receta->personal->nombre ?? 'Dr. Asignado' }}</td>
+                <td colspan="2">
+                    <strong>Atendido Por:</strong> Dr. {{ $medicoImpresion }}
+                </td>
             </tr>
         </table>
     </div>
@@ -189,21 +195,23 @@
     @endif
 
     <!-- ÁREA DE FIRMA DEL MÉDICO -->
-    <div class="firma-container">
-        <div class="firma-box">
-            <div class="firma-espacio">
-                @if(isset($receta->personal->firma) && $receta->personal->firma)
-                    <img src="{{ public_path('storage/' . $receta->personal->firma) }}" alt="Firma Médica">
-                @endif
-            </div>
-            <div class="firma-linea"></div>
-            <div class="medico-nombre">{{ $receta->personal->nombre ?? 'Dr. Asignado' }}</div>
-            <div class="medico-cedula">
-                Cédula Profesional: {{ $receta->personal->cedula ?? 'CÉD. PROF. EN TÁMITE' }}
-            </div>
-            <div style="font-size: 9px; color: #94a3b8; margin-top: 2px;">Firma y Sello del Médico Tratante</div>
+<div class="firma-container">
+    <div class="firma-box">
+        <div class="firma-espacio">
+            @if(isset($receta->personal->firma) && $receta->personal->firma)
+                <img src="{{ public_path('storage/' . $receta->personal->firma) }}" alt="Firma Médica">
+            @endif
         </div>
+        <div class="firma-linea"></div>
+        <div class="medico-nombre">
+            Dr. {{ $medicoImpresion }}
+        </div>
+        <div class="medico-cedula">
+            Cédula Profesional: {{ $receta->personal->rut ?? auth()->user()->personal->rut ?? 'CÉD. PROF. EN TÁMITE' }}
+        </div>
+        <div style="font-size: 9px; color: #94a3b8; margin-top: 2px;">Firma y Sello del Médico Tratante</div>
     </div>
+</div>
 
     <div class="footer-note">
         Este documento es una representación impresa de una receta médica generada mediante el sistema MediTrack.

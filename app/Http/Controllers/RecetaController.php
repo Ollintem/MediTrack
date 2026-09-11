@@ -38,37 +38,32 @@ class RecetaController extends Controller
         ]);
 
         DB::transaction(function () use ($request) {
-            // Se valida la existencia del personal en la tabla 'personals'
-            $personalId = auth()->user()->personal_id ?? null;
+    $user = auth()->user();
 
-            if ($personalId && !Personal::where('id', $personalId)->exists()) {
-                $personalId = null;
-            }
+    // Obtener el registro de personal asociado al usuario
+    $personalId = $user->personal?->id 
+        ?? Personal::where('user_id', $user->id)->value('id') 
+        ?? Personal::first()?->id;
 
-            // Si es nulo, tomar el primer personal disponible como respaldo
-            if (!$personalId) {
-                $personalId = Personal::first()?->id;
-            }
+    $receta = Receta::create([
+        'paciente_id' => $request->paciente_id,
+        'personal_id' => $personalId,
+        'fecha' => $request->fecha_emision,
+        'fecha_emision' => $request->fecha_emision,
+        'indicaciones_generales' => $request->indicaciones_generales,
+    ]);
 
-            $receta = Receta::create([
-                'paciente_id' => $request->paciente_id,
-                'personal_id' => $personalId,
-                'fecha' => $request->fecha_emision,
-                'fecha_emision' => $request->fecha_emision,
-                'indicaciones_generales' => $request->indicaciones_generales,
+    foreach ($request->medicamentos as $med) {
+        if (!empty($med['nombre'])) {
+            RecetaDetalle::create([
+                'receta_id' => $receta->id,
+                'medicamento' => $med['nombre'],
+                'dosis' => $med['dosis'] ?? null,
+                'frecuencia' => $med['frecuencia'] ?? null,
             ]);
-
-            foreach ($request->medicamentos as $med) {
-                if (!empty($med['nombre'])) {
-                    RecetaDetalle::create([
-                        'receta_id' => $receta->id,
-                        'medicamento' => $med['nombre'],
-                        'dosis' => $med['dosis'] ?? null,
-                        'frecuencia' => $med['frecuencia'] ?? null,
-                    ]);
-                }
-            }
-        });
+        }
+    }
+});
 
         return redirect()->route('recetas.index')->with('success', 'Receta médica generada correctamente.');
     }

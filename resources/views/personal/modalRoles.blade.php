@@ -61,7 +61,23 @@
                                 <tbody class="divide-y divide-gray-100 bg-white">
                                     @php
                                         $modulosList = $modulos ?? \App\Models\Modulo::all();
+                                        $iconosModulos = [
+                                        'Dashboard'    => 'bi-grid-fill',
+                                        'Pacientes'    => 'bi-people',
+                                        'Citas'        => 'bi-calendar-event',
+                                        'Consultas'    => 'bi-file-earmark-medical',
+                                        'Consultorios' => 'bi-building',
+                                        'Facturación'  => 'bi-credit-card',
+                                        'Recetas'      => 'bi-file-earmark-medical',
+                                        'Inventario'   => 'bi-box-seam',
+                                        'Personal'     => 'bi-person-badge',
+                                        'Roles'        => 'bi-shield-lock',
+                                        'Reportes'     => 'bi-graph-up',
+                                        'Configuración'=> 'bi-gear',
+                                        'Bitácora'     => 'bi-journal-text',
+                                         ];
                                     @endphp
+                                    
                                     @foreach ($modulosList as $mod)
                                         <tr class="hover:bg-teal-50/30 transition-colors">
                                             <td class="p-3.5 font-bold text-gray-800">
