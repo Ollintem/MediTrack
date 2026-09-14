@@ -21,6 +21,19 @@ class Paciente extends Model
         'estado'
     ];
 
+    public function getEdadCalculadaAttribute()
+{
+    if (!empty($this->edad)) {
+        return $this->edad . ' años';
+    }
+
+    if (!empty($this->fecha_nacimiento)) {
+        return \Carbon\Carbon::parse($this->fecha_nacimiento)->age . ' años';
+    }
+
+    return 'N/A';
+}
+
     // Accessor para que $paciente->nombre devuelva $paciente->nombre_completo en las vistas
     public function getNombreAttribute()
     {

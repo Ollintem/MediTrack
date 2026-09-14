@@ -11,6 +11,7 @@ use App\Http\Controllers\RecetaController;
 use App\Http\Controllers\ConsultaController;
 use App\Http\Controllers\ConsultorioController;
 use App\Http\Controllers\BitacoraController;
+use App\Http\Controllers\ConfiguracionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -30,7 +31,12 @@ Auth::routes([
 ]);
 
 // 3. Rutas Protegidas por Autenticación
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth'])->group(function () {      
+
+    // Configuración del Sistema (Acceso solo para Administradores)
+    Route::get('/configuracion', [ConfiguracionController::class, 'index'])->name('configuracion.index');
+    Route::put('/configuracion', [ConfiguracionController::class, 'update'])->name('configuracion.update');
+
 
     // Panel Principal (Dashboard) - Acceso libre para cualquier usuario logueado
     Route::get('/home', [HomeController::class, 'index'])->name('home');

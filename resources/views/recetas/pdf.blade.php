@@ -39,13 +39,28 @@
             border: 1px solid #e2e8f0;
             padding: 10px 12px;
             border-radius: 8px;
-            margin-bottom: 15px;
+            margin-bottom: 12px;
         }
         .info-box table {
             width: 100%;
         }
         .info-box td {
             padding: 3px 0;
+        }
+        .vitals-box {
+            background-color: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 8px 10px;
+            margin-bottom: 15px;
+            font-size: 10px;
+        }
+        .vitals-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .vitals-table td {
+            padding: 3px 6px;
         }
         .section-title {
             font-size: 11px;
@@ -75,16 +90,15 @@
             padding: 8px;
         }
         .indicaciones-box {
-            background-color: #f1f5f9;
+            background-color: #f8fafc;
             border-left: 3px solid #0d9488;
             padding: 8px 12px;
-            margin-bottom: 25px;
+            margin-bottom: 20px;
             font-style: italic;
             color: #334155;
         }
-        
         .firma-container {
-            margin-top: 40px;
+            margin-top: 35px;
             width: 100%;
             text-align: center;
         }
@@ -94,11 +108,11 @@
             text-align: center;
         }
         .firma-espacio {
-            height: 55px;
+            height: 50px;
             margin-bottom: 5px;
         }
         .firma-espacio img {
-            max-height: 50px;
+            max-height: 48px;
             max-width: 180px;
         }
         .firma-linea {
@@ -131,7 +145,28 @@
 <body>
 
     @php
-        $medicoImpresion = $receta->personal->nombre_completo ?? auth()->user()->personal->nombre_completo ?? auth()->user()->nombre_completo;
+        $personalReceta = $receta->personal ?? auth()->user()->personal ?? null;
+        $medicoImpresion = $personalReceta->nombre_completo ?? auth()->user()->nombre_completo;
+        
+        $cedulaImpresion = $personalReceta->rut 
+            ?? $personalReceta->numero_registro 
+            ?? $personalReceta->cedula 
+            ?? auth()->user()->personal->rut 
+            ?? auth()->user()->personal->numero_registro 
+            ?? null;
+
+        $pac = $receta->paciente;
+        $edadPaciente = 'N/A';
+
+        if ($pac) {
+            if (!empty($pac->edad)) {
+                $edadPaciente = $pac->edad . ' años';
+            } elseif (!empty($pac->fecha_nacimiento)) {
+                $edadPaciente = \Carbon\Carbon::parse($pac->fecha_nacimiento)->age . ' años';
+            }
+        }
+
+        $sv = $receta->signoVital;
     @endphp
 
     <!-- Encabezado -->
@@ -150,12 +185,12 @@
         </table>
     </div>
 
-    <!-- Datos del Paciente -->
+    <!-- Datos del Paciente y Médico -->
     <div class="info-box">
         <table>
             <tr>
-                <td><strong>Paciente:</strong> {{ $receta->paciente->nombre_completo ?? trim(($receta->paciente->nombre ?? 'N/A') . ' ' . ($receta->paciente->apellido ?? '')) }}</td>
-                <td><strong>Edad:</strong> {{ $receta->paciente->edad ?? 'N/A' }}</td>
+                <td><strong>Paciente:</strong> {{ $pac->nombre_completo ?? trim(($pac->nombre ?? 'N/A') . ' ' . ($pac->apellido ?? '')) }}</td>
+                <td style="text-align: right;"><strong>Edad:</strong> {{ $edadPaciente }}</td>
             </tr>
             <tr>
                 <td colspan="2">
@@ -164,6 +199,50 @@
             </tr>
         </table>
     </div>
+
+    <!-- Bloque de Signos Vitales (Consultado directamente de la tabla 'signos_vitales') -->
+    @if($sv && ($sv->pa_sistolica || $sv->frecuencia_cardiaca || $sv->temperatura || $sv->peso_kg || $sv->talla_cm || $sv->saturacion_oxigeno))
+        <div class="vitals-box">
+            <strong style="color: #0d9488; text-transform: uppercase; font-size: 9px; display: block; margin-bottom: 4px;">Signos Vitales del Paciente:</strong>
+            <table class="vitals-table">
+                <tr>
+                    @if($sv->pa_sistolica && $sv->pa_diastolica)
+                        <td><strong>T/A:</strong> {{ $sv->pa_sistolica }}/{{ $sv->pa_diastolica }} mmHg</td>
+                    @elseif($sv->pa_sistolica)
+                        <td><strong>P.A.:</strong> {{ $sv->pa_sistolica }} mmHg</td>
+                    @endif
+
+                    @if($sv->frecuencia_cardiaca)
+                        <td><strong>F.C.:</strong> {{ $sv->frecuencia_cardiaca }} bpm</td>
+                    @endif
+
+                    @if($sv->frecuencia_respiratoria)
+                        <td><strong>F.R.:</strong> {{ $sv->frecuencia_respiratoria }} rpm</td>
+                    @endif
+
+                    @if($sv->temperatura)
+                        <td><strong>Temp:</strong> {{ $sv->temperatura }} °C</td>
+                    @endif
+
+                    @if($sv->peso_kg)
+                        <td><strong>Peso:</strong> {{ $sv->peso_kg }} kg</td>
+                    @endif
+
+                    @if($sv->talla_cm)
+                        <td><strong>Talla:</strong> {{ $sv->talla_cm }} cm</td>
+                    @endif
+
+                    @if($sv->imc)
+                        <td><strong>IMC:</strong> {{ $sv->imc }}</td>
+                    @endif
+
+                    @if($sv->saturacion_oxigeno)
+                        <td><strong>SpO2:</strong> {{ $sv->saturacion_oxigeno }} %</td>
+                    @endif
+                </tr>
+            </table>
+        </div>
+    @endif
 
     <!-- Prescripción Médica -->
     <div class="section-title">Medicamentos Prescritos</div>
@@ -195,23 +274,23 @@
     @endif
 
     <!-- ÁREA DE FIRMA DEL MÉDICO -->
-<div class="firma-container">
-    <div class="firma-box">
-        <div class="firma-espacio">
-            @if(isset($receta->personal->firma) && $receta->personal->firma)
-                <img src="{{ public_path('storage/' . $receta->personal->firma) }}" alt="Firma Médica">
-            @endif
+    <div class="firma-container">
+        <div class="firma-box">
+            <div class="firma-espacio">
+                @if(isset($personalReceta->firma) && $personalReceta->firma)
+                    <img src="{{ public_path('storage/' . $personalReceta->firma) }}" alt="Firma Médica">
+                @endif
+            </div>
+            <div class="firma-linea"></div>
+            <div class="medico-nombre">
+                Dr. {{ $medicoImpresion }}
+            </div>
+            <div class="medico-cedula">
+                Cédula Profesional / RUT: {{ !empty($cedulaImpresion) ? $cedulaImpresion : 'CÉD. PROF. EN TÁMITE' }}
+            </div>
+            <div style="font-size: 9px; color: #94a3b8; margin-top: 2px;">Firma y Sello del Médico Tratante</div>
         </div>
-        <div class="firma-linea"></div>
-        <div class="medico-nombre">
-            Dr. {{ $medicoImpresion }}
-        </div>
-        <div class="medico-cedula">
-            Cédula Profesional: {{ $receta->personal->rut ?? auth()->user()->personal->rut ?? 'CÉD. PROF. EN TÁMITE' }}
-        </div>
-        <div style="font-size: 9px; color: #94a3b8; margin-top: 2px;">Firma y Sello del Médico Tratante</div>
     </div>
-</div>
 
     <div class="footer-note">
         Este documento es una representación impresa de una receta médica generada mediante el sistema MediTrack.

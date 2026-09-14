@@ -176,7 +176,15 @@
             <i class="bi bi-journal-text text-base"></i> <span>Bitácora</span>
         </a>
         @endif
-    </nav>
+
+        @if($tienePermiso('Configuración'))
+        <a href="{{ route('configuracion.index') }}" 
+        class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all {{ request()->routeIs('configuracion.*') ? 'bg-teal-600 text-white shadow-md shadow-teal-600/20' : 'text-gray-600 hover:bg-teal-50 hover:text-teal-700' }}">
+        <i class="bi bi-gear-fill text-lg"></i>
+        <span>Configuración</span>
+        </a>
+        @endif
+        </nav>
            
     
     </aside>

@@ -159,15 +159,18 @@
     $tieneAcceso = $permiso && ($permiso->puede_ver || $permiso->puede_crear || $permiso->puede_editar || $permiso->puede_eliminar);
     
     $iconos = [
-        'Pacientes' => 'bi-people-fill',
-        'Citas' => 'bi-calendar-event-fill',
-        'Facturación' => 'bi-credit-card-fill',
-        'Inventario' => 'bi-box-seam-fill',
-        'Personal' => 'bi-person-badge-fill',
-        'Roles' => 'bi-shield-lock-fill',
-        'Reportes' => 'bi-graph-up-arrow',
-        'Configuración' => 'bi-gear-fill', // <-- Asegúrate de que esta coma esté presente
-        'Recetas' => 'bi-file-earmark-medical-fill'
+        'Pacientes'     => 'bi-people-fill',
+        'Citas'         => 'bi-calendar-event-fill',
+        'Facturación'   => 'bi-credit-card-fill',
+        'Inventario'    => 'bi-box-seam-fill',
+        'Personal'      => 'bi-person-badge-fill',
+        'Roles'         => 'bi-shield-lock-fill',
+        'Reportes'      => 'bi-graph-up-arrow',
+        'Configuración' => 'bi-gear-fill',
+        'Recetas'       => 'bi-file-earmark-medical-fill',
+        'Consultas'     => 'bi-file-earmark-medical-fill',
+        'Consultorios'  => 'bi-building-fill',
+        'Bitácora'      => 'bi-journal-text'
     ];
     $iconoModulo = $iconos[$mod->nombre] ?? 'bi-app-indicator';
 @endphp

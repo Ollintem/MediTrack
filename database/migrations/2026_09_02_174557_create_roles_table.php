@@ -8,9 +8,9 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('rols', function (Blueprint $table) {
-            $table->id();
-            $table->string('nombre')->unique();
+        Schema::create('roles', function (Blueprint $table) {
+            $table->id(); // Genera id como BIGINT UNSIGNED Autoincrement
+            $table->string('nombre');
             $table->string('descripcion')->nullable();
             $table->timestamps();
         });
@@ -18,6 +18,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('rols');
+        Schema::dropIfExists('roles');
     }
 };

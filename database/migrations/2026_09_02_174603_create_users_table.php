@@ -10,18 +10,17 @@ return new class extends Migration
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
-            
-            // Permitir valores nulos para el registro inicial
-            $table->foreignId('clinica_id')->nullable()->constrained('clinicas')->onDelete('set null');
-            $table->foreignId('rol_id')->nullable()->constrained('roles')->onDelete('set null');
-            
-            $table->string('nombre')->nullable();
-            $table->string('apellido')->nullable();
+            $table->string('name');
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
-            $table->enum('estado', ['Activo', 'Inactivo'])->default('Activo');
-            $table->timestamp('ultimo_login')->nullable();
+            
+            // Relación con roles: DEBE ser nullable() si usas 'on delete set null'
+            $table->foreignId('rol_id')
+                  ->nullable()
+                  ->constrained('roles')
+                  ->onDelete('set null');
+
             $table->rememberToken();
             $table->timestamps();
         });

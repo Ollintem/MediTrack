@@ -33,12 +33,20 @@ class PacienteController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'primer_nombre'    => 'required|string|max:80',
-            'apellido_paterno' => 'required|string|max:80',
-            'apellido_materno' => 'nullable|string|max:80',
-            'telefono'         => 'nullable|string|max:20',
-            'email'            => 'nullable|email|max:150',
-            'fecha_nacimiento' => 'nullable|date',
+            'primer_nombre'            => 'required|string|max:80',
+            'apellido_paterno'         => 'required|string|max:80',
+            'apellido_materno'         => 'nullable|string|max:80',
+            'rut'                      => 'nullable|string|max:20|unique:pacientes,rut', // <-- Evita la duplicación de CURP
+            'telefono'                 => 'nullable|digits:10',
+            'celular'                  => 'nullable|digits:10',
+            'contacto_emerg_telefono' => 'nullable|digits:10',
+            'email'                    => 'nullable|email|max:150',
+            'fecha_nacimiento'         => 'nullable|date',
+        ], [
+            'rut.unique' => 'La CURP ingresada ya se encuentra registrada con otro paciente.',
+            'telefono.digits' => 'El teléfono principal debe contener exactamente 10 dígitos.',
+            'celular.digits' => 'El celular debe contener exactamente 10 dígitos.',
+            'contacto_emerg_telefono.digits' => 'El teléfono de emergencia debe contener exactamente 10 dígitos.'
         ]);
 
         // 1. Concatenar los nombres recibidos en una sola cadena limpia
@@ -68,20 +76,24 @@ class PacienteController extends Controller
             'estado'                  => 'Activo',
         ]);
 
-        // 3. Guardar Alergias
+        // 3. Guardar Alergias (usando 'descripcion')
         if ($request->has('alergias') && is_array($request->alergias)) {
             foreach ($request->alergias as $alergia) {
                 if (!empty(trim($alergia))) {
-                    $paciente->alergias()->create(['nombre' => trim($alergia)]);
+                    $paciente->alergias()->create([
+                        'descripcion' => mb_strtoupper(trim($alergia), 'UTF-8')
+                    ]);
                 }
             }
         }
 
-        // 4. Guardar Condiciones
+        // 4. Guardar Condiciones (usando 'descripcion')
         if ($request->has('condiciones') && is_array($request->condiciones)) {
             foreach ($request->condiciones as $condicion) {
                 if (!empty(trim($condicion))) {
-                    $paciente->condiciones()->create(['nombre' => trim($condicion)]);
+                    $paciente->condiciones()->create([
+                        'descripcion' => mb_strtoupper(trim($condicion), 'UTF-8')
+                    ]);
                 }
             }
         }
@@ -90,7 +102,9 @@ class PacienteController extends Controller
         if ($request->has('medicamentos') && is_array($request->medicamentos)) {
             foreach ($request->medicamentos as $medicamento) {
                 if (!empty(trim($medicamento))) {
-                    $paciente->medicamentos()->create(['nombre' => trim($medicamento)]);
+                    $paciente->medicamentos()->create([
+                        'nombre' => mb_strtoupper(trim($medicamento), 'UTF-8')
+                    ]);
                 }
             }
         }

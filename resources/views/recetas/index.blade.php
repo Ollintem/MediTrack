@@ -18,6 +18,7 @@
     openCreateModal: false, 
     openPrintModal: false,
     printReceta: {},
+    searchQuery: '',
     medicamentosLista: [
         { nombre: '', dosis: '', frecuencia: '' }
     ],
@@ -65,10 +66,19 @@
         </div>
     @endif
 
-    <!-- TABLA DE RECETAS -->
+    <!-- TABLA DE RECETAS CON BUSCADOR INTEGRADO -->
     <div class="bg-white rounded-3xl border border-gray-200/80 shadow-sm overflow-hidden animate-stagger">
-        <div class="p-6 border-b border-gray-100 flex items-center justify-between">
-            <h3 class="font-extrabold text-gray-800 text-base">Historial de Recetas Emitidas</h3>
+        <div class="p-6 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h3 class="font-extrabold text-gray-800 text-base">Historial de Recetas Emitidas</h3>
+                <p class="text-xs text-gray-400">Listado general de prescripciones médicas</p>
+            </div>
+
+            <!-- BUSCADOR PRINCIPAL TABLA -->
+            <div class="relative w-full md:w-80">
+                <i class="bi bi-search absolute left-3.5 top-3 text-gray-400 text-xs"></i>
+                <input type="text" x-model="searchQuery" placeholder="Buscar por paciente, médico o folio..." class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-gray-200 rounded-2xl text-xs font-medium focus:ring-2 focus:ring-teal-500 focus:bg-white transition-all outline-none">
+            </div>
         </div>
 
         <div class="overflow-x-auto">
@@ -85,20 +95,26 @@
                 </thead>
                 <tbody class="divide-y divide-gray-100 text-gray-700">
                     @forelse ($recetas as $rec)
-                        <tr class="hover:bg-slate-50/60 transition-colors">
-                            <td class="p-4 font-extrabold text-teal-700">#{{ str_pad($rec->id, 5, '0', STR_PAD_LEFT) }}</td>
+                        @php
+                            $nombrePac = $rec->paciente->nombre_completo ?? trim(($rec->paciente->nombre ?? 'N/A') . ' ' . ($rec->paciente->apellido ?? ''));
+                            $nombreMed = 'Dr. ' . ($rec->personal->nombre_completo ?? auth()->user()->nombre_completo);
+                            $folio = '#' . str_pad($rec->id, 5, '0', STR_PAD_LEFT);
+                            $fechaFmt = \Carbon\Carbon::parse($rec->fecha_emision ?? $rec->fecha)->format('d/m/Y');
+                        @endphp
+                        <tr class="hover:bg-slate-50/60 transition-colors" x-show="!searchQuery || '{{ strtolower($folio) }}'.includes(searchQuery.toLowerCase()) || '{{ strtolower($nombrePac) }}'.includes(searchQuery.toLowerCase()) || '{{ strtolower($nombreMed) }}'.includes(searchQuery.toLowerCase()) || '{{ $fechaFmt }}'.includes(searchQuery.toLowerCase())">
+                            <td class="p-4 font-extrabold text-teal-700">{{ $folio }}</td>
                             <td class="p-4 font-bold text-gray-800">
-                                {{ $rec->paciente->nombre_completo ?? trim(($rec->paciente->nombre ?? 'N/A') . ' ' . ($rec->paciente->apellido ?? '')) }}
+                                {{ $nombrePac }}
                             </td>
                             <td class="p-4 font-medium">
-                                Dr. {{ $rec->personal->nombre_completo ?? auth()->user()->personal->nombre_completo ?? auth()->user()->nombre_completo }}
+                                {{ $nombreMed }}
                             </td>
                             <td class="p-4">
                                 <span class="bg-teal-50 text-teal-700 px-2.5 py-1 rounded-lg border border-teal-200 font-bold">
                                     {{ $rec->detalles->count() }} Medicamento(s)
                                 </span>
                             </td>
-                            <td class="p-4 font-semibold text-gray-500">{{ \Carbon\Carbon::parse($rec->fecha_emision ?? $rec->fecha)->format('d/m/Y') }}</td>
+                            <td class="p-4 font-semibold text-gray-500">{{ $fechaFmt }}</td>
                             <td class="p-4">
                                 <div class="flex items-center justify-center gap-1.5">
                                     <a href="{{ route('recetas.pdf', $rec->id) }}" target="_blank" class="bg-rose-500 hover:bg-rose-600 text-white p-2 rounded-xl text-xs font-semibold shadow-xs transition-all flex items-center justify-center" title="Descargar / Imprimir PDF">
@@ -147,7 +163,7 @@
                     <div class="space-y-1 text-xs bg-slate-50 p-3 rounded-xl border border-gray-100">
                         <p><strong>Paciente:</strong> <span x-text="printReceta.paciente ? (printReceta.paciente.nombre_completo || `${printReceta.paciente.nombre || ''} ${printReceta.paciente.apellido || ''}`) : 'N/A'"></span></p>
                         <p><strong>Médico:</strong> 
-                            Dr. {{ auth()->user()->personal->nombre_completo ?? auth()->user()->nombre_completo }}
+                            Dr. <span x-text="printReceta.personal ? printReceta.personal.nombre_completo : '{{ auth()->user()->nombre_completo }}'"></span>
                         </p>
                     </div>
 

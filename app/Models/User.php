@@ -20,13 +20,10 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $fillable = [
-        'clinica_id',
-        'rol_id',
-        'nombre',
+        'name',
         'email',
         'password',
-        'estado',
-        'ultimo_login',
+        'rol_id',
     ];
 
     /**
@@ -48,8 +45,6 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
-            'ultimo_login' => 'datetime',
-            'password' => 'hashed',
         ];
     }
 
@@ -67,22 +62,19 @@ class User extends Authenticatable
     }
 
     /**
-     * Accessor para obtener el nombre completo del médico desde la tabla 'personals' o 'users'.
+     * Obtener el nombre completo del médico desde la tabla 'personals' o 'users'.
      */
-    /**
- * Obtener el nombre completo del médico desde la tabla 'personals' o 'users'.
- */
     public function getNombreCompletoAttribute(): string
     {
-    // 1. Obtener directamente de la tabla 'personals' (columna nombre_completo)
-    if ($this->personal && !empty($this->personal->nombre_completo)) {
-        return $this->personal->nombre_completo;
-    }
+        // 1. Obtener directamente de la tabla 'personals' (columna nombre_completo)
+        if ($this->personal && !empty($this->personal->nombre_completo)) {
+            return $this->personal->nombre_completo;
+        }
 
-    // 2. Si no tiene registro en 'personals', tomar de la tabla 'users'
-    $nombreUser = $this->nombre_completo ?? $this->nombre ?? $this->name ?? '';
+        // 2. Si no tiene registro en 'personals', tomar de la tabla 'users'
+        $nombreUser = $this->nombre_completo ?? $this->nombre ?? $this->name ?? '';
 
-    return !empty($nombreUser) ? $nombreUser : 'Médico en Sesión';
+        return !empty($nombreUser) ? $nombreUser : 'Médico en Sesión';
     }
 
     /**
@@ -144,11 +136,6 @@ class User extends Authenticatable
     public function isSuperAdmin(): bool
     {
         return $this->id === 1;
-    }
-
-    public function clinica()
-    {
-        return $this->belongsTo(Clinica::class, 'clinica_id');
     }
 
     public function rol()

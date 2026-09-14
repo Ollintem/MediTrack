@@ -28,6 +28,12 @@ class Personal extends Model
         return $this->belongsTo(User::class, 'user_id');
     }
 
+    // Alias para compatibilidad con llamadas que busquen ->user
+    public function user()
+    {
+        return $this->usuario();
+    }
+
     public function clinica()
     {
         return $this->belongsTo(Clinica::class, 'clinica_id');
@@ -37,5 +43,4 @@ class Personal extends Model
     {
         return $this->belongsToMany(Especialidad::class, 'personal_especialidad', 'personal_id', 'especialidad_id');
     }
-
 }

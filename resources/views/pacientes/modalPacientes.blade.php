@@ -12,25 +12,129 @@
              x-cloak
              x-data="{
                  tab: 'general',
-                 curp: '',
-                 curpInvalida: false,
-                 alergias: [''],
-                 condiciones: [''],
-                 medicamentos: [''],
                  
-                 // Estados para selects personalizados
-                 genero: '',
-                 openGenero: false,
-                 estadoCivil: '',
-                 openEstadoCivil: false,
-                 grupoSanguineo: '',
-                 openGrupoSanguineo: false,
+                 // Nombres y Apellidos
+                 primerNombre: @js(old('primer_nombre', '')),
+                 apellidoPaterno: @js(old('apellido_paterno', '')),
+                 apellidoMaterno: @js(old('apellido_materno', '')),
 
-                 validarCURP() {
-                     this.curp = this.curp.toUpperCase().trim();
-                     const regexCurp = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
-                     this.curpInvalida = this.curp.length > 0 && !regexCurp.test(this.curp);
+                 // CURP y Fecha
+                 curp: @js(old('rut', '')),
+                 curpInvalida: false,
+                 fechaNacimiento: @js(old('fecha_nacimiento', '')),
+                 errorCoincidenciaFecha: false,
+                 errorCoincidenciaNombre: false,
+
+                 // Contacto
+                 telefono: @js(old('telefono', '')),
+                 celular: @js(old('celular', '')),
+                 email: @js(old('email', '')),
+                 contactoEmergTelefono: @js(old('contacto_emerg_telefono', '')),
+
+                 filtrarNumeros(valor) { 
+                     return (valor || '').replace(/\D/g, '').slice(0, 10); 
                  },
+                 esTelefonoValido(valor) { 
+                     return !valor || valor.length === 10; 
+                 },
+                 esEmailValido(valor) {
+                     if (!valor) return true;
+                     return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(valor);
+                 },
+
+                 // Algoritmo para extraer las 4 iniciales oficiales de la CURP (Reglas RENAPO)
+                 obtenerInicialesCURP() {
+                     let paterno = (this.apellidoPaterno || '').trim().toUpperCase();
+                     let materno = (this.apellidoMaterno || '').trim().toUpperCase();
+                     let nombres = (this.primerNombre || '').trim().toUpperCase().split(/\s+/);
+
+                     if (!paterno || !nombres[0]) return '';
+
+                     // 1. Primera letra del primer apellido
+                     let c1 = paterno.charAt(0);
+
+                     // 2. Primera vocal interna del primer apellido
+                     let vocalInterna = paterno.slice(1).match(/[AEIOU]/);
+                     let c2 = vocalInterna ? vocalInterna[0] : 'X';
+
+                     // 3. Primera letra del segundo apellido (o X)
+                     let c3 = materno ? materno.charAt(0) : 'X';
+
+                     // 4. Primera letra del nombre (omitir JOSE/MARIA si existe un segundo nombre)
+                     let primerNombre = nombres[0];
+                     if ((primerNombre === 'JOSE' || primerNombre === 'MARIA' || primerNombre === 'MA.' || primerNombre === 'MA') && nombres.length > 1) {
+                         primerNombre = nombres[1];
+                     }
+                     let c4 = primerNombre.charAt(0);
+
+                     // Remplazo de 'Ñ' por 'X' según la norma
+                     return `${c1}${c2}${c3}${c4}`.replace(/Ñ/g, 'X');
+                 },
+
+                 // Validar CURP y auto-completar fecha
+                 validarYExtraerCURP() {
+                     this.curp = (this.curp || '').toUpperCase().trim();
+                     const regexCurp = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
+                     
+                     if (this.curp.length === 18 && regexCurp.test(this.curp)) {
+                         this.curpInvalida = false;
+                         
+                         const anioDigitos = parseInt(this.curp.substring(4, 6), 10);
+                         const mes = this.curp.substring(6, 8);
+                         const dia = this.curp.substring(8, 10);
+                         
+                         const anioActualCorto = parseInt(new Date().getFullYear().toString().substr(-2), 10);
+                         const siglo = anioDigitos > anioActualCorto ? '19' : '20';
+                         const anioCompleto = `${siglo}${this.curp.substring(4, 6)}`;
+                         
+                         const fechaCalculada = `${anioCompleto}-${mes}-${dia}`;
+                         if (!isNaN(Date.parse(fechaCalculada))) {
+                             this.fechaNacimiento = fechaCalculada;
+                         }
+                     } else {
+                         this.curpInvalida = this.curp.length > 0 && !regexCurp.test(this.curp);
+                     }
+                     this.validarCoincidencias();
+                 },
+
+                 // Validar Coincidencias de Fecha e Iniciales
+                 validarCoincidencias() {
+                     // 1. Validar Coincidencia de Fecha
+                     const regexCurp = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
+                     if (this.curp.length === 18 && regexCurp.test(this.curp) && this.fechaNacimiento) {
+                         const anioDigitos = this.curp.substring(4, 6);
+                         const mes = this.curp.substring(6, 8);
+                         const dia = this.curp.substring(8, 10);
+
+                         const partesFecha = this.fechaNacimiento.split('-');
+                         if (partesFecha.length === 3) {
+                             const anioInputDigitos = partesFecha[0].substr(-2);
+                             const mesInput = partesFecha[1];
+                             const diaInput = partesFecha[2];
+
+                             this.errorCoincidenciaFecha = (anioDigitos !== anioInputDigitos || mes !== mesInput || dia !== diaInput);
+                         } else {
+                             this.errorCoincidenciaFecha = false;
+                         }
+                     } else {
+                         this.errorCoincidenciaFecha = false;
+                     }
+
+                     // 2. Validar Coincidencia de Iniciales del Nombre
+                     const inicialesEsperadas = this.obtenerInicialesCURP();
+                     if (this.curp.length >= 4 && inicialesEsperadas.length === 4) {
+                         const inicialesCurp = this.curp.substring(0, 4);
+                         this.errorCoincidenciaNombre = (inicialesCurp !== inicialesEsperadas);
+                     } else {
+                         this.errorCoincidenciaNombre = false;
+                     }
+                 },
+
+                 // Ficha médica dinámica
+                 alergias: @js(old('alergias', [''])),
+                 condiciones: @js(old('condiciones', [''])),
+                 medicamentos: @js(old('medicamentos', [''])),
+
                  addAlergia() { this.alergias.push('') },
                  removeAlergia(index) { if(this.alergias.length > 1) this.alergias.splice(index, 1) },
                  addCondicion() { this.condiciones.push('') },
@@ -54,7 +158,7 @@
                     <button @click="openCreateModal = false" type="button" class="text-gray-400 hover:text-gray-600 text-2xl font-bold transition-colors">&times;</button>
                 </div>
 
-                <!-- Navegación por pestañas -->
+                <!-- Pestañas de Navegación -->
                 <div class="flex border-b border-gray-100 bg-slate-50/50 px-6 pt-2 text-xs font-bold gap-2 flex-shrink-0">
                     <button type="button" @click="tab = 'general'" :class="tab === 'general' ? 'bg-white text-teal-700 border-b-2 border-teal-600 shadow-xs' : 'text-gray-500 hover:text-gray-700'" class="px-4 py-2.5 rounded-t-xl transition-all">
                         <i class="bi bi-person-vcard mr-1"></i> Datos Personales
@@ -74,124 +178,85 @@
                         
                         <!-- TAB 1: DATOS PERSONALES -->
                         <div x-show="tab === 'general'" class="space-y-4">
-                            
-                            <!-- Nombre Dividido (3 columnas horizontales siempre) -->
-                            <div class="grid grid-cols-3 gap-3">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div>
                                     <label class="block font-bold text-gray-700 mb-1">Nombre(s) *</label>
-                                    <input type="text" name="primer_nombre" required placeholder="Ej. María" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                                    <input type="text" name="primer_nombre" x-model="primerNombre" @input="validarCoincidencias()" required placeholder="Ej. María" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none uppercase">
                                 </div>
                                 <div>
                                     <label class="block font-bold text-gray-700 mb-1">Apellido Paterno *</label>
-                                    <input type="text" name="apellido_paterno" required placeholder="Ej. Cortés" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                                    <input type="text" name="apellido_paterno" x-model="apellidoPaterno" @input="validarCoincidencias()" required placeholder="Ej. Cortés" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none uppercase">
                                 </div>
                                 <div>
                                     <label class="block font-bold text-gray-700 mb-1">Apellido Materno</label>
-                                    <input type="text" name="apellido_materno" placeholder="Ej. Moreno" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                                    <input type="text" name="apellido_materno" x-model="apellidoMaterno" @input="validarCoincidencias()" placeholder="Ej. Moreno" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none uppercase">
                                 </div>
                             </div>
 
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <!-- CURP con Validación -->
                                 <div>
                                     <label class="block font-bold text-gray-700 mb-1">CURP</label>
-                                    <input type="text" 
-                                           name="rut" 
-                                           x-model="curp" 
-                                           @input="validarCURP()" 
-                                           maxlength="18" 
-                                           placeholder="Ej. CORM031028HDFRR09" 
-                                           :class="curpInvalida ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20' : 'border-gray-300 focus:ring-teal-500'"
-                                           class="w-full border rounded-2xl p-2.5 text-xs focus:ring-2 focus:outline-none uppercase tracking-wider font-semibold transition-all">
+                                    <input type="text" name="rut" x-model="curp" @input="validarYExtraerCURP()" maxlength="18" placeholder="Ej. CORM031028HDFRR09" :class="(curpInvalida || errorCoincidenciaFecha || errorCoincidenciaNombre) ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20' : 'border-gray-300 focus:ring-teal-500'" class="w-full border rounded-2xl p-2.5 text-xs focus:ring-2 focus:outline-none uppercase tracking-wider font-semibold transition-all">
+                                    
                                     <span x-show="curpInvalida" class="text-[10px] text-rose-600 font-bold mt-1 block">
                                         <i class="bi bi-exclamation-circle-fill"></i> El formato de la CURP no es válido (18 caracteres).
                                     </span>
+                                    <span x-show="errorCoincidenciaNombre && !curpInvalida" class="text-[10px] text-rose-600 font-bold mt-1 block">
+                                        <i class="bi bi-exclamation-triangle-fill"></i> Las iniciales de la CURP no coinciden con los nombres/apellidos ingresados.
+                                    </span>
                                 </div>
 
-                                <!-- Fecha de Nacimiento con Flatpickr Personalizado -->
                                 <div>
                                     <label class="block font-bold text-gray-700 mb-1">Fecha de Nacimiento</label>
-                                    <div class="relative" 
-                                         x-init="flatpickr($refs.datepicker, {
-                                             locale: 'es',
-                                             dateFormat: 'Y-m-d',
-                                             maxDate: 'today',
-                                             disableMobile: true
-                                         })">
-                                        <input x-ref="datepicker" 
-                                               type="text" 
-                                               name="fecha_nacimiento" 
-                                               placeholder="Selecciona fecha..." 
-                                               readonly 
-                                               class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white font-medium cursor-pointer pr-8 text-gray-700">
-                                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                                            <i class="bi bi-calendar-event text-xs"></i>
-                                        </div>
-                                    </div>
+                                    <input type="date" name="fecha_nacimiento" x-model="fechaNacimiento" @change="validarCoincidencias()" min="1900-01-01" max="{{ date('Y-m-d') }}" :class="errorCoincidenciaFecha ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20' : 'border-gray-300 focus:ring-teal-500'" class="w-full border rounded-2xl p-2.5 text-xs focus:ring-2 focus:outline-none bg-white font-medium transition-all">
+                                    <span x-show="errorCoincidenciaFecha" class="text-[10px] text-rose-600 font-bold mt-1 block">
+                                        <i class="bi bi-exclamation-triangle-fill"></i> La fecha no coincide con los dígitos de la CURP.
+                                    </span>
                                 </div>
 
-                                <!-- Dropdown Género Personalizado -->
                                 <div>
                                     <label class="block font-bold text-gray-700 mb-1">Género</label>
-                                    <div class="relative" @click.away="openGenero = false">
-                                        <input type="hidden" name="genero" :value="genero">
-                                        <button type="button" @click="openGenero = !openGenero" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs text-left bg-white flex justify-between items-center focus:ring-2 focus:ring-teal-500 focus:outline-none">
-                                            <span x-text="genero ? genero : 'Seleccione género...'" :class="!genero ? 'text-gray-400' : 'text-gray-700'"></span>
-                                            <i class="bi bi-chevron-down text-gray-400 text-xs"></i>
-                                        </button>
-                                        <div x-show="openGenero" x-cloak class="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-2xl shadow-lg overflow-hidden py-1 text-xs">
-                                            <template x-for="item in ['Femenino', 'Masculino', 'Otro']">
-                                                <div @click="genero = item; openGenero = false" 
-                                                     :class="genero === item ? 'bg-teal-50 text-teal-700 font-bold' : 'text-gray-700 hover:bg-teal-50 hover:text-teal-600'" 
-                                                     class="px-3 py-2 cursor-pointer transition-colors" 
-                                                     x-text="item"></div>
-                                            </template>
-                                        </div>
+                                    <div class="relative">
+                                        <select name="genero" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white appearance-none pr-8">
+                                            <option value="">Seleccione género...</option>
+                                            <option value="FEMENINO" {{ old('genero') == 'FEMENINO' ? 'selected' : '' }}>FEMENINO</option>
+                                            <option value="MASCULINO" {{ old('genero') == 'MASCULINO' ? 'selected' : '' }}>MASCULINO</option>
+                                            <option value="OTRO" {{ old('genero') == 'OTRO' ? 'selected' : '' }}>OTRO</option>
+                                        </select>
+                                        <i class="bi bi-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs"></i>
                                     </div>
                                 </div>
 
-                                <!-- Dropdown Estado Civil Personalizado -->
                                 <div>
                                     <label class="block font-bold text-gray-700 mb-1">Estado Civil</label>
-                                    <div class="relative" @click.away="openEstadoCivil = false">
-                                        <input type="hidden" name="estado_civil" :value="estadoCivil">
-                                        <button type="button" @click="openEstadoCivil = !openEstadoCivil" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs text-left bg-white flex justify-between items-center focus:ring-2 focus:ring-teal-500 focus:outline-none">
-                                            <span x-text="estadoCivil ? estadoCivil : 'Seleccione estado civil...'" :class="!estadoCivil ? 'text-gray-400' : 'text-gray-700'"></span>
-                                            <i class="bi bi-chevron-down text-gray-400 text-xs"></i>
-                                        </button>
-                                        <div x-show="openEstadoCivil" x-cloak class="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-2xl shadow-lg overflow-hidden py-1 text-xs">
-                                            <template x-for="item in ['Soltero(a)', 'Casado(a)', 'Divorciado(a)', 'Viudo(a)', 'Unión Libre']">
-                                                <div @click="estadoCivil = item; openEstadoCivil = false" 
-                                                     :class="estadoCivil === item ? 'bg-teal-50 text-teal-700 font-bold' : 'text-gray-700 hover:bg-teal-50 hover:text-teal-600'" 
-                                                     class="px-3 py-2 cursor-pointer transition-colors" 
-                                                     x-text="item"></div>
-                                            </template>
-                                        </div>
+                                    <div class="relative">
+                                        <select name="estado_civil" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white appearance-none pr-8">
+                                            <option value="">Seleccione estado civil...</option>
+                                            <option value="SOLTERO(A)" {{ old('estado_civil') == 'SOLTERO(A)' ? 'selected' : '' }}>SOLTERO(A)</option>
+                                            <option value="CASADO(A)" {{ old('estado_civil') == 'CASADO(A)' ? 'selected' : '' }}>CASADO(A)</option>
+                                            <option value="DIVORCIADO(A)" {{ old('estado_civil') == 'DIVORCIADO(A)' ? 'selected' : '' }}>DIVORCIADO(A)</option>
+                                            <option value="VIUDO(A)" {{ old('estado_civil') == 'VIUDO(A)' ? 'selected' : '' }}>VIUDO(A)</option>
+                                            <option value="UNIÓN LIBRE" {{ old('estado_civil') == 'UNIÓN LIBRE' ? 'selected' : '' }}>UNIÓN LIBRE</option>
+                                        </select>
+                                        <i class="bi bi-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs"></i>
                                     </div>
                                 </div>
 
                                 <div>
                                     <label class="block font-bold text-gray-700 mb-1">Nacionalidad</label>
-                                    <input type="text" name="nacionalidad" placeholder="Ej. Mexicana" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                                    <input type="text" name="nacionalidad" value="{{ old('nacionalidad') }}" placeholder="Ej. MEXICANA" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none uppercase">
                                 </div>
 
-                                <!-- Dropdown Grupo Sanguíneo Personalizado -->
                                 <div>
                                     <label class="block font-bold text-gray-700 mb-1">Grupo Sanguíneo</label>
-                                    <div class="relative" @click.away="openGrupoSanguineo = false">
-                                        <input type="hidden" name="grupo_sanguineo" :value="grupoSanguineo">
-                                        <button type="button" @click="openGrupoSanguineo = !openGrupoSanguineo" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs text-left bg-white flex justify-between items-center focus:ring-2 focus:ring-teal-500 focus:outline-none">
-                                            <span x-text="grupoSanguineo ? grupoSanguineo : 'Seleccione grupo...'" :class="!grupoSanguineo ? 'text-gray-400' : 'text-gray-700'"></span>
-                                            <i class="bi bi-chevron-down text-gray-400 text-xs"></i>
-                                        </button>
-                                        <div x-show="openGrupoSanguineo" x-cloak class="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-2xl shadow-lg overflow-hidden py-1 text-xs max-h-40 overflow-y-auto">
-                                            <template x-for="item in ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-']">
-                                                <div @click="grupoSanguineo = item; openGrupoSanguineo = false" 
-                                                     :class="grupoSanguineo === item ? 'bg-teal-50 text-teal-700 font-bold' : 'text-gray-700 hover:bg-teal-50 hover:text-teal-600'" 
-                                                     class="px-3 py-2 cursor-pointer transition-colors" 
-                                                     x-text="item"></div>
-                                            </template>
-                                        </div>
+                                    <div class="relative">
+                                        <select name="grupo_sanguineo" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white appearance-none pr-8">
+                                            <option value="">Seleccione grupo...</option>
+                                            @foreach(['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'] as $gs)
+                                                <option value="{{ $gs }}" {{ old('grupo_sanguineo') == $gs ? 'selected' : '' }}>{{ $gs }}</option>
+                                            @endforeach
+                                        </select>
+                                        <i class="bi bi-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs"></i>
                                     </div>
                                 </div>
                             </div>
@@ -201,23 +266,32 @@
                         <div x-show="tab === 'contacto'" class="space-y-4">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div>
-                                    <label class="block font-bold text-gray-700 mb-1">Teléfono Principal</label>
-                                    <input type="text" name="telefono" placeholder="Ej. 5551234567" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                                    <label class="block font-bold text-gray-700 mb-1">Teléfono Principal (10 dígitos)</label>
+                                    <input type="text" name="telefono" x-model="telefono" @input="telefono = filtrarNumeros($event.target.value)" maxlength="10" placeholder="Ej. 5551234567" :class="!esTelefonoValido(telefono) ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20' : 'border-gray-300 focus:ring-teal-500'" class="w-full border rounded-2xl p-2.5 text-xs focus:ring-2 focus:outline-none transition-all">
+                                    <span x-show="telefono && telefono.length > 0 && telefono.length < 10" class="text-[10px] text-rose-600 font-bold mt-1 block">
+                                        <i class="bi bi-exclamation-circle-fill"></i> Debe contener exactamente 10 dígitos.
+                                    </span>
                                 </div>
 
                                 <div>
-                                    <label class="block font-bold text-gray-700 mb-1">Celular</label>
-                                    <input type="text" name="celular" placeholder="Ej. 5510445986" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                                    <label class="block font-bold text-gray-700 mb-1">Celular (10 dígitos)</label>
+                                    <input type="text" name="celular" x-model="celular" @input="celular = filtrarNumeros($event.target.value)" maxlength="10" placeholder="Ej. 5510445986" :class="!esTelefonoValido(celular) ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20' : 'border-gray-300 focus:ring-teal-500'" class="w-full border rounded-2xl p-2.5 text-xs focus:ring-2 focus:outline-none transition-all">
+                                    <span x-show="celular && celular.length > 0 && celular.length < 10" class="text-[10px] text-rose-600 font-bold mt-1 block">
+                                        <i class="bi bi-exclamation-circle-fill"></i> Debe contener exactamente 10 dígitos.
+                                    </span>
                                 </div>
 
                                 <div class="col-span-1 md:col-span-2">
                                     <label class="block font-bold text-gray-700 mb-1">Correo Electrónico</label>
-                                    <input type="email" name="email" placeholder="paciente@ejemplo.com" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                                    <input type="email" name="email" x-model="email" placeholder="paciente@ejemplo.com" :class="!esEmailValido(email) ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20' : 'border-gray-300 focus:ring-teal-500'" class="w-full border rounded-2xl p-2.5 text-xs focus:ring-2 focus:outline-none transition-all">
+                                    <span x-show="!esEmailValido(email)" class="text-[10px] text-rose-600 font-bold mt-1 block">
+                                        <i class="bi bi-exclamation-circle-fill"></i> Ingrese una dirección de correo válida.
+                                    </span>
                                 </div>
 
                                 <div class="col-span-1 md:col-span-2">
                                     <label class="block font-bold text-gray-700 mb-1">Dirección Particular</label>
-                                    <input type="text" name="direccion" placeholder="Calle, Número, Colonia, Ciudad" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                                    <input type="text" name="direccion" value="{{ old('direccion') }}" placeholder="Calle, Número, Colonia, Ciudad" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none uppercase">
                                 </div>
                             </div>
 
@@ -228,15 +302,18 @@
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                                     <div>
                                         <label class="block font-bold text-gray-700 mb-1">Nombre Contacto</label>
-                                        <input type="text" name="contacto_emerg_nombre" placeholder="Familiar o Tutor" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                                        <input type="text" name="contacto_emerg_nombre" value="{{ old('contacto_emerg_nombre') }}" placeholder="Familiar o Tutor" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none uppercase">
                                     </div>
                                     <div>
                                         <label class="block font-bold text-gray-700 mb-1">Parentesco / Relación</label>
-                                        <input type="text" name="contacto_emerg_relacion" placeholder="Ej. Madre, Esposo" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                                        <input type="text" name="contacto_emerg_relacion" value="{{ old('contacto_emerg_relacion') }}" placeholder="Ej. Madre, Esposo" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none uppercase">
                                     </div>
                                     <div>
-                                        <label class="block font-bold text-gray-700 mb-1">Teléfono Emergencia</label>
-                                        <input type="text" name="contacto_emerg_telefono" placeholder="Ej. 5559876543" class="w-full border border-gray-300 rounded-2xl p-2.5 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                                        <label class="block font-bold text-gray-700 mb-1">Teléfono Emergencia (10 dígitos)</label>
+                                        <input type="text" name="contacto_emerg_telefono" x-model="contactoEmergTelefono" @input="contactoEmergTelefono = filtrarNumeros($event.target.value)" maxlength="10" placeholder="Ej. 5559876543" :class="!esTelefonoValido(contactoEmergTelefono) ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20' : 'border-gray-300 focus:ring-teal-500'" class="w-full border rounded-2xl p-2.5 text-xs focus:ring-2 focus:outline-none transition-all">
+                                        <span x-show="contactoEmergTelefono && contactoEmergTelefono.length > 0 && contactoEmergTelefono.length < 10" class="text-[10px] text-rose-600 font-bold mt-1 block">
+                                            <i class="bi bi-exclamation-circle-fill"></i> Debe contener 10 dígitos.
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -256,7 +333,7 @@
                                 </div>
                                 <template x-for="(alergia, index) in alergias" :key="index">
                                     <div class="flex gap-2">
-                                        <input type="text" name="alergias[]" x-model="alergias[index]" placeholder="Ej. Penicilina" class="flex-1 border border-gray-300 rounded-xl p-2 text-xs focus:outline-none bg-white">
+                                        <input type="text" name="alergias[]" x-model="alergias[index]" placeholder="Ej. Penicilina" class="flex-1 border border-gray-300 rounded-xl p-2 text-xs focus:outline-none bg-white uppercase">
                                         <button type="button" @click="removeAlergia(index)" class="p-2 bg-rose-50 text-rose-600 rounded-xl"><i class="bi bi-trash"></i></button>
                                     </div>
                                 </template>
@@ -274,7 +351,7 @@
                                 </div>
                                 <template x-for="(cond, index) in condiciones" :key="index">
                                     <div class="flex gap-2">
-                                        <input type="text" name="condiciones[]" x-model="condiciones[index]" placeholder="Ej. Diabetes Tipo 2" class="flex-1 border border-gray-300 rounded-xl p-2 text-xs focus:outline-none bg-white">
+                                        <input type="text" name="condiciones[]" x-model="condiciones[index]" placeholder="Ej. Diabetes Tipo 2" class="flex-1 border border-gray-300 rounded-xl p-2 text-xs focus:outline-none bg-white uppercase">
                                         <button type="button" @click="removeCondicion(index)" class="p-2 bg-amber-50 text-amber-600 rounded-xl"><i class="bi bi-trash"></i></button>
                                     </div>
                                 </template>
@@ -292,7 +369,7 @@
                                 </div>
                                 <template x-for="(med, index) in medicamentos" :key="index">
                                     <div class="flex gap-2">
-                                        <input type="text" name="medicamentos[]" x-model="medicamentos[index]" placeholder="Ej. Losartán 50mg" class="flex-1 border border-gray-300 rounded-xl p-2 text-xs focus:outline-none bg-white">
+                                        <input type="text" name="medicamentos[]" x-model="medicamentos[index]" placeholder="Ej. Losartán 50mg" class="flex-1 border border-gray-300 rounded-xl p-2 text-xs focus:outline-none bg-white uppercase">
                                         <button type="button" @click="removeMedicamento(index)" class="p-2 bg-teal-50 text-teal-600 rounded-xl"><i class="bi bi-trash"></i></button>
                                     </div>
                                 </template>
@@ -304,7 +381,7 @@
                     <!-- Footer Fijo -->
                     <div class="flex flex-col sm:flex-row justify-between items-center gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex-shrink-0">
                         <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" name="acepta_aviso_privacidad" value="1" checked class="rounded border-gray-300 text-teal-600 focus:ring-teal-500">
+                            <input type="checkbox" name="acepta_aviso_privacidad" value="1" {{ old('acepta_aviso_privacidad', '1') ? 'checked' : '' }} class="rounded border-gray-300 text-teal-600 focus:ring-teal-500">
                             <span class="text-[11px] text-gray-600 font-semibold">
                                 Acepta 
                                 <a href="#" target="_blank" class="text-teal-600 hover:underline inline-flex items-center gap-0.5">
@@ -315,7 +392,7 @@
 
                         <div class="flex gap-3">
                             <button type="button" @click="openCreateModal = false" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-2xl text-xs font-semibold">Cancelar</button>
-                            <button type="submit" :disabled="curpInvalida" class="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl text-xs font-bold shadow-lg shadow-teal-600/20 disabled:opacity-50 disabled:cursor-not-allowed">Guardar Paciente</button>
+                            <button type="submit" class="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl text-xs font-bold shadow-lg shadow-teal-600/20 active:scale-95 transition-all">Guardar Paciente</button>
                         </div>
                     </div>
                 </form>

@@ -22,13 +22,27 @@
 
 <div class="space-y-8 w-full block" x-data="{ 
     searchQuery: '',
-    openCreateModal: false,
+    openCreateModal: {{ $errors->any() ? 'true' : 'false' }},
     openModalDetalles: false,
+    openEditModal: false,
     pacienteSeleccionado: null,
+    pacienteEditar: {},
 
     verDetalles(paciente) {
         this.pacienteSeleccionado = paciente;
         this.openModalDetalles = true;
+    },
+
+    abrirEditar(paciente) {
+        // Clonar objeto del paciente y preparar arreglos para Alpine
+        let p = JSON.parse(JSON.stringify(paciente));
+        
+        p.alergias_list = p.alergias && p.alergias.length ? p.alergias.map(a => a.descripcion) : [''];
+        p.condiciones_list = p.condiciones && p.condiciones.length ? p.condiciones.map(c => c.descripcion) : [''];
+        p.medicamentos_list = p.medicamentos && p.medicamentos.length ? p.medicamentos.map(m => m.nombre) : [''];
+
+        this.pacienteEditar = p;
+        this.openEditModal = true;
     }
 }">
     
@@ -44,7 +58,7 @@
                 </div>
                 <h2 class="text-3xl font-extrabold tracking-tight">Directorio de Pacientes</h2>
                 <p class="text-sm text-teal-100/90 max-w-xl">
-                    Administra las fichas médicas, historiales de alergias, condiciones preexistentes y medicamentos recetados en MediTrack.
+                    Administra las fichas médicas, historiales de alergias, condiciones preexistentes y medicamentos recetados.
                 </p>
             </div>
 
@@ -104,7 +118,7 @@
         </div>
     @endif
 
-    <!-- TABLA Y BUSCADOR -->
+    <!-- TABLA Y BUSCADOR MEJORADOS -->
     <div class="bg-white rounded-3xl border border-gray-200/80 shadow-sm overflow-hidden animate-stagger" style="animation-delay: 200ms;">
         <!-- Header de Tabla -->
         <div class="p-6 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-50 via-teal-50/20 to-transparent">
@@ -119,9 +133,9 @@
             </div>
 
             <!-- Buscador sutil -->
-            <div class="relative w-full md:w-72">
+            <div class="relative w-full md:w-80">
                 <i class="bi bi-search absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
-                <input type="text" x-model="searchQuery" placeholder="Buscar por nombre, teléfono..." class="w-full pl-9 pr-4 py-2.5 rounded-2xl border border-gray-200 bg-white text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500 focus:outline-none transition-all">
+                <input type="text" x-model="searchQuery" placeholder="Buscar por nombre, CURP, teléfono..." class="w-full pl-9 pr-4 py-2.5 rounded-2xl border border-gray-200 bg-white text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500 focus:outline-none transition-all">
             </div>
         </div>
 
@@ -131,6 +145,7 @@
                 <thead class="bg-slate-50 text-gray-400 uppercase font-bold tracking-wider border-b border-gray-100">
                     <tr>
                         <th class="p-4">PACIENTE</th>
+                        <th class="p-4">IDENTIFICACIÓN / CURP</th>
                         <th class="p-4">CONTACTO</th>
                         <th class="p-4">ALERGIAS / CONDICIONES</th>
                         <th class="p-4">MEDICAMENTOS</th>
@@ -139,20 +154,31 @@
                 </thead>
                 <tbody class="divide-y divide-gray-100">
                     @forelse ($pacientes as $pac)
-                        <tr class="hover:bg-teal-50/20 transition-colors" x-show="!searchQuery || '{{ strtolower($pac->nombre . ' ' . $pac->telefono) }}'.includes(searchQuery.toLowerCase())">
+                        <tr class="hover:bg-teal-50/20 transition-colors" x-show="!searchQuery || '{{ strtolower($pac->nombre . ' ' . $pac->telefono . ' ' . $pac->rut) }}'.includes(searchQuery.toLowerCase())">
+                            
                             <!-- Nombre + Avatar -->
                             <td class="p-4 font-bold text-gray-800">
                                 <div class="flex items-center gap-3">
-                                    <div class="w-9 h-9 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center font-extrabold text-xs">
+                                    <div class="w-9 h-9 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center font-extrabold text-xs flex-shrink-0">
                                         {{ strtoupper(substr($pac->nombre, 0, 2)) }}
                                     </div>
                                     <div>
-                                        <p class="text-sm font-bold text-gray-800 leading-snug">{{ $pac->nombre }}</p>
+                                        <p class="text-sm font-bold text-gray-800 leading-snug capitalize">{{ strtolower($pac->nombre) }}</p>
                                         <span class="text-[11px] text-gray-400 font-normal">
                                             {{ $pac->fecha_nacimiento ? \Carbon\Carbon::parse($pac->fecha_nacimiento)->age . ' años' : 'Edad N/D' }}
                                         </span>
                                     </div>
                                 </div>
+                            </td>
+
+                            <!-- CURP y Género -->
+                            <td class="p-4">
+                                <p class="font-mono text-gray-800 font-bold uppercase tracking-wider text-[11px]">
+                                    {{ $pac->rut ?? 'SIN CURP' }}
+                                </p>
+                                <span class="text-[10px] text-gray-400 uppercase font-semibold">
+                                    {{ $pac->genero ?? 'Sin género' }} • {{ $pac->grupo_sanguineo ?? 'N/D' }}
+                                </span>
                             </td>
 
                             <!-- Contacto -->
@@ -165,21 +191,28 @@
                                 </p>
                             </td>
 
-                            <!-- Alergias -->
-                            @forelse ($pac->alergias as $alergia)
-                                <span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                                    <i class="bi bi-exclamation-triangle-fill text-rose-500"></i> {{ $alergia->descripcion }}
-                                </span>
-                            @empty
-                            @endforelse
+                            <!-- Alergias y Condiciones -->
+                            <td class="p-4">
+                                <div class="flex flex-wrap gap-1 max-w-xs">
+                                    @forelse ($pac->alergias as $alergia)
+                                        <span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                            <i class="bi bi-exclamation-triangle-fill text-rose-500"></i> {{ $alergia->descripcion }}
+                                        </span>
+                                    @empty
+                                    @endforelse
 
-                            <!-- Condiciones -->
-                            @forelse ($pac->condiciones as $cond)
-                                <span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                    <i class="bi bi-activity text-amber-600"></i> {{ $cond->descripcion }}
-                                </span>
-                            @empty
-                            @endforelse
+                                    @forelse ($pac->condiciones as $cond)
+                                        <span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                            <i class="bi bi-activity text-amber-600"></i> {{ $cond->descripcion }}
+                                        </span>
+                                    @empty
+                                    @endforelse
+
+                                    @if($pac->alergias->isEmpty() && $pac->condiciones->isEmpty())
+                                        <span class="text-gray-400 italic text-[11px]">Sin antecedentes</span>
+                                    @endif
+                                </div>
+                            </td>
 
                             <!-- Medicamentos -->
                             <td class="p-4">
@@ -202,14 +235,16 @@
                                         <i class="bi bi-eye-fill"></i>
                                     </button>
 
+                                    <!-- Editar Paciente en Modal -->
                                     @if(auth()->user()->tienePermiso('Pacientes', 'editar'))
-                                        <a href="{{ route('pacientes.edit', $pac->id) }}" class="bg-amber-500 hover:bg-amber-600 text-white p-2 rounded-xl text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center justify-center" title="Editar Paciente">
+                                        <button type="button" @click="abrirEditar({{ json_encode($pac->load(['alergias', 'condiciones', 'medicamentos'])) }})" class="bg-amber-500 hover:bg-amber-600 text-white p-2 rounded-xl text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center justify-center" title="Editar Paciente">
                                             <i class="bi bi-pencil-square"></i>
-                                        </a>
+                                        </button>
                                     @endif
 
+                                    <!-- Eliminar Paciente -->
                                     @if(auth()->user()->tienePermiso('Pacientes', 'eliminar'))
-                                        <button type="button" onclick="confirmarEliminacionPaciente({{ $pac->id }}, '{{ $pac->nombre }}')" class="bg-rose-500 hover:bg-rose-600 text-white p-2 rounded-xl text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center justify-center" title="Eliminar Paciente">
+                                        <button type="button" onclick="confirmarEliminacionPaciente({{ $pac->id }}, '{{ addslashes($pac->nombre) }}')" class="bg-rose-500 hover:bg-rose-600 text-white p-2 rounded-xl text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center justify-center" title="Eliminar Paciente">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     @endif
@@ -218,7 +253,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="5" class="p-12 text-center text-gray-400 italic">
+                            <td colspan="6" class="p-12 text-center text-gray-400 italic">
                                 <i class="bi bi-people text-4xl mb-2 block text-gray-300"></i>
                                 No hay pacientes registrados en el sistema.
                             </td>
@@ -240,7 +275,7 @@
              x-transition:leave-end="opacity-0 scale-95"
              class="fixed inset-0 z-[9999] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4" x-cloak>
             
-            <div class="bg-white rounded-3xl shadow-2xl max-w-lg w-full border border-teal-100 flex flex-col overflow-hidden my-auto" x-when="pacienteSeleccionado">
+            <div class="bg-white rounded-3xl shadow-2xl max-w-lg w-full border border-teal-100 flex flex-col overflow-hidden my-auto">
                 <!-- Header -->
                 <div class="flex justify-between items-center border-b border-gray-100 px-6 py-4 bg-teal-800 text-white flex-shrink-0">
                     <div class="flex items-center gap-3">
@@ -276,7 +311,7 @@
                         </h4>
                         <div class="flex flex-wrap gap-1.5">
                             <template x-for="alergia in pacienteSeleccionado?.alergias" :key="alergia.id">
-                                <span class="px-2.5 py-1 rounded-xl text-xs font-bold bg-rose-50 text-rose-800 border border-rose-200" x-text="alergia.nombre"></span>
+                                <span class="px-2.5 py-1 rounded-xl text-xs font-bold bg-rose-50 text-rose-800 border border-rose-200" x-text="alergia.descripcion"></span>
                             </template>
                             <span x-show="!pacienteSeleccionado?.alergias?.length" class="text-gray-400 italic">Sin alergias reportadas</span>
                         </div>
@@ -289,7 +324,7 @@
                         </h4>
                         <div class="flex flex-wrap gap-1.5">
                             <template x-for="cond in pacienteSeleccionado?.condiciones" :key="cond.id">
-                                <span class="px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200" x-text="cond.nombre"></span>
+                                <span class="px-2.5 py-1 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200" x-text="cond.descripcion"></span>
                             </template>
                             <span x-show="!pacienteSeleccionado?.condiciones?.length" class="text-gray-400 italic">Sin condiciones patológicas</span>
                         </div>
@@ -319,19 +354,31 @@
 
     <!-- MODAL CREAR NUEVO PACIENTE -->
     @include('pacientes.modalPacientes')
+
+    <!-- MODAL EDITAR PACIENTE -->
+    @include('pacientes.modalEditarPaciente')
 </div>
 
 <script>
+// Confirmación de eliminación mejorada con SweetAlert2
 function confirmarEliminacionPaciente(id, nombre) {
     Swal.fire({
         title: '¿Eliminar expediente?',
-        text: `Estás a punto de eliminar el expediente de "${nombre}". Se borrarán sus registros médicos asociados.`,
+        html: `Estás a punto de eliminar el expediente de <b class="text-teal-700">${nombre}</b>.<br><span class="text-xs text-rose-500">Se eliminarán todos sus historiales médicos y medicamentos registrados.</span>`,
         icon: 'warning',
         showCancelButton: true,
-        confirmButtonColor: '#0d9488',
-        cancelButtonColor: '#ef4444',
-        confirmButtonText: 'Sí, eliminar',
-        cancelButtonText: 'Cancelar'
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: '<i class="bi bi-trash-fill"></i> Sí, eliminar',
+        cancelButtonText: 'Cancelar',
+        target: 'body',
+        customClass: {
+            container: 'z-[10050]',
+            popup: 'rounded-3xl p-6 border border-gray-100 shadow-2xl bg-white',
+            title: 'text-2xl font-extrabold text-gray-800',
+            confirmButton: 'px-6 py-2.5 rounded-xl font-bold text-sm shadow-md',
+            cancelButton: 'px-6 py-2.5 rounded-xl font-bold text-sm shadow-sm'
+        }
     }).then((result) => {
         if (result.isConfirmed) {
             fetch(`/pacientes/${id}`, {
@@ -344,15 +391,67 @@ function confirmarEliminacionPaciente(id, nombre) {
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    Swal.fire('Eliminado', data.message, 'success').then(() => {
+                    Swal.fire({
+                        title: '¡Eliminado!',
+                        text: data.message,
+                        icon: 'success',
+                        confirmButtonColor: '#0d9488',
+                        target: 'body',
+                        customClass: { container: 'z-[10050]' }
+                    }).then(() => {
                         window.location.reload();
                     });
                 } else {
-                    Swal.fire('Error', data.message, 'error');
+                    Swal.fire({
+                        title: 'Error',
+                        text: data.message || 'No se pudo eliminar el expediente',
+                        icon: 'error',
+                        confirmButtonColor: '#ef4444',
+                        target: 'body',
+                        customClass: { container: 'z-[10050]' }
+                    });
                 }
+            })
+            .catch(() => {
+                Swal.fire({
+                    title: 'Error de conexión',
+                    text: 'Ocurrió un fallo al comunicarse con el servidor.',
+                    icon: 'error',
+                    confirmButtonColor: '#ef4444',
+                    target: 'body',
+                    customClass: { container: 'z-[10050]' }
+                });
             });
         }
     });
 }
 </script>
+
+<!-- ALERTA DE ERRORES DE VALIDACIÓN CON SWEETALERT2 -->
+@if ($errors->any())
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        let listaErrores = '';
+        @foreach ($errors->all() as $error)
+            listaErrores += '• {{ $error }}<br>';
+        @endforeach
+
+        Swal.fire({
+            title: '¡Atención!',
+            html: `<div class="text-sm text-gray-600 mt-2">${listaErrores}</div>`,
+            icon: 'warning',
+            iconColor: '#f59e0b',
+            confirmButtonText: 'Entendido',
+            confirmButtonColor: '#0d9488',
+            target: 'body',
+            customClass: {
+                container: 'z-[10050]',
+                popup: 'rounded-3xl p-6 border border-teal-100 shadow-2xl bg-white',
+                title: 'text-2xl font-extrabold text-gray-800',
+                confirmButton: 'px-6 py-2.5 rounded-xl font-bold text-sm shadow-md'
+            }
+        });
+    });
+</script>
+@endif
 @endsection

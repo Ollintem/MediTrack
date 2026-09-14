@@ -5,18 +5,21 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Receta extends Model
+class Consulta extends Model
 {
     use HasFactory;
 
-    protected $table = 'recetas';
+    protected $table = 'consultas';
 
     protected $fillable = [
-        'folio',
+        'cita_id',
         'paciente_id',
         'personal_id',
-        'fecha_emision',
-        'indicaciones_generales',
+        'fecha_consulta',
+        'motivo',
+        'diagnostico',
+        'observaciones',
+        'estado',
     ];
 
     public function paciente()
@@ -27,16 +30,5 @@ class Receta extends Model
     public function personal()
     {
         return $this->belongsTo(Personal::class, 'personal_id');
-    }
-
-    public function detalles()
-    {
-        return $this->hasMany(RecetaDetalle::class, 'receta_id');
-    }
-
-    public function signoVital()
-    {
-        return $this->hasOne(SignosVitales::class, 'paciente_id', 'paciente_id')
-                    ->latestOfMany('created_at');
     }
 }

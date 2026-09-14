@@ -12,7 +12,7 @@ return new class extends Migration
         if (!Schema::hasTable('recetas')) {
             Schema::create('recetas', function (Blueprint $table) {
                 $table->id();
-                $table->string('folio')->unique();
+                $table->string('folio')->nullable()->unique();
                 $table->foreignId('paciente_id')->constrained('pacientes')->onDelete('cascade');
                 $table->foreignId('personal_id')->nullable()->constrained('personals')->onDelete('set null');
                 $table->date('fecha_emision');
