@@ -2,146 +2,148 @@
 @if(auth()->user()->tienePermiso('Pacientes', 'crear'))
     <template x-teleport="body">
         <div x-show="openCreateModal" 
-             x-transition:enter="transition ease-out duration-300"
-             x-transition:enter-start="opacity-0 scale-95"
-             x-transition:enter-end="opacity-100 scale-100"
-             x-transition:leave="transition ease-in duration-200"
-             x-transition:leave-start="opacity-100 scale-100"
-             x-transition:leave-end="opacity-0 scale-95"
-             class="fixed inset-0 z-[9999] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4" 
-             x-cloak
-             x-data="{
-                 tab: 'general',
-                 
+            x-transition:enter="transition ease-out duration-300"
+            x-transition:enter-start="opacity-0 scale-95"
+            x-transition:enter-end="opacity-100 scale-100"
+            x-transition:leave="transition ease-in duration-200"
+            x-transition:leave-start="opacity-100 scale-100"
+            x-transition:leave-end="opacity-0 scale-95"
+            class="fixed inset-0 z-[9999] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4" 
+            x-cloak
+            x-data="{
+                tab: 'general',
+                openAvisoModal: false,
+                aceptaAviso: false,
+                
                  // Nombres y Apellidos
-                 primerNombre: @js(old('primer_nombre', '')),
-                 apellidoPaterno: @js(old('apellido_paterno', '')),
-                 apellidoMaterno: @js(old('apellido_materno', '')),
+                primerNombre: @js(old('primer_nombre', '')),
+                apellidoPaterno: @js(old('apellido_paterno', '')),
+                apellidoMaterno: @js(old('apellido_materno', '')),
 
                  // CURP y Fecha
-                 curp: @js(old('rut', '')),
-                 curpInvalida: false,
-                 fechaNacimiento: @js(old('fecha_nacimiento', '')),
-                 errorCoincidenciaFecha: false,
-                 errorCoincidenciaNombre: false,
+                curp: @js(old('rut', '')),
+                curpInvalida: false,
+                fechaNacimiento: @js(old('fecha_nacimiento', '')),
+                errorCoincidenciaFecha: false,
+                errorCoincidenciaNombre: false,
 
                  // Contacto
-                 telefono: @js(old('telefono', '')),
-                 celular: @js(old('celular', '')),
-                 email: @js(old('email', '')),
-                 contactoEmergTelefono: @js(old('contacto_emerg_telefono', '')),
+                telefono: @js(old('telefono', '')),
+                celular: @js(old('celular', '')),
+                email: @js(old('email', '')),
+                contactoEmergTelefono: @js(old('contacto_emerg_telefono', '')),
 
-                 filtrarNumeros(valor) { 
-                     return (valor || '').replace(/\D/g, '').slice(0, 10); 
-                 },
-                 esTelefonoValido(valor) { 
-                     return !valor || valor.length === 10; 
-                 },
-                 esEmailValido(valor) {
-                     if (!valor) return true;
-                     return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(valor);
-                 },
+                filtrarNumeros(valor) { 
+                    return (valor || '').replace(/\D/g, '').slice(0, 10); 
+                },
+                esTelefonoValido(valor) { 
+                    return !valor || valor.length === 10; 
+                },
+                esEmailValido(valor) {
+                    if (!valor) return true;
+                    return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(valor);
+                },
 
                  // Algoritmo para extraer las 4 iniciales oficiales de la CURP (Reglas RENAPO)
-                 obtenerInicialesCURP() {
-                     let paterno = (this.apellidoPaterno || '').trim().toUpperCase();
-                     let materno = (this.apellidoMaterno || '').trim().toUpperCase();
-                     let nombres = (this.primerNombre || '').trim().toUpperCase().split(/\s+/);
+                obtenerInicialesCURP() {
+                    let paterno = (this.apellidoPaterno || '').trim().toUpperCase();
+                    let materno = (this.apellidoMaterno || '').trim().toUpperCase();
+                    let nombres = (this.primerNombre || '').trim().toUpperCase().split(/\s+/);
 
-                     if (!paterno || !nombres[0]) return '';
+                    if (!paterno || !nombres[0]) return '';
 
                      // 1. Primera letra del primer apellido
-                     let c1 = paterno.charAt(0);
+                    let c1 = paterno.charAt(0);
 
                      // 2. Primera vocal interna del primer apellido
-                     let vocalInterna = paterno.slice(1).match(/[AEIOU]/);
-                     let c2 = vocalInterna ? vocalInterna[0] : 'X';
+                    let vocalInterna = paterno.slice(1).match(/[AEIOU]/);
+                    let c2 = vocalInterna ? vocalInterna[0] : 'X';
 
                      // 3. Primera letra del segundo apellido (o X)
-                     let c3 = materno ? materno.charAt(0) : 'X';
+                    let c3 = materno ? materno.charAt(0) : 'X';
 
                      // 4. Primera letra del nombre (omitir JOSE/MARIA si existe un segundo nombre)
-                     let primerNombre = nombres[0];
-                     if ((primerNombre === 'JOSE' || primerNombre === 'MARIA' || primerNombre === 'MA.' || primerNombre === 'MA') && nombres.length > 1) {
-                         primerNombre = nombres[1];
-                     }
-                     let c4 = primerNombre.charAt(0);
+                    let primerNombre = nombres[0];
+                    if ((primerNombre === 'JOSE' || primerNombre === 'MARIA' || primerNombre === 'MA.' || primerNombre === 'MA') && nombres.length > 1) {
+                        primerNombre = nombres[1];
+                    }
+                    let c4 = primerNombre.charAt(0);
 
                      // Remplazo de 'Ñ' por 'X' según la norma
-                     return `${c1}${c2}${c3}${c4}`.replace(/Ñ/g, 'X');
-                 },
+                    return `${c1}${c2}${c3}${c4}`.replace(/Ñ/g, 'X');
+                },
 
                  // Validar CURP y auto-completar fecha
-                 validarYExtraerCURP() {
-                     this.curp = (this.curp || '').toUpperCase().trim();
-                     const regexCurp = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
-                     
-                     if (this.curp.length === 18 && regexCurp.test(this.curp)) {
-                         this.curpInvalida = false;
-                         
-                         const anioDigitos = parseInt(this.curp.substring(4, 6), 10);
-                         const mes = this.curp.substring(6, 8);
-                         const dia = this.curp.substring(8, 10);
-                         
-                         const anioActualCorto = parseInt(new Date().getFullYear().toString().substr(-2), 10);
-                         const siglo = anioDigitos > anioActualCorto ? '19' : '20';
-                         const anioCompleto = `${siglo}${this.curp.substring(4, 6)}`;
-                         
-                         const fechaCalculada = `${anioCompleto}-${mes}-${dia}`;
-                         if (!isNaN(Date.parse(fechaCalculada))) {
-                             this.fechaNacimiento = fechaCalculada;
-                         }
-                     } else {
-                         this.curpInvalida = this.curp.length > 0 && !regexCurp.test(this.curp);
-                     }
-                     this.validarCoincidencias();
-                 },
+                validarYExtraerCURP() {
+                    this.curp = (this.curp || '').toUpperCase().trim();
+                    const regexCurp = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
+                    
+                    if (this.curp.length === 18 && regexCurp.test(this.curp)) {
+                        this.curpInvalida = false;
+                        
+                        const anioDigitos = parseInt(this.curp.substring(4, 6), 10);
+                        const mes = this.curp.substring(6, 8);
+                        const dia = this.curp.substring(8, 10);
+                        
+                        const anioActualCorto = parseInt(new Date().getFullYear().toString().substr(-2), 10);
+                        const siglo = anioDigitos > anioActualCorto ? '19' : '20';
+                        const anioCompleto = `${siglo}${this.curp.substring(4, 6)}`;
+                        
+                        const fechaCalculada = `${anioCompleto}-${mes}-${dia}`;
+                        if (!isNaN(Date.parse(fechaCalculada))) {
+                            this.fechaNacimiento = fechaCalculada;
+                        }
+                    } else {
+                        this.curpInvalida = this.curp.length > 0 && !regexCurp.test(this.curp);
+                    }
+                    this.validarCoincidencias();
+                },
 
                  // Validar Coincidencias de Fecha e Iniciales
-                 validarCoincidencias() {
-                     // 1. Validar Coincidencia de Fecha
-                     const regexCurp = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
-                     if (this.curp.length === 18 && regexCurp.test(this.curp) && this.fechaNacimiento) {
-                         const anioDigitos = this.curp.substring(4, 6);
-                         const mes = this.curp.substring(6, 8);
-                         const dia = this.curp.substring(8, 10);
+                validarCoincidencias() {
+                    // 1. Validar Coincidencia de Fecha
+                    const regexCurp = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
+                    if (this.curp.length === 18 && regexCurp.test(this.curp) && this.fechaNacimiento) {
+                        const anioDigitos = this.curp.substring(4, 6);
+                        const mes = this.curp.substring(6, 8);
+                        const dia = this.curp.substring(8, 10);
 
-                         const partesFecha = this.fechaNacimiento.split('-');
-                         if (partesFecha.length === 3) {
-                             const anioInputDigitos = partesFecha[0].substr(-2);
-                             const mesInput = partesFecha[1];
-                             const diaInput = partesFecha[2];
+                        const partesFecha = this.fechaNacimiento.split('-');
+                        if (partesFecha.length === 3) {
+                            const anioInputDigitos = partesFecha[0].substr(-2);
+                            const mesInput = partesFecha[1];
+                            const diaInput = partesFecha[2];
 
-                             this.errorCoincidenciaFecha = (anioDigitos !== anioInputDigitos || mes !== mesInput || dia !== diaInput);
-                         } else {
-                             this.errorCoincidenciaFecha = false;
-                         }
-                     } else {
-                         this.errorCoincidenciaFecha = false;
-                     }
+                            this.errorCoincidenciaFecha = (anioDigitos !== anioInputDigitos || mes !== mesInput || dia !== diaInput);
+                        } else {
+                            this.errorCoincidenciaFecha = false;
+                        }
+                    } else {
+                        this.errorCoincidenciaFecha = false;
+                    }
 
                      // 2. Validar Coincidencia de Iniciales del Nombre
-                     const inicialesEsperadas = this.obtenerInicialesCURP();
-                     if (this.curp.length >= 4 && inicialesEsperadas.length === 4) {
-                         const inicialesCurp = this.curp.substring(0, 4);
-                         this.errorCoincidenciaNombre = (inicialesCurp !== inicialesEsperadas);
-                     } else {
-                         this.errorCoincidenciaNombre = false;
-                     }
-                 },
+                    const inicialesEsperadas = this.obtenerInicialesCURP();
+                    if (this.curp.length >= 4 && inicialesEsperadas.length === 4) {
+                        const inicialesCurp = this.curp.substring(0, 4);
+                        this.errorCoincidenciaNombre = (inicialesCurp !== inicialesEsperadas);
+                    } else {
+                        this.errorCoincidenciaNombre = false;
+                    }
+                },
 
                  // Ficha médica dinámica
-                 alergias: @js(old('alergias', [''])),
-                 condiciones: @js(old('condiciones', [''])),
-                 medicamentos: @js(old('medicamentos', [''])),
+                alergias: @js(old('alergias', [''])),
+                condiciones: @js(old('condiciones', [''])),
+                medicamentos: @js(old('medicamentos', [''])),
 
-                 addAlergia() { this.alergias.push('') },
-                 removeAlergia(index) { if(this.alergias.length > 1) this.alergias.splice(index, 1) },
-                 addCondicion() { this.condiciones.push('') },
-                 removeCondicion(index) { if(this.condiciones.length > 1) this.condiciones.splice(index, 1) },
-                 addMedicamento() { this.medicamentos.push('') },
-                 removeMedicamento(index) { if(this.medicamentos.length > 1) this.medicamentos.splice(index, 1) }
-             }">
+                addAlergia() { this.alergias.push('') },
+                removeAlergia(index) { if(this.alergias.length > 1) this.alergias.splice(index, 1) },
+                addCondicion() { this.condiciones.push('') },
+                removeCondicion(index) { if(this.condiciones.length > 1) this.condiciones.splice(index, 1) },
+                addMedicamento() { this.medicamentos.push('') },
+                removeMedicamento(index) { if(this.medicamentos.length > 1) this.medicamentos.splice(index, 1) }
+            }">
             
             <div class="bg-white rounded-3xl shadow-2xl max-w-3xl w-full h-[90vh] max-h-[750px] border border-teal-100 flex flex-col overflow-hidden my-auto">
                 <!-- Header Fijo -->
@@ -378,24 +380,35 @@
 
                     </div>
 
-                    <!-- Footer Fijo -->
-                    <div class="flex flex-col sm:flex-row justify-between items-center gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex-shrink-0">
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" name="acepta_aviso_privacidad" value="1" {{ old('acepta_aviso_privacidad', '1') ? 'checked' : '' }} class="rounded border-gray-300 text-teal-600 focus:ring-teal-500">
-                            <span class="text-[11px] text-gray-600 font-semibold">
-                                Acepta 
-                                <a href="#" target="_blank" class="text-teal-600 hover:underline inline-flex items-center gap-0.5">
-                                    aviso de privacidad <i class="bi bi-box-arrow-up-right text-[9px]"></i>
-                                </a>
-                            </span>
-                        </label>
+                    <!-- FOOTER FIJO CREAR PACIENTE -->
+                    <div class="flex flex-col sm:flex-row justify-between items-center gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50/80 flex-shrink-0">
+                        <div class="flex items-center gap-2 select-none">
+                            <input type="checkbox" 
+                                name="acepta_aviso_privacidad" 
+                                id="acepta_aviso_create"
+                                value="1" 
+                                x-model="aceptaAviso" 
+                                class="rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer">
+                            
+                            <div class="text-[11px] text-gray-600 font-semibold flex items-center gap-1">
+                                <label for="acepta_aviso_create" class="cursor-pointer">Acepta</label>
+                                
+                                <button type="button" 
+                                        @click.prevent.stop="openAvisoModal = true" 
+                                        class="text-teal-600 hover:text-teal-700 hover:underline font-bold focus:outline-none cursor-pointer">
+                                    aviso de privacidad
+                                </button>
+                            </div>
+                        </div>
 
                         <div class="flex gap-3">
-                            <button type="button" @click="openCreateModal = false" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-2xl text-xs font-semibold">Cancelar</button>
+                            <button type="button" @click="openCreateModal = false" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-2xl text-xs font-semibold transition-all">Cancelar</button>
                             <button type="submit" class="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl text-xs font-bold shadow-lg shadow-teal-600/20 active:scale-95 transition-all">Guardar Paciente</button>
                         </div>
                     </div>
-                </form>
+
+                    <!-- Inclusión del Modal -->
+                    @include('pacientes.modalAvisoPrivacidad')
             </div>
         </div>
     </template>

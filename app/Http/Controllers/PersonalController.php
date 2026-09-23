@@ -9,6 +9,7 @@ use App\Models\Modulo;
 use App\Models\Bitacora;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
 class PersonalController extends Controller
 {
@@ -68,11 +69,12 @@ class PersonalController extends Controller
             // 3. Crear credenciales de usuario SOLO si el switch está encendido
             if ($requiereAcceso) {
                 $usuario = User::create([
+                    'name'       => $nombreCompleto,
                     'nombre'     => $request->nombre,
                     'apellido'   => $request->apellido,
                     'email'      => $emailCompleto,
                     'rol_id'     => $request->rol_id,
-                    'password'   => $request->password, // Modelo User aplica el hash automáticamente
+                    'password'   => Hash::make($request->password), // Encriptación explícita para evitar texto plano
                     'clinica_id' => $clinicaId,
                 ]);
                 $userId = $usuario->id;
@@ -158,21 +160,23 @@ class PersonalController extends Controller
             if ($requiereAcceso) {
                 if ($usuario) {
                     // Actualizar credenciales existentes
+                    $usuario->name   = $request->nombre_completo;
                     $usuario->email  = $emailCompleto;
                     $usuario->rol_id = $request->rol_id;
                     if ($request->filled('password')) {
-                        $usuario->password = $request->password; // Modelo User aplica el hash automáticamente
+                        $usuario->password = Hash::make($request->password);
                     }
                     $usuario->save();
                 } else {
                     // Crear nuevo usuario si antes no tenía acceso
                     $partesNombre = explode(' ', $request->nombre_completo, 2);
                     $nuevoUsuario = User::create([
+                        'name'       => $request->nombre_completo,
                         'nombre'     => $partesNombre[0],
                         'apellido'   => $partesNombre[1] ?? '',
                         'email'      => $emailCompleto,
                         'rol_id'     => $request->rol_id,
-                        'password'   => $request->password, // Modelo User aplica el hash automáticamente
+                        'password'   => Hash::make($request->password ?? '12345678'),
                         'clinica_id' => $clinicaId,
                     ]);
                     $personal->user_id = $nuevoUsuario->id;

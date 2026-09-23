@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Configuracion; // 1. IMPORTANTE: Importamos el modelo de la BD
 use Illuminate\Http\Request;
 
 class ConfiguracionController extends Controller
@@ -11,16 +12,8 @@ class ConfiguracionController extends Controller
      */
     public function index()
     {
-        // Simulamos o cargamos los datos actuales de la clínica
-        $config = [
-            'nombre_clinica' => 'MediTrack Central',
-            'telefono'       => '55-1234-5678',
-            'email'          => 'contacto@meditrack.com',
-            'direccion'      => 'Av. Principal #123, Col. Centro',
-            'moneda'         => 'MXN ($)',
-            'duracion_cita'  => '30', // en minutos
-            'notificaciones' => true,
-        ];
+        // 2. Cargamos las configuraciones reales de la base de datos como un array ['clave' => 'valor']
+        $config = Configuracion::pluck('valor', 'clave')->toArray();
 
         return view('configuracion.index', compact('config'));
     }
@@ -30,17 +23,29 @@ class ConfiguracionController extends Controller
      */
     public function update(Request $request)
     {
-        // Validamos los datos entrantes
+        // Todos los campos se definen como nullable para permitir guardados parciales
         $request->validate([
-            'nombre_clinica' => 'required|string|max:255',
-            'telefono'       => 'nullable|string|max:20',
-            'email'          => 'required|email|max:255',
-            'direccion'      => 'nullable|string|max:255',
-            'duracion_cita'  => 'required|integer|min:10|max:120',
+            'nombre_clinica'  => 'nullable|string|max:255',
+            'email'           => 'nullable|email|max:255',
+            'telefono'        => 'nullable|digits:10',
+            'direccion'       => 'nullable|string|max:255',
+            'duracion_cita'   => 'nullable|integer',
+            'aviso_privacidad'=> 'nullable|string',
+        ], [
+            'telefono.digits' => 'El teléfono principal debe contener exactamente 10 dígitos numéricos.',
+            'email.email'     => 'El formato del correo electrónico no es válido.',
         ]);
 
-        // AQUÍ: Guardar en BD (o tabla de opciones/settings)
-        // Por ahora retornamos una alerta de éxito
+        // Extraemos solo los campos del formulario
+        $datos = $request->except('_token', '_method');
+
+        foreach ($datos as $clave => $valor) {
+            Configuracion::updateOrCreate(
+                ['clave' => $clave],
+                ['valor' => is_string($valor) ? mb_strtoupper($valor) : $valor]
+            );
+        }
+
         return back()->with('success', 'La configuración ha sido actualizada correctamente.');
     }
 }

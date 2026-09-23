@@ -16,6 +16,7 @@ return new class extends Migration
                 $table->foreignId('paciente_id')->constrained('pacientes')->onDelete('cascade');
                 $table->foreignId('personal_id')->nullable()->constrained('personals')->onDelete('set null');
                 $table->date('fecha_emision');
+                $table->text('diagnostico')->nullable(); // <-- Campo de diagnóstico agregado
                 $table->text('indicaciones_generales')->nullable();
                 $table->timestamps();
             });

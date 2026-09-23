@@ -3,55 +3,60 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\PacienteAlergia;
+use App\Models\PacienteCondicion;
+use App\Models\PacienteMedicamento;
 
 class Paciente extends Model
 {
-    protected $table = 'pacientes';
-
     protected $fillable = [
         'clinica_id',
         'medico_tratante_id',
         'codigo',
-        'nombre_completo',
+        'primer_nombre',
+        'apellido_paterno',
+        'apellido_materno',
         'rut',
         'fecha_nacimiento',
         'genero',
+        'estado_civil',
+        'nacionalidad',
+        'grupo_sanguineo',
         'telefono',
+        'celular',
         'email',
-        'estado'
+        'direccion',
+        'contacto_emerg_nombre',
+        'contacto_emerg_relacion',
+        'contacto_emerg_telefono',
+        'aseguradora',
+        'numero_poliza',
+        'vigencia_poliza',
+        'acepta_aviso_privacidad',
+        'estado',
+        'foto_url',
     ];
 
-    public function getEdadCalculadaAttribute()
-{
-    if (!empty($this->edad)) {
-        return $this->edad . ' años';
-    }
+    protected $appends = ['nombre'];
 
-    if (!empty($this->fecha_nacimiento)) {
-        return \Carbon\Carbon::parse($this->fecha_nacimiento)->age . ' años';
-    }
-
-    return 'N/A';
-}
-
-    // Accessor para que $paciente->nombre devuelva $paciente->nombre_completo en las vistas
-    public function getNombreAttribute()
+    public function getNombreAttribute(): string
     {
-        return $this->nombre_completo;
+        return trim("{$this->primer_nombre} {$this->apellido_paterno} {$this->apellido_materno}");
     }
 
+    // RELACIONES APUNTANDO A TUS MODELOS EXACTOS
     public function alergias()
     {
-        return $this->hasMany(PacienteAlergia::class, 'paciente_id');
+        return $this->hasMany(PacienteAlergia::class);
     }
 
     public function condiciones()
     {
-        return $this->hasMany(PacienteCondicion::class, 'paciente_id');
+        return $this->hasMany(PacienteCondicion::class);
     }
 
     public function medicamentos()
     {
-        return $this->hasMany(PacienteMedicamento::class, 'paciente_id');
+        return $this->hasMany(PacienteMedicamento::class);
     }
 }

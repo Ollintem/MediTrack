@@ -16,6 +16,7 @@ class Receta extends Model
         'paciente_id',
         'personal_id',
         'fecha_emision',
+        'diagnostico',
         'indicaciones_generales',
     ];
 

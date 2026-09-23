@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Paciente;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class PacienteController extends Controller
 {
@@ -16,7 +17,29 @@ class PacienteController extends Controller
             ->latest()
             ->get();
 
-        return view('pacientes.index', compact('pacientes'));
+        // Métrica 1: Estatus Operativo
+        $totalPacientes = $pacientes->count();
+        $pacientesActivos = $pacientes->where('estado', 'Activo')->count();
+
+        // Métrica 2: Cumplimiento Normativo / Datos Incompletos
+        $pendientesNormativa = $pacientes->filter(function ($paciente) {
+            $sinRut = empty($paciente->rut);
+            $sinAviso = !$paciente->acepta_aviso_privacidad;
+            $sinContacto = empty($paciente->telefono) && empty($paciente->celular);
+
+            return $sinRut || $sinAviso || $sinContacto;
+        })->count();
+
+        // Configuración para el Modal de Aviso de Privacidad
+        $config = \App\Models\Configuracion::pluck('valor', 'clave')->toArray();
+
+        return view('pacientes.index', compact(
+            'pacientes',
+            'totalPacientes',
+            'pacientesActivos',
+            'pendientesNormativa',
+            'config'
+        ));
     }
 
     /**
@@ -24,7 +47,9 @@ class PacienteController extends Controller
      */
     public function create()
     {
-        return view('pacientes.create');
+        $config = \App\Models\Configuracion::pluck('valor', 'clave')->toArray();
+
+        return view('pacientes.create', compact('config'));
     }
 
     /**
@@ -32,43 +57,51 @@ class PacienteController extends Controller
      */
     public function store(Request $request)
     {
-        $request->validate([
-            'primer_nombre'            => 'required|string|max:80',
-            'apellido_paterno'         => 'required|string|max:80',
-            'apellido_materno'         => 'nullable|string|max:80',
-            'rut'                      => 'nullable|string|max:20|unique:pacientes,rut', // <-- Evita la duplicación de CURP
-            'telefono'                 => 'nullable|digits:10',
-            'celular'                  => 'nullable|digits:10',
+        $validated = $request->validate([
+            'primer_nombre'           => 'required|string|max:80',
+            'apellido_paterno'        => 'required|string|max:80',
+            'apellido_materno'        => 'nullable|string|max:80',
+            'rut'                     => 'nullable|string|max:20|unique:pacientes,rut',
+            'telefono'                => 'nullable|digits:10',
+            'celular'                 => 'nullable|digits:10',
             'contacto_emerg_telefono' => 'nullable|digits:10',
-            'email'                    => 'nullable|email|max:150',
-            'fecha_nacimiento'         => 'nullable|date',
+            'email'                   => 'nullable|email|max:150',
+            'fecha_nacimiento'        => 'nullable|date',
+            'genero'                  => 'nullable|string',
+            'estado_civil'            => 'nullable|string|max:30',
+            'nacionalidad'            => 'nullable|string|max:50',
+            'grupo_sanguineo'         => 'nullable|string|max:10',
+            'direccion'               => 'nullable|string|max:255',
+            'contacto_emerg_nombre'   => 'nullable|string|max:150',
+            'contacto_emerg_relacion' => 'nullable|string|max:50',
+            'acepta_aviso_privacidad' => 'nullable|boolean',
         ], [
-            'rut.unique' => 'La CURP ingresada ya se encuentra registrada con otro paciente.',
-            'telefono.digits' => 'El teléfono principal debe contener exactamente 10 dígitos.',
-            'celular.digits' => 'El celular debe contener exactamente 10 dígitos.',
-            'contacto_emerg_telefono.digits' => 'El teléfono de emergencia debe contener exactamente 10 dígitos.'
+            'rut.unique'                       => 'La CURP ingresada ya se encuentra registrada con otro paciente.',
+            'telefono.digits'                  => 'El teléfono principal debe contener exactamente 10 dígitos.',
+            'celular.digits'                   => 'El celular debe contener exactamente 10 dígitos.',
+            'contacto_emerg_telefono.digits'   => 'El teléfono de emergencia debe contener exactamente 10 dígitos.',
         ]);
 
-        // 1. Concatenar los nombres recibidos en una sola cadena limpia
-        $nombreCompleto = trim("{$request->primer_nombre} {$request->apellido_paterno} {$request->apellido_materno}");
         $codigoGenerado = 'PAC-' . str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT);
 
-        // 2. Inserción de los datos principales del paciente
+        // Inserción de los datos principales del paciente con nombres divididos
         $paciente = Paciente::create([
             'codigo'                  => $codigoGenerado,
-            'nombre_completo'         => $nombreCompleto,
-            'rut'                     => strtoupper(trim($request->rut)), // CURP en mayúsculas
+            'primer_nombre'           => mb_strtoupper(trim($request->primer_nombre), 'UTF-8'),
+            'apellido_paterno'        => mb_strtoupper(trim($request->apellido_paterno), 'UTF-8'),
+            'apellido_materno'        => $request->apellido_materno ? mb_strtoupper(trim($request->apellido_materno), 'UTF-8') : null,
+            'rut'                     => $request->rut ? strtoupper(trim($request->rut)) : null,
             'fecha_nacimiento'        => $request->fecha_nacimiento,
             'genero'                  => $request->genero,
             'estado_civil'            => $request->estado_civil,
-            'nacionalidad'            => $request->nacionalidad,
+            'nacionalidad'            => $request->nacionalidad ? mb_strtoupper(trim($request->nacionalidad), 'UTF-8') : null,
             'grupo_sanguineo'         => $request->grupo_sanguineo,
             'telefono'                => $request->telefono,
             'celular'                 => $request->celular,
             'email'                   => $request->email,
-            'direccion'               => $request->direccion,
-            'contacto_emerg_nombre'   => $request->contacto_emerg_nombre,
-            'contacto_emerg_relacion' => $request->contacto_emerg_relacion,
+            'direccion'               => $request->direccion ? mb_strtoupper(trim($request->direccion), 'UTF-8') : null,
+            'contacto_emerg_nombre'   => $request->contacto_emerg_nombre ? mb_strtoupper(trim($request->contacto_emerg_nombre), 'UTF-8') : null,
+            'contacto_emerg_relacion' => $request->contacto_emerg_relacion ? mb_strtoupper(trim($request->contacto_emerg_relacion), 'UTF-8') : null,
             'contacto_emerg_telefono' => $request->contacto_emerg_telefono,
             'acepta_aviso_privacidad' => $request->boolean('acepta_aviso_privacidad') ? 1 : 0,
             'clinica_id'              => auth()->user()->clinica_id ?? 1,
@@ -76,7 +109,7 @@ class PacienteController extends Controller
             'estado'                  => 'Activo',
         ]);
 
-        // 3. Guardar Alergias (usando 'descripcion')
+        // Guardar Alergias
         if ($request->has('alergias') && is_array($request->alergias)) {
             foreach ($request->alergias as $alergia) {
                 if (!empty(trim($alergia))) {
@@ -87,7 +120,7 @@ class PacienteController extends Controller
             }
         }
 
-        // 4. Guardar Condiciones (usando 'descripcion')
+        // Guardar Condiciones
         if ($request->has('condiciones') && is_array($request->condiciones)) {
             foreach ($request->condiciones as $condicion) {
                 if (!empty(trim($condicion))) {
@@ -98,7 +131,7 @@ class PacienteController extends Controller
             }
         }
 
-        // 5. Guardar Medicamentos
+        // Guardar Medicamentos
         if ($request->has('medicamentos') && is_array($request->medicamentos)) {
             foreach ($request->medicamentos as $medicamento) {
                 if (!empty(trim($medicamento))) {
@@ -114,11 +147,17 @@ class PacienteController extends Controller
     }
 
     /**
-     * Muestra el formulario para editar un expediente existente.
+     * Muestra el formulario para editar un expediente o retorna sus datos en JSON.
      */
     public function edit(Paciente $paciente)
     {
         $paciente->load(['alergias', 'condiciones', 'medicamentos']);
+
+        // Si la petición solicita JSON (fetch desde el modal), devolver los datos frescos
+        if (request()->wantsJson() || request()->ajax()) {
+            return response()->json($paciente);
+        }
+
         return view('pacientes.edit', compact('paciente'));
     }
 
@@ -127,57 +166,84 @@ class PacienteController extends Controller
      */
     public function update(Request $request, Paciente $paciente)
     {
-        $request->validate([
-            'nombre'           => 'required|string|max:255',
-            'telefono'         => 'nullable|string|max:20',
-            'email'            => 'nullable|email|max:150',
-            'fecha_nacimiento' => 'nullable|date',
+        $validated = $request->validate([
+            'primer_nombre'           => 'required|string|max:80',
+            'apellido_paterno'        => 'required|string|max:80',
+            'apellido_materno'        => 'nullable|string|max:80',
+            'rut'                     => ['nullable', 'string', 'max:20', Rule::unique('pacientes', 'rut')->ignore($paciente->id)],
+            'telefono'                => 'nullable|digits:10',
+            'celular'                 => 'nullable|digits:10',
+            'contacto_emerg_telefono' => 'nullable|digits:10',
+            'email'                   => 'nullable|email|max:150',
+            'fecha_nacimiento'        => 'nullable|date',
+            'genero'                  => 'nullable|string',
+            'estado_civil'            => 'nullable|string|max:30',
+            'nacionalidad'            => 'nullable|string|max:50',
+            'grupo_sanguineo'         => 'nullable|string|max:10',
+            'direccion'               => 'nullable|string|max:255',
+            'contacto_emerg_nombre'   => 'nullable|string|max:150',
+            'contacto_emerg_relacion' => 'nullable|string|max:50',
+            'acepta_aviso_privacidad' => 'nullable|boolean',
+        ], [
+            'rut.unique'                       => 'La CURP ingresada ya se encuentra registrada con otro paciente.',
+            'telefono.digits'                  => 'El teléfono principal debe contener exactamente 10 dígitos.',
+            'celular.digits'                   => 'El celular debe contener exactamente 10 dígitos.',
+            'contacto_emerg_telefono.digits'   => 'El teléfono de emergencia debe contener exactamente 10 dígitos.',
         ]);
 
         // 1. Actualizar datos base
         $paciente->update([
-            'nombre_completo'         => $request->nombre,
-            'rut'                     => strtoupper(trim($request->rut)),
+            'primer_nombre'           => mb_strtoupper(trim($request->primer_nombre), 'UTF-8'),
+            'apellido_paterno'        => mb_strtoupper(trim($request->apellido_paterno), 'UTF-8'),
+            'apellido_materno'        => $request->apellido_materno ? mb_strtoupper(trim($request->apellido_materno), 'UTF-8') : null,
+            'rut'                     => $request->rut ? strtoupper(trim($request->rut)) : null,
             'fecha_nacimiento'        => $request->fecha_nacimiento,
             'genero'                  => $request->genero,
             'estado_civil'            => $request->estado_civil,
-            'nacionalidad'            => $request->nacionalidad,
+            'nacionalidad'            => $request->nacionalidad ? mb_strtoupper(trim($request->nacionalidad), 'UTF-8') : null,
             'grupo_sanguineo'         => $request->grupo_sanguineo,
             'telefono'                => $request->telefono,
             'celular'                 => $request->celular,
             'email'                   => $request->email,
-            'direccion'               => $request->direccion,
-            'contacto_emerg_nombre'   => $request->contacto_emerg_nombre,
-            'contacto_emerg_relacion' => $request->contacto_emerg_relacion,
+            'direccion'               => $request->direccion ? mb_strtoupper(trim($request->direccion), 'UTF-8') : null,
+            'contacto_emerg_nombre'   => $request->contacto_emerg_nombre ? mb_strtoupper(trim($request->contacto_emerg_nombre), 'UTF-8') : null,
+            'contacto_emerg_relacion' => $request->contacto_emerg_relacion ? mb_strtoupper(trim($request->contacto_emerg_relacion), 'UTF-8') : null,
             'contacto_emerg_telefono' => $request->contacto_emerg_telefono,
+            'acepta_aviso_privacidad' => $request->boolean('acepta_aviso_privacidad') ? 1 : 0,
         ]);
 
         // 2. Sincronizar Alergias
-        if ($request->has('alergias')) {
-            $paciente->alergias()->delete();
+        $paciente->alergias()->delete();
+        if ($request->has('alergias') && is_array($request->alergias)) {
             foreach ($request->alergias as $alergia) {
                 if (!empty(trim($alergia))) {
-                    $paciente->alergias()->create(['nombre' => trim($alergia)]);
+                    $paciente->alergias()->create([
+                        'descripcion' => mb_strtoupper(trim($alergia), 'UTF-8')
+                    ]);
                 }
             }
         }
 
         // 3. Sincronizar Condiciones
-        if ($request->has('condiciones')) {
-            $paciente->condiciones()->delete();
+        $paciente->condiciones()->delete();
+        if ($request->has('condiciones') && is_array($request->condiciones)) {
             foreach ($request->condiciones as $condicion) {
                 if (!empty(trim($condicion))) {
-                    $paciente->condiciones()->create(['nombre' => trim($condicion)]);
+                    $paciente->condiciones()->create([
+                        'descripcion' => mb_strtoupper(trim($condicion), 'UTF-8')
+                    ]);
                 }
             }
         }
 
         // 4. Sincronizar Medicamentos
-        if ($request->has('medicamentos')) {
-            $paciente->medicamentos()->delete();
+        $paciente->medicamentos()->delete();
+        if ($request->has('medicamentos') && is_array($request->medicamentos)) {
             foreach ($request->medicamentos as $medicamento) {
                 if (!empty(trim($medicamento))) {
-                    $paciente->medicamentos()->create(['nombre' => trim($medicamento)]);
+                    $paciente->medicamentos()->create([
+                        'nombre' => mb_strtoupper(trim($medicamento), 'UTF-8')
+                    ]);
                 }
             }
         }
@@ -197,5 +263,12 @@ class PacienteController extends Controller
             'success' => true,
             'message' => 'El paciente y sus antecedentes fueron eliminados.'
         ]);
+    }
+    /**
+     * Muestra el documento oficial del Aviso de Privacidad.
+     */
+    public function avisoPrivacidad()
+    {
+        return view('pacientes.modalAvisoPrivacidad');
     }
 }
