@@ -2,79 +2,132 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Paciente;
-use App\Models\Cita;
-use App\Models\Consulta;
 use Illuminate\Http\Request;
 
 class BusquedaController extends Controller
 {
     public function buscar(Request $request)
     {
-        $query = trim($request->input('q', ''));
-        $resultados = [];
+        $query = trim(mb_strtolower($request->input('q', '')));
 
-        // Si la búsqueda tiene menos de 2 caracteres, retornamos un array vacío
         if (strlen($query) < 2) {
             return response()->json([]);
         }
 
         $user = auth()->user();
 
-        // 1. Búsqueda en PACIENTES (Solo si tiene permiso)
-        if ($user->tienePermiso('Pacientes', 'ver') || $user->tienePermiso('Pacientes', 'consultar')) {
-            $pacientes = Paciente::where('primer_nombre', 'LIKE', "%{$query}%")
-                ->orWhere('apellido_paterno', 'LIKE', "%{$query}%")
-                ->orWhere('rut', 'LIKE', "%{$query}%")
-                ->limit(5)
-                ->get();
-
-            foreach ($pacientes as $paciente) {
-                $resultados[] = [
-                    'categoria' => 'Pacientes',
-                    'icono'     => 'bi-person-fill',
-                    'titulo'    => "{$paciente->primer_nombre} {$paciente->apellido_paterno}",
-                    'subtitulo' => "CURP/RUT: {$paciente->rut}",
-                    'url'       => route('pacientes.index', ['search' => $paciente->rut]),
-                ];
+        // Helper para verificar permisos de acceso a los módulos
+        $tienePermiso = function ($modulo) use ($user) {
+            if (!$user) return false;
+            if (method_exists($user, 'tienePermiso')) {
+                return $user->tienePermiso($modulo, 'ver');
             }
-        }
-
-        // 2. Búsqueda en CITAS (Solo si tiene permiso)
-        if ($user->tienePermiso('Citas', 'ver') || $user->tienePermiso('Citas', 'consultar')) {
-            $citas = Cita::with('paciente')
-                ->whereHas('paciente', function ($q) use ($query) {
-                    $q->where('primer_nombre', 'LIKE', "%{$query}%")
-                      ->orWhere('apellido_paterno', 'LIKE', "%{$query}%");
-                })
-                ->orWhere('motivo', 'LIKE', "%{$query}%")
-                ->limit(5)
-                ->get();
-
-            foreach ($citas as $cita) {
-                $resultados[] = [
-                    'categoria' => 'Citas',
-                    'icono'     => 'bi-calendar-event-fill',
-                    'titulo'    => "Cita: " . ($cita->paciente->primer_nombre ?? 'Paciente'),
-                    'subtitulo' => "Fecha: {$cita->fecha} - Motivo: {$cita->motivo}",
-                    'url'       => route('citas.index', ['cita_id' => $cita->id]),
-                ];
+            if (method_exists($user, 'hasPermission')) {
+                return $user->hasPermission($modulo);
             }
-        }
+            if (method_exists($user, 'can')) {
+                return $user->can($modulo);
+            }
+            return true; // Acceso total para administrador / testing
+        };
 
-        // 3. Búsqueda en CONSULTAS / HISTORIAL (Solo si tiene permiso)
-        if ($user->tienePermiso('Consultas', 'ver')) {
-            $consultas = Consulta::where('diagnostico', 'LIKE', "%{$query}%")
-                ->limit(5)
-                ->get();
+        // Definición de todos los módulos del Sidebar
+        $modulos = [
+            [
+                'nombre' => 'Dashboard',
+                'keywords' => ['dashboard', 'inicio', 'panel', 'resumen', 'principal', 'estadisticas'],
+                'categoria' => 'General',
+                'icono' => 'bi-speedometer2',
+                'route' => 'dashboard',
+                'permiso' => null,
+            ],
+            [
+                'nombre' => 'Pacientes',
+                'keywords' => ['pacientes', 'paciente', 'expedientes', 'fichas', 'historias clinicas', 'directorio'],
+                'categoria' => 'Gestión Médica',
+                'icono' => 'bi-people-fill',
+                'route' => 'pacientes.index',
+                'permiso' => 'Pacientes',
+            ],
+            [
+                'nombre' => 'Citas',
+                'keywords' => ['citas', 'cita', 'agenda', 'calendario', 'turnos', 'agendar'],
+                'categoria' => 'Gestión Médica',
+                'icono' => 'bi-calendar-event-fill',
+                'route' => 'citas.index',
+                'permiso' => 'Citas',
+            ],
+            [
+                'nombre' => 'Consultas',
+                'keywords' => ['consultas', 'consulta', 'medica', 'diagnostico', 'atencion', 'recetas'],
+                'categoria' => 'Gestión Médica',
+                'icono' => 'bi-journal-medical',
+                'route' => 'consultas.index',
+                'permiso' => 'Consultas',
+            ],
+            [
+                'nombre' => 'Consultorios',
+                'keywords' => ['consultorios', 'consultorio', 'salas', 'espacios', 'pisos'],
+                'categoria' => 'Gestión Médica',
+                'icono' => 'bi-building-fill',
+                'route' => 'consultorios.index',
+                'permiso' => 'Consultorios',
+            ],
+            [
+                'nombre' => 'Personal / Usuarios',
+                'keywords' => ['personal', 'usuarios', 'doctores', 'medicos', 'enfermeros', 'equipo', 'empleados'],
+                'categoria' => 'Administración',
+                'icono' => 'bi-person-badge-fill',
+                'route' => 'personal.index',
+                'permiso' => 'Personal',
+            ],
+            [
+                'nombre' => 'Facturación y Finanzas',
+                'keywords' => ['facturacion', 'facturas', 'pagos', 'finanzas', 'cobros', 'recibos'],
+                'categoria' => 'Farmacia y Finanzas',
+                'icono' => 'bi-credit-card-fill',
+                'route' => 'facturacion.index',
+                'permiso' => 'Facturacion',
+            ],
+            [
+                'nombre' => 'Configuración',
+                'keywords' => ['configuracion', 'ajustes', 'roles', 'permisos', 'sistema', 'clinica'],
+                'categoria' => 'Sistema',
+                'icono' => 'bi-gear-fill',
+                'route' => 'configuracion.index',
+                'permiso' => 'Configuracion',
+            ],
+        ];
 
-            foreach ($consultas as $consulta) {
+        $resultados = [];
+
+        foreach ($modulos as $mod) {
+            // Verificar si la ruta existe en Laravel
+            if (!\Route::has($mod['route'])) {
+                continue;
+            }
+
+            // Filtrar por permisos del usuario
+            if ($mod['permiso'] && !$tienePermiso($mod['permiso'])) {
+                continue;
+            }
+
+            // Buscar coincidencia en el nombre o en las palabras clave (keywords)
+            $coincide = false;
+            foreach ($mod['keywords'] as $kw) {
+                if (str_contains($kw, $query)) {
+                    $coincide = true;
+                    break;
+                }
+            }
+
+            if ($coincide) {
                 $resultados[] = [
-                    'categoria' => 'Consultas',
-                    'icono'     => 'bi-journal-medical',
-                    'titulo'    => "Consulta #{$consulta->id}",
-                    'subtitulo' => "Diag: " . substr($consulta->diagnostico, 0, 35) . "...",
-                    'url'       => route('consultas.index', ['id' => $consulta->id]),
+                    'categoria' => $mod['categoria'],
+                    'icono'     => $mod['icono'],
+                    'titulo'    => $mod['nombre'],
+                    'subtitulo' => 'Ir al módulo de ' . $mod['nombre'],
+                    'url'       => route($mod['route']),
                 ];
             }
         }

@@ -279,10 +279,10 @@
             </div>
         </div>
 
-       <!-- BUSCADOR INTEGRADO EN EL SIDEBAR CON AUTOCOMPLETADO Y PERMISOS -->
-<div x-data="buscadorGlobal()" class="relative px-2 mb-3">
+       <!-- BUSCADOR DE MÓDULOS EN EL SIDEBAR -->
+<div x-data="buscadorGlobal()" class="relative px-3 mb-3 z-[9999]">
     
-    <!-- Input con icono y spinner de carga -->
+    <!-- Input principal -->
     <div class="relative flex items-center">
         <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
             <i class="bi bi-search text-xs"></i>
@@ -290,13 +290,13 @@
         
         <input type="text" 
                x-model="query" 
-               @input.debounce.300ms="realizarBusqueda()"
+               @input.debounce.200ms="realizarBusqueda()"
                @focus="open = true"
                @click.away="open = false"
-               placeholder="Buscar paciente, cita, factura..." 
-               class="w-full pl-8 pr-8 py-2 bg-slate-100/90 border border-transparent focus:border-teal-300 rounded-xl text-xs text-gray-700 outline-none transition-all">
+               placeholder="Ir a un módulo (Pacientes, Citas...)" 
+               class="w-full pl-8 pr-8 py-2 bg-slate-100 hover:bg-slate-200/60 focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 rounded-xl text-xs text-gray-700 outline-none transition-all border border-transparent">
         
-        <!-- Spinner de carga dinámico -->
+        <!-- Spinner de carga -->
         <template x-if="cargando">
             <span class="absolute right-3 flex items-center">
                 <i class="bi bi-arrow-repeat animate-spin text-teal-600 text-xs"></i>
@@ -304,67 +304,39 @@
         </template>
     </div>
 
-    <!-- MENÚ DESPLEGABLE DE RESULTADOS -->
+    <!-- MENÚ DESPLEGABLE DE MÓDULOS -->
     <div x-show="open && (resultados.length > 0 || (query.length >= 2 && !cargando))" 
-         x-transition
-         class="absolute left-2 right-2 mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 z-[9999] overflow-hidden max-h-80 overflow-y-auto"
+         x-transition:enter="transition ease-out duration-100"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         class="absolute left-3 right-3 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 z-[99999] overflow-hidden max-h-80 overflow-y-auto"
          x-cloak>
         
-        <!-- Lista de Resultados según Permisos -->
+        <!-- Lista de Módulos Encontrados -->
         <template x-for="(item, index) in resultados" :key="index">
-            <a :href="item.url" class="flex items-start gap-2.5 p-2.5 hover:bg-slate-50 transition-colors border-b border-gray-50 last:border-none">
-                <div class="p-1.5 bg-teal-50 text-teal-600 rounded-lg flex-shrink-0">
-                    <i :class="'bi ' + item.icono + ' text-xs'"></i>
+            <a :href="item.url" class="flex items-center gap-2.5 p-2.5 hover:bg-teal-50/60 transition-colors border-b border-gray-50 last:border-none">
+                <div class="p-2 bg-teal-50 text-teal-600 rounded-xl flex-shrink-0">
+                    <i :class="'bi ' + item.icono + ' text-sm'"></i>
                 </div>
-                <div class="overflow-hidden">
+                <div class="overflow-hidden flex-1">
                     <div class="flex items-center gap-1">
-                        <span class="text-[9px] font-bold uppercase text-teal-700 px-1 py-0.2 bg-teal-50 rounded" x-text="item.categoria"></span>
+                        <span class="text-[9px] font-bold uppercase text-teal-700 px-1.5 py-0.5 bg-teal-50 rounded-md" x-text="item.categoria"></span>
                     </div>
-                    <p class="text-xs font-bold text-gray-800 truncate mt-0.5" x-text="item.titulo"></p>
-                    <p class="text-[10px] text-gray-400 truncate" x-text="item.subtitulo"></p>
+                    <p class="text-xs font-black text-gray-800 truncate mt-0.5" x-text="item.titulo"></p>
                 </div>
+                <i class="bi bi-chevron-right text-gray-300 text-xs"></i>
             </a>
         </template>
 
-        <!-- Sin Coincidencias o Sin Permisos -->
+        <!-- Sin Módulos Encontrados -->
         <template x-if="resultados.length === 0 && query.length >= 2 && !cargando">
-            <div class="p-3 text-center text-xs text-gray-400">
-                <i class="bi bi-search text-sm block mb-1"></i>
-                <span>Sin coincidencias o permisos.</span>
+            <div class="p-4 text-center text-xs text-gray-400">
+                <i class="bi bi-door-closed text-base block mb-1"></i>
+                <span>Módulo no encontrado o sin acceso.</span>
             </div>
         </template>
     </div>
 </div>
-
-<script>
-    function buscadorGlobal() {
-        return {
-            query: '',
-            resultados: [],
-            cargando: false,
-            open: false,
-
-            async realizarBusqueda() {
-                if (this.query.length < 2) {
-                    this.resultados = [];
-                    return;
-                }
-
-                this.cargando = true;
-                this.open = true;
-
-                try {
-                    const response = await fetch(`{{ route('buscar.global') }}?q=${encodeURIComponent(this.query)}`);
-                    this.resultados = await response.json();
-                } catch (error) {
-                    console.error('Error en la búsqueda:', error);
-                } finally {
-                    this.cargando = false;
-                }
-            }
-        }
-    }
-</script>
 
         <!-- 2. BLOQUE MEDIO (MENÚ) -->
        <nav class="space-y-4 flex-1 min-h-0 overflow-y-auto pr-1 my-2">
@@ -402,8 +374,9 @@
     <span>Consultas</span>
 </a>
 
-        <a href="{{ route('consultorios.index') }}" class="flex items-center gap-3 ...">
-    <i class="bi bi-hospital"></i>
+        <a href="{{ route('consultorios.index') }}" 
+   class="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all {{ request()->routeIs('consultorios.*') ? 'bg-teal-600 text-white shadow-md shadow-teal-600/20' : 'text-gray-600 hover:bg-slate-100/80 hover:text-gray-900' }}">
+    <i class="bi bi-hospital text-base"></i>
     <span>Consultorios</span>
 </a>
     </div>
@@ -426,7 +399,7 @@
             <span>Recetas</span>
         </a>
 
-        <a href="#" 
+        <a href="{{ route('inventario.index') }}"
            class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all {{ request()->routeIs('inventario.*') ? 'bg-teal-600 text-white shadow-md shadow-teal-600/20' : 'text-gray-600 hover:bg-slate-100/80 hover:text-gray-900' }}">
             <i class="bi bi-box-seam text-base"></i>
             <span>Inventario</span>
@@ -472,6 +445,133 @@
 
 </nav>
     </aside>
+
+<!-- TRANSICIÓN GEOMÉTRICA DINÁMICA PREMIUM -->
+<!-- TRANSICIÓN LÍQUIDA ENTRE PÁGINAS -->
+<div x-data="{
+        activo: true,
+        reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+        init() {
+            // Doble requestAnimationFrame en vez de un setTimeout arbitrario:
+            // garantiza que el navegador ya pintó el estado 'cubierto' antes
+            // de arrancar la salida, sin depender de adivinar cuántos ms tarda.
+            requestAnimationFrame(() => requestAnimationFrame(() => { this.activo = false; }));
+        },
+        navegar(url) {
+            this.activo = true;
+            if (this.reducedMotion) { window.location.href = url; return; }
+
+            // Navega justo cuando termina la animación real del panel (transitionend),
+            // con un pequeño margen de seguridad por si el evento no llega a disparar.
+            let yaNavego = false;
+            const ir = () => { if (!yaNavego) { yaNavego = true; window.location.href = url; } };
+            this.$refs.panel.addEventListener('transitionend', ir, { once: true });
+            setTimeout(ir, 700);
+        }
+    }"
+    x-init="init()"
+    @disparar-liquido.window="navegar($event.detail)"
+    role="status"
+    aria-live="polite"
+    :aria-hidden="(!activo).toString()"
+    class="pointer-events-none fixed inset-0 z-[999999] overflow-hidden flex items-center justify-center"
+    :class="activo && 'pointer-events-auto'">
+
+    <!-- 1. Panel líquido -->
+    <div x-ref="panel"
+         class="absolute inset-x-0 -top-[3%] h-[106%] bg-gradient-to-br from-teal-950 via-teal-900 to-emerald-950 will-change-transform"
+         :class="reducedMotion ? '' : 'transition-transform duration-[600ms] ease-[cubic-bezier(0.83,0,0.17,1)]'"
+         :style="activo ? 'transform: translateY(0%);' : 'transform: translateY(-100%);'">
+
+        <!-- Borde ondulado tipo líquido -->
+        <svg class="absolute -bottom-px left-0 w-[200%] h-10 text-emerald-400/70"
+             :class="activo && !reducedMotion && 'animate-ola'"
+             viewBox="0 0 1200 60" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0,30 C150,55 150,5 300,30 C450,55 450,5 600,30 C750,55 750,5 900,30 C1050,55 1050,5 1200,30 L1200,60 L0,60 Z" fill="currentColor" opacity="0.55"/>
+        </svg>
+
+        <!-- Línea de acento brillante -->
+        <div class="absolute bottom-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_18px_#34d399]"></div>
+    </div>
+
+    <!-- 2. Identidad central de MediTrack -->
+    <div class="relative z-20 flex items-center justify-center pointer-events-none">
+        <div :class="reducedMotion ? '' : 'transition-all duration-500 ease-out'"
+             :style="activo ? 'opacity:1; transform: translateY(0) scale(1);' : 'opacity:0; transform: translateY(-8px) scale(0.94);'"
+             class="text-center space-y-3">
+
+              <!-- Icono con resplandor -->
+              <div class="relative w-16 h-16 mx-auto">
+                  <div class="absolute inset-0 rounded-2xl bg-emerald-400/25 blur-xl" :class="activo && !reducedMotion && 'animate-resplandor'"></div>
+                  <div class="relative w-16 h-16 rounded-2xl bg-teal-900/90 border border-emerald-500/40 shadow-[0_0_30px_rgba(52,211,153,0.35)] flex items-center justify-center">
+                      <i class="bi bi-heart-pulse-fill text-emerald-400 text-2xl" aria-hidden="true"></i>
+                  </div>
+              </div>
+
+              <!-- Texto de marca -->
+              <div class="space-y-1">
+                  <h2 class="text-white font-black tracking-[0.4em] text-sm uppercase drop-shadow-md">MediTrack</h2>
+                  <p class="text-[10px] text-emerald-300/70 tracking-widest uppercase">Sistema médico</p>
+              </div>
+
+              <!-- Barra de progreso -->
+              <div class="w-24 h-[3px] mx-auto rounded-full bg-white/10 overflow-hidden mt-1">
+                  <div class="h-full bg-emerald-400 rounded-full" :class="activo && !reducedMotion && 'animate-progreso'"></div>
+              </div>
+         </div>
+         <span class="sr-only">Cargando…</span>
+    </div>
+</div>
+
+<style>
+    @keyframes ola {
+        from { transform: translateX(0); }
+        to   { transform: translateX(-50%); }
+    }
+    .animate-ola { animation: ola 3.4s linear infinite; }
+
+    @keyframes resplandor {
+        0%, 100% { opacity: .55; transform: scale(1); }
+        50%      { opacity: .15; transform: scale(1.35); }
+    }
+    .animate-resplandor { animation: resplandor 1.8s ease-in-out infinite; }
+
+    @keyframes progreso {
+        from { width: 0%; }
+        to   { width: 100%; }
+    }
+    .animate-progreso { animation: progreso 600ms ease-out forwards; }
+
+    @media (prefers-reduced-motion: reduce) {
+        .animate-ola, .animate-resplandor, .animate-progreso { animation: none !important; }
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('a').forEach((enlace) => {
+            enlace.addEventListener('click', (e) => {
+                const href = enlace.getAttribute('href');
+                const esExterno = enlace.hostname && enlace.hostname !== window.location.hostname;
+
+                if (
+                    href &&
+                    !href.startsWith('#') &&
+                    !href.startsWith('javascript:') &&
+                    !href.startsWith('mailto:') &&
+                    !href.startsWith('tel:') &&
+                    enlace.target !== '_blank' &&
+                    !href.includes('logout') &&
+                    !enlace.hasAttribute('download') &&
+                    !esExterno
+                ) {
+                    e.preventDefault();
+                    window.dispatchEvent(new CustomEvent('disparar-liquido', { detail: href }));
+                }
+            });
+        });
+    });
+</script>
 
     <!-- ÁREA PRINCIPAL -->
     <div class="flex-1 min-w-0 flex flex-col overflow-y-auto">
@@ -605,5 +705,35 @@
         });
     </script>
     @endif
+    <!-- SCRIPT GLOBAL PARA EL BUSCADOR DEL SIDEBAR -->
+    <script>
+        function buscadorGlobal() {
+            return {
+                query: '',
+                resultados: [],
+                cargando: false,
+                open: false,
+
+                async realizarBusqueda() {
+                    if (this.query.length < 2) {
+                        this.resultados = [];
+                        return;
+                    }
+
+                    this.cargando = true;
+                    this.open = true;
+
+                    try {
+                        const response = await fetch(`{{ route('buscar.global') }}?q=${encodeURIComponent(this.query)}`);
+                        this.resultados = await response.json();
+                    } catch (error) {
+                        console.error('Error al realizar la búsqueda:', error);
+                    } finally {
+                        this.cargando = false;
+                    }
+                }
+            }
+        }
+    </script>
 </body>
 </html>

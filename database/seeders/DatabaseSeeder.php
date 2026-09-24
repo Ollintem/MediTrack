@@ -81,16 +81,28 @@ class DatabaseSeeder extends Seeder
 
         // 7. Paciente ajustado EXACTAMENTE a las columnas de tu tabla 'pacientes'
         Paciente::firstOrCreate(
-            ['id' => 1],
+            ['codigo' => 'PAC-001'],
             [
-                'clinica_id'       => $clinica->id,
-                'codigo'           => 'PAC-001',
-                'nombre_completo'  => 'María Cortés',
-                'rut'              => 'PAC-10293',
-                'fecha_nacimiento' => '1995-04-12',
-                'genero'           => 'Femenino',
-                'telefono'         => '5559876543',
-                'estado'           => 'Activo',
+                'clinica_id'              => $clinica->id,
+                'codigo'                  => 'PAC-001',
+                'primer_nombre'           => 'MARIA',
+                'apellido_paterno'        => 'CORTES',
+                'apellido_materno'        => 'MORENO',
+                'rut'                     => 'COMM950412HDFRRN01',
+                'fecha_nacimiento'        => '1995-04-12',
+                'genero'                  => 'Femenino',
+                'estado_civil'            => 'Soltero/a',
+                'nacionalidad'            => 'Mexicana',
+                'grupo_sanguineo'         => 'O+',
+                'telefono'                => '5559876543',
+                'celular'                 => '5512345678',
+                'email'                   => 'maria.cortes@email.com',
+                'direccion'               => 'AV. SIEMPRE VIVA 123',
+                'contacto_emerg_nombre'   => 'JUAN CORTÉS',
+                'contacto_emerg_relacion' => 'Padre',
+                'contacto_emerg_telefono' => '5551112233',
+                'acepta_aviso_privacidad' => true,
+                'estado'                  => 'Activo',
             ]
         );
     }

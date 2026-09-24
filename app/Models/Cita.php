@@ -16,8 +16,29 @@ class Cita extends Model
         'fecha', 'hora', 'duracion_min', 'motivo', 'tipo_consulta', 'estado'
     ];
 
-    public function paciente() { return $this->belongsTo(Paciente::class); }
-    public function medico() { return $this->belongsTo(Personal::class, 'personal_id'); }
-    public function consultorio() { return $this->belongsTo(Consultorio::class); }
-    public function clinica() { return $this->belongsTo(Clinica::class); }
+    public function paciente() 
+    { 
+        return $this->belongsTo(Paciente::class); 
+    }
+
+    // Definimos ambas para que responda tanto a ->medico() como a ->personal()
+    public function medico() 
+    { 
+        return $this->belongsTo(Personal::class, 'personal_id'); 
+    }
+
+    public function personal() 
+    { 
+        return $this->belongsTo(Personal::class, 'personal_id'); 
+    }
+
+    public function consultorio() 
+    { 
+        return $this->belongsTo(Consultorio::class); 
+    }
+
+    public function clinica() 
+    { 
+        return $this->belongsTo(Clinica::class); 
+    }
 }

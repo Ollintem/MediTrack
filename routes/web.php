@@ -13,6 +13,7 @@ use App\Http\Controllers\ConsultorioController;
 use App\Http\Controllers\BitacoraController;
 use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\BusquedaController;
+use App\Http\Controllers\InventarioController;
 
 /*
 |--------------------------------------------------------------------------
@@ -29,6 +30,8 @@ Route::middleware(['auth'])->group(function () {
 Route::get('/', function () {
     return redirect()->route('login');
 });
+
+Route::resource('citas', CitaController::class);
 
 // 2. Rutas automáticas de Autenticación (Login, Logout)
 Auth::routes([
@@ -130,5 +133,13 @@ Route::middleware(['auth', 'permiso:Consultas'])->group(function () {
     // Ruta de estado
     Route::get('/ping', function () {
         return response()->json(['status' => 'ok']);
+    });
+
+    // Rutas de Inventario
+    Route::middleware(['auth'])->group(function () {
+        Route::get('/inventario', [InventarioController::class, 'index'])->name('inventario.index');
+        Route::post('/inventario', [InventarioController::class, 'store'])->name('inventario.store');
+        Route::put('/inventario/{id}', [InventarioController::class, 'update'])->name('inventario.update');
+        Route::post('/inventario/{id}/agregar-stock', [InventarioController::class, 'agregarStock'])->name('inventario.agregar-stock');
     });
 });
