@@ -1,3 +1,8 @@
+@php
+    // Datos de la consulta de origen (cuando se llega desde "Finalizar y emitir receta"). Si no hay, es una receta manual.
+    $pf = $prefill ?? null;
+@endphp
+
 <!-- MODAL CREAR RECETA MÉDICA - WIZARD ANIMADO PREMIUM -->
 <template x-teleport="body">
     <div x-show="openCreateModal" 
@@ -13,7 +18,7 @@
         <div class="bg-white rounded-[2.5rem] shadow-2xl max-w-4xl w-full max-h-[90vh] border border-slate-100 flex flex-col overflow-hidden my-auto" 
              @click.outside="openCreateModal = false"
              x-data="{
-                step: 1,
+                step: {{ $pf ? 3 : 1 }},
                 vitals: {
                     pa_sistolica: '{{ old('pa_sistolica') }}',
                     pa_diastolica: '{{ old('pa_diastolica') }}',
@@ -87,7 +92,30 @@
             <form action="{{ route('recetas.store') }}" method="POST" class="flex flex-col flex-1 min-h-0 bg-slate-50/50">
                 @csrf
 
-                <div class="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                {{-- Enlaza la receta con la consulta de origen --}}
+                @if ($pf)
+                    <input type="hidden" name="consulta_id" value="{{ $pf['consulta_id'] }}">
+                @endif
+
+                <div class="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-6">
+
+                    <!-- AVISO: LA RECETA VIENE DE UNA CONSULTA -->
+                    @if ($pf)
+                        <div class="rounded-3xl border border-sky-200 bg-sky-50 p-4 flex items-start gap-3">
+                            <span class="w-10 h-10 rounded-2xl bg-sky-600 text-white flex items-center justify-center text-lg shrink-0">
+                                <i class="bi bi-clipboard2-pulse-fill"></i>
+                            </span>
+                            <div class="min-w-0">
+                                <p class="text-[10px] font-black uppercase tracking-wide text-sky-600">Receta desde una consulta</p>
+                                <p class="text-xs font-bold text-slate-700">
+                                    Consulta #{{ $pf['consulta_id'] }} · {{ $pf['paciente_nombre'] }}@if ($pf['fecha']) · {{ $pf['fecha'] }}@endif
+                                </p>
+                                <p class="text-[11px] font-medium text-slate-500 mt-0.5 leading-relaxed">
+                                    Ya cargamos el paciente, el médico y el diagnóstico. Solo falta agregar los medicamentos en el paso 3.
+                                </p>
+                            </div>
+                        </div>
+                    @endif
 
                     <!-- PASO 1: EMISIÓN DE DATOS GENERALES -->
                     <div x-show="step === 1" 
@@ -107,8 +135,8 @@
                                 <div x-data="{
                                     openDoc: false,
                                     searchDoc: '',
-                                    selectedDocId: '{{ auth()->user()->personal->id ?? '' }}',
-                                    selectedDocName: 'Dr. {{ auth()->user()->personal->nombre_completo ?? auth()->user()->nombre_completo }}',
+                                    selectedDocId: @js((string) (($pf['personal_id'] ?? null) ?: (auth()->user()->personal->id ?? ''))),
+                                    selectedDocName: @js($pf['personal_nombre'] ?? ('Dr. ' . (auth()->user()->personal->nombre_completo ?? auth()->user()->nombre_completo))),
                                     doctores: {{ json_encode($doctores->map(fn($d) => ['id' => $d->id, 'nombre' => 'Dr. ' . $d->nombre_completo])) }},
                                     get filteredDoctores() {
                                         if (!this.searchDoc) return this.doctores;
@@ -155,8 +183,8 @@
                                 <div x-data="{
                                     openPac: false,
                                     searchPac: '',
-                                    selectedPacId: '',
-                                    selectedPacName: '',
+                                    selectedPacId: @js((string) ($pf['paciente_id'] ?? '')),
+                                    selectedPacName: @js($pf['paciente_nombre'] ?? ''),
                                     pacientes: {{ json_encode($pacientes->map(fn($p) => ['id' => $p->id, 'nombre' => $p->nombre_completo ?? trim(($p->nombre ?? '') . ' ' . ($p->apellido ?? ''))])) }},
                                     get filteredPacientes() {
                                         if (!this.searchPac) return this.pacientes;
@@ -344,19 +372,46 @@
                          x-transition:enter-end="opacity-100 translate-x-0"
                          class="space-y-6">
 
+                        {{-- Resumen de la exploración de la consulta, a la vista mientras se prescribe --}}
+                        @if ($pf && !empty($pf['resumen']))
+                            <div x-data="{ abierto: false }" class="bg-sky-50/70 border border-sky-200 rounded-3xl overflow-hidden">
+                                <button type="button" @click="abierto = !abierto" class="w-full flex items-center justify-between gap-3 p-4 text-left">
+                                    <span class="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-sky-700">
+                                        <i class="bi bi-clipboard2-pulse"></i> Resumen de la consulta
+                                    </span>
+                                    <i class="bi bi-chevron-down text-sky-500 text-xs transition-transform" :class="abierto && 'rotate-180'"></i>
+                                </button>
+                                <div x-show="abierto" x-cloak
+                                     x-transition:enter="transition ease-out duration-200"
+                                     x-transition:enter-start="opacity-0 -translate-y-1"
+                                     x-transition:enter-end="opacity-100 translate-y-0"
+                                     class="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    @foreach ($pf['resumen'] as $item)
+                                        <div class="bg-white rounded-2xl border border-sky-100 p-3">
+                                            <p class="text-[10px] font-black uppercase tracking-wide text-slate-400">{{ $item['etiqueta'] }}</p>
+                                            <p class="text-xs font-semibold text-slate-700 mt-0.5 leading-relaxed" style="text-transform: none;">{{ $item['texto'] }}</p>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+
                         <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
                             <div>
                                 <label class="block text-xs font-black uppercase text-slate-700 flex items-center gap-2 mb-2">
                                     <i class="bi bi-stethoscope text-teal-600"></i> Diagnóstico Clínico *
+                                    @if ($pf && $pf['diagnostico'] !== '')
+                                        <span class="text-[10px] font-bold normal-case text-sky-600 bg-sky-50 border border-sky-100 px-2 py-0.5 rounded-md">tomado de la consulta</span>
+                                    @endif
                                 </label>
-                                <textarea name="diagnostico" rows="2" placeholder="Ej. Faringoamigdalitis aguda bacteriana, Hipertensión arterial sistémica primaria..." required class="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-3 text-xs font-bold focus:bg-white focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all uppercase"></textarea>
+                                <textarea name="diagnostico" rows="2" placeholder="Ej. Faringoamigdalitis aguda bacteriana, Hipertensión arterial sistémica primaria..." required class="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-3 text-xs font-bold focus:bg-white focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all uppercase">{{ old('diagnostico', $pf['diagnostico'] ?? '') }}</textarea>
                             </div>
 
                             <div>
                                 <label class="block text-xs font-black uppercase text-slate-700 flex items-center gap-2 mb-2">
                                     <i class="bi bi-journal-text text-teal-600"></i> Indicaciones y Recomendaciones
                                 </label>
-                                <textarea name="indicaciones_generales" rows="2" placeholder="Cuidados generales, dieta, reposo o recomendaciones adicionales..." class="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-3 text-xs font-bold focus:bg-white focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all uppercase"></textarea>
+                                <textarea name="indicaciones_generales" rows="2" placeholder="Cuidados generales, dieta, reposo o recomendaciones adicionales..." class="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-3 text-xs font-bold focus:bg-white focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all uppercase">{{ old('indicaciones_generales') }}</textarea>
                             </div>
                         </div>
                         

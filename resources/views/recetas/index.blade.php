@@ -289,44 +289,56 @@
             
             <div class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full border border-teal-100 flex flex-col overflow-hidden my-auto max-h-[92vh]">
                 
-                <!-- BOTONES DE CONTROL SUPERIORES -->
-                <div class="no-print p-4 bg-teal-800 text-white flex justify-between items-center shrink-0">
-                    <div class="flex items-center gap-2">
-                        <i class="bi bi-file-earmark-medical-fill text-xl text-teal-300"></i>
-                        <span class="font-bold text-sm">Documento Oficial de Prescripción</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <button type="button" onclick="window.print()" class="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition">
-                            <i class="bi bi-printer-fill"></i> Imprimir Ahora
-                        </button>
-                        <button type="button" @click="openPrintModal = false" class="bg-white/10 hover:bg-white/20 text-white w-8 h-8 rounded-xl font-bold transition flex items-center justify-center">&times;</button>
-                    </div>
-                </div>
+                <!-- CÓDIGO NUEVO (Abre el PDF generado por DomPDF en pestaña nueva) -->
+<a :href="'/recetas/' + printReceta.id + '/pdf'" 
+   target="_blank" 
+   class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-xs shadow-sm transition-all flex items-center gap-2 cursor-pointer decoration-none">
+    <i class="bi bi-printer-fill"></i>
+    <span>Imprimir Ahora</span>
+</a>
 
                 <!-- HOJA IMPRESA DE RECETA -->
                 <div id="hoja-receta-medica" class="p-8 sm:p-10 space-y-6 text-slate-800 bg-white overflow-y-auto">
                     
-                    <!-- ENCABEZADO Y MEMBRETE CLÍNICO -->
-                    <div class="flex justify-between items-start border-b-2 border-teal-700 pb-5">
-                        <div class="space-y-1">
-                            <div class="flex items-center gap-2 text-teal-800 font-black text-2xl tracking-tight">
-                                <div class="w-9 h-9 rounded-xl bg-teal-700 text-white flex items-center justify-center text-lg shadow-sm">
-                                    <i class="bi bi-heart-pulse-fill"></i>
-                                </div>
-                                <span>MediTrack</span>
-                            </div>
-                            <p class="text-xs font-bold text-slate-500">Centro Médico y Especialidades Clínicas</p>
-                            <p class="text-[11px] text-slate-400">Atención de Salud Integral y Control de Expedientes</p>
-                        </div>
-                        <div class="text-right space-y-1">
-                            <span class="inline-block bg-teal-50 border border-teal-200 text-teal-800 font-black text-xs px-3 py-1 rounded-xl">
-                                RECETA: <span x-text="`#${String(printReceta.id).padStart(5, '0')}`"></span>
-                            </span>
-                            <p class="text-xs font-bold text-slate-500 pt-1">
-                                Fecha: <span class="text-slate-800" x-text="printReceta.fecha_emision || printReceta.fecha"></span>
-                            </p>
-                        </div>
-                    </div>
+                    @php
+    $clinicaData = \App\Models\Clinica::first();
+    $configData = \App\Models\Configuracion::pluck('valor', 'clave')->toArray();
+@endphp
+
+<!-- REEMPLAZO DINÁMICO CON DATOS DE LA CLÍNICA -->
+<div class="border-b-2 border-teal-600 pb-4 flex justify-between items-start gap-4">
+    <div>
+        <!-- Nombre de la Clínica -->
+        <h2 class="text-xl font-black text-teal-800 uppercase tracking-tight">
+            {{ $clinicaData->nombre ?? ($clinica->nombre ?? 'MEDITRACK') }}
+        </h2>
+        
+        <!-- Dirección -->
+        <p class="text-xs text-slate-600 font-bold mt-0.5">
+            {{ $clinicaData->direccion ?? ($clinica->direccion ?? 'DIRECCIÓN NO REGISTRADA') }}
+        </p>
+
+        <!-- Teléfono, Correo y RUT/RFC -->
+        <p class="text-[10px] text-slate-500 font-medium mt-0.5">
+            TEL: {{ $clinicaData->telefono ?? ($clinica->telefono ?? 'S/N') }}
+            @if(!empty($configData['email']) || !empty($clinicaData->email) || !empty($clinica->email))
+                <span class="mx-1">|</span> EMAIL: {{ $configData['email'] ?? ($clinicaData->email ?? $clinica->email) }}
+            @endif
+            @if(!empty($clinicaData->rut_empresa) || !empty($clinica->rut_empresa))
+                <span class="mx-1">|</span> RFC/RUT: {{ $clinicaData->rut_empresa ?? $clinica->rut_empresa }}
+            @endif
+        </p>
+    </div>
+
+    <div class="text-right shrink-0">
+        <span class="px-3 py-1 bg-teal-50 text-teal-700 font-bold text-xs rounded-full border border-teal-200 block mb-1">
+            RECETA: #<span x-text="String(recetaSeleccionada?.id || 0).padStart(5, '0')"></span>
+        </span>
+        <span class="text-[11px] font-semibold text-slate-400">
+            Fecha: <span x-text="recetaSeleccionada?.fecha_emision || ''"></span>
+        </span>
+    </div>
+</div>
 
                     <!-- INFORMACIÓN DEL MÉDICO Y PACIENTE -->
                     <div class="grid grid-cols-2 gap-4 bg-slate-50/80 p-4 rounded-2xl border border-slate-200 text-xs">

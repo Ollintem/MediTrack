@@ -13,8 +13,11 @@ class Clinica extends Model
 
     protected $fillable = [
         'nombre',
+        'rut_empresa',
         'direccion',
         'telefono',
+        'confirmacion_auto_citas',
+        'recordatorio_pago_email',
         'email',
         'estado',
     ];

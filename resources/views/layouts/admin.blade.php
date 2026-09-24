@@ -190,7 +190,7 @@
             font-size: 0.78rem !important;
             height: 35px !important;
             line-height: 35px !important;
-            width: 14.28% !important; /* Exactamente 1/7 parte para formar columnas de 7 días */
+            width: 14.28% !important;
             max-width: 14.28% !important;
             flex-basis: 14.28% !important;
             margin: 0 !important;
@@ -446,23 +446,17 @@
 </nav>
     </aside>
 
-<!-- TRANSICIÓN GEOMÉTRICA DINÁMICA PREMIUM -->
 <!-- TRANSICIÓN LÍQUIDA ENTRE PÁGINAS -->
 <div x-data="{
         activo: true,
         reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
         init() {
-            // Doble requestAnimationFrame en vez de un setTimeout arbitrario:
-            // garantiza que el navegador ya pintó el estado 'cubierto' antes
-            // de arrancar la salida, sin depender de adivinar cuántos ms tarda.
             requestAnimationFrame(() => requestAnimationFrame(() => { this.activo = false; }));
         },
         navegar(url) {
             this.activo = true;
             if (this.reducedMotion) { window.location.href = url; return; }
 
-            // Navega justo cuando termina la animación real del panel (transitionend),
-            // con un pequeño margen de seguridad por si el evento no llega a disparar.
             let yaNavego = false;
             const ir = () => { if (!yaNavego) { yaNavego = true; window.location.href = url; } };
             this.$refs.panel.addEventListener('transitionend', ir, { once: true });
@@ -590,7 +584,6 @@
             </div>
 
             <div class="flex items-center gap-4">
-                
                 <button class="relative p-2 text-gray-400 hover:text-gray-600 hover:bg-slate-100 rounded-xl transition">
                     <i class="bi bi-bell text-lg"></i>
                     <span class="absolute top-1.5 right-1.5 bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-extrabold">3</span>
@@ -663,6 +656,7 @@
             const colores = {
                 success: { border: 'border-teal-200', icon: '#0d9488' },
                 error:   { border: 'border-rose-200', icon: '#f43f5e' },
+                warning: { border: 'border-amber-200', icon: '#f59e0b' },
                 info:    { border: 'border-sky-200', icon: '#0284c7' }
             };
 
@@ -688,7 +682,7 @@
         };
     </script>
 
-    @if (session('success') || session('error') || session('info') || session('status'))
+    @if (session('success') || session('error') || session('warning') || session('info') || session('status'))
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             @if (session('success') || session('status'))
@@ -699,12 +693,17 @@
                 window.notificar("{{ session('error') }}", 'error');
             @endif
 
+            @if (session('warning'))
+                window.notificar("{{ session('warning') }}", 'warning');
+            @endif
+
             @if (session('info'))
                 window.notificar("{{ session('info') }}", 'info');
             @endif
         });
     </script>
     @endif
+
     <!-- SCRIPT GLOBAL PARA EL BUSCADOR DEL SIDEBAR -->
     <script>
         function buscadorGlobal() {

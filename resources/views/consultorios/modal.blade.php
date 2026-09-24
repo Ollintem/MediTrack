@@ -13,9 +13,13 @@
 
         <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden my-auto"
              @click.outside="openModal = false"
-             x-transition:enter="transition ease-out duration-250"
-             x-transition:enter-start="opacity-0 translate-y-3 scale-95"
-             x-transition:enter-end="opacity-100 translate-y-0 scale-100">
+             x-show="openModal"
+                 x-transition:enter="transition ease-out duration-300"
+                 x-transition:enter-start="opacity-0 translate-y-6 scale-95"
+                 x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+                 x-transition:leave="transition ease-in duration-150"
+                 x-transition:leave-start="opacity-100 scale-100"
+                 x-transition:leave-end="opacity-0 scale-95">
 
             <!-- Encabezado -->
             <div class="relative px-7 py-6 bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-800 text-white overflow-hidden">
@@ -23,7 +27,7 @@
                 <div class="absolute right-14 -bottom-10 w-20 h-20 rounded-full bg-white/5"></div>
 
                 <div class="relative flex items-center gap-4">
-                    <span class="w-11 h-11 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center shrink-0">
+                    <span class="w-11 h-11 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center shrink-0" :class="openModal && 'icono-pop'">
                         <i class="bi text-lg text-emerald-300" :class="modoEdicion ? 'bi-pencil-square' : 'bi-door-open-fill'"></i>
                     </span>
                     <div class="min-w-0">
@@ -41,7 +45,7 @@
             <form @submit.prevent="guardar" class="p-7 space-y-5">
 
                 <!-- Nombre -->
-                <div>
+                <div class="reveal-item" :class="openModal && 'reveal-on'" style="--d:1">
                     <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1.5">Nombre del consultorio</label>
                     <div class="relative">
                         <i class="bi bi-door-open absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
@@ -52,11 +56,11 @@
                 </div>
 
                 <!-- Piso -->
-                <div>
+                <div class="reveal-item" :class="openModal && 'reveal-on'" style="--d:2">
                     <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1.5">Piso</label>
                     <div class="flex items-center gap-2">
                         <button type="button"
-                                @click="form.piso = Math.max(0, (parseInt(form.piso) || 0) - 1)"
+                                @click="form.piso = String(Math.max(0, (parseInt(form.piso) || 0) - 1))"
                                 class="w-11 h-11 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-all cursor-pointer shrink-0" title="Bajar piso">
                             <i class="bi bi-dash-lg text-sm"></i>
                         </button>
@@ -66,7 +70,7 @@
                                    class="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl pl-11 pr-4 py-3 text-xs font-bold text-slate-800 text-center outline-none transition-all focus:bg-white focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10">
                         </div>
                         <button type="button"
-                                @click="form.piso = (parseInt(form.piso) || 0) + 1"
+                                @click="form.piso = String((parseInt(form.piso) || 0) + 1)"
                                 class="w-11 h-11 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-all cursor-pointer shrink-0" title="Subir piso">
                             <i class="bi bi-plus-lg text-sm"></i>
                         </button>
@@ -74,28 +78,22 @@
                 </div>
 
                 <!-- Estado -->
-                <div>
+                <div class="reveal-item" :class="openModal && 'reveal-on'" style="--d:3">
                     <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1.5">Estado</label>
-                    <div class="grid grid-cols-2 gap-2">
-                        <button type="button" @click="form.estado = '1'"
-                                :class="String(form.estado) === '1'
-                                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                                    : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300'"
-                                class="flex items-center justify-center gap-2 rounded-2xl border-2 py-3 text-xs font-black transition-all cursor-pointer">
-                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Activo
-                        </button>
-                        <button type="button" @click="form.estado = '0'"
-                                :class="String(form.estado) === '0'
-                                    ? 'border-rose-400 bg-rose-50 text-rose-600'
-                                    : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300'"
-                                class="flex items-center justify-center gap-2 rounded-2xl border-2 py-3 text-xs font-black transition-all cursor-pointer">
-                            <span class="w-2 h-2 rounded-full bg-rose-400"></span> Inactivo
-                        </button>
+                    <div class="grid grid-cols-3 gap-2">
+                        <template x-for="op in opcionesEstado" :key="op.valor">
+                            <button type="button" @click="form.estado = op.valor"
+                                    :class="form.estado === op.valor ? op.activo : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300'"
+                                    class="flex items-center justify-center gap-1.5 rounded-2xl border-2 py-3 px-1 text-[11px] font-black transition-all active:scale-95 cursor-pointer">
+                                <span class="w-2 h-2 rounded-full shrink-0" :class="op.punto"></span>
+                                <span x-text="op.valor"></span>
+                            </button>
+                        </template>
                     </div>
                 </div>
 
                 <!-- Acciones -->
-                <div class="flex justify-end gap-3 pt-5 border-t border-slate-100">
+                <div class="reveal-item flex justify-end gap-3 pt-5 border-t border-slate-100" :class="openModal && 'reveal-on'" style="--d:4">
                     <button type="button" @click="openModal = false"
                             class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-extrabold rounded-2xl text-xs transition-all cursor-pointer">
                         Cancelar

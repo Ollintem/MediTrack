@@ -23,16 +23,17 @@
             width: 100%;
         }
         .title {
-            font-size: 22px;
+            font-size: 20px;
             font-weight: bold;
             color: #0d9488;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
         .subtitle {
-            font-size: 10px;
+            font-size: 9px;
             color: #64748b;
-            font-weight: bold;
+            font-weight: normal;
+            margin-top: 2px;
         }
         .info-box {
             background-color: #f8fafc;
@@ -169,15 +170,26 @@
         $sv = $receta->signoVital;
     @endphp
 
-    <!-- Encabezado -->
+    <!-- Encabezado con datos dinámicos de la Clínica -->
     <div class="header">
         <table>
             <tr>
                 <td>
-                    <div class="title">MediTrack</div>
-                    <div class="subtitle">Clínica Médica & Atención Especializada</div>
+                    <div class="title">{{ $clinica->nombre ?? 'MEDITRACK' }}</div>
+                    <div class="subtitle">
+                        {{ $clinica->direccion ?? 'Dirección no registrada' }}
+                        @if(!empty($clinica->telefono))
+                            <br>TEL: {{ $clinica->telefono }}
+                        @endif
+                        @if(!empty($config['email']) || !empty($clinica->email))
+                            | EMAIL: {{ $config['email'] ?? $clinica->email }}
+                        @endif
+                        @if(!empty($clinica->rut_empresa))
+                            | RUT/RFC: {{ $clinica->rut_empresa }}
+                        @endif
+                    </div>
                 </td>
-                <td style="text-align: right;">
+                <td style="text-align: right; vertical-align: top;">
                     <strong style="color: #0d9488; font-size: 13px;">N° Receta: #{{ str_pad($receta->id, 5, '0', STR_PAD_LEFT) }}</strong><br>
                     <span style="color: #64748b;">Fecha: {{ \Carbon\Carbon::parse($receta->fecha_emision ?? $receta->fecha)->format('d/m/Y') }}</span>
                 </td>
@@ -200,7 +212,7 @@
         </table>
     </div>
 
-    <!-- Bloque de Signos Vitales (Consultado directamente de la tabla 'signos_vitales') -->
+    <!-- Bloque de Signos Vitales -->
     @if($sv && ($sv->pa_sistolica || $sv->frecuencia_cardiaca || $sv->temperatura || $sv->peso_kg || $sv->talla_cm || $sv->saturacion_oxigeno))
         <div class="vitals-box">
             <strong style="color: #0d9488; text-transform: uppercase; font-size: 9px; display: block; margin-bottom: 4px;">Signos Vitales del Paciente:</strong>
@@ -293,7 +305,7 @@
     </div>
 
     <div class="footer-note">
-        Este documento es una representación impresa de una receta médica generada mediante el sistema MediTrack.
+        Este documento es una representación impresa de una receta médica generada mediante el sistema {{ $clinica->nombre ?? 'MediTrack' }}.
     </div>
 
 </body>

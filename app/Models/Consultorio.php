@@ -10,5 +10,6 @@ class Consultorio extends Model
     use HasFactory;
 
     protected $table = 'consultorios';
+    protected $fillable = ['clinica_id', 'nombre', 'piso', 'estado', 'pos_x', 'pos_y'];
     protected $guarded = [];
 }
