@@ -139,25 +139,25 @@ class ConsultaController extends Controller
         $fin = $inicio->copy()->addMinutes((int) ($c->duracion_min ?? 30));
 
         return [
-            'cita_id'          => $c->id,
-            'paciente_id'      => $c->paciente_id,
-            'paciente_nombre'  => $this->nombre($c->paciente) ?: 'Paciente',
-            'personal_id'      => $c->personal_id,
-            'personal_nombre'  => $this->nombre($c->personal) ?: '—',
-            'consultorio_id'   => $c->consultorio_id,
+            'cita_id'            => $c->id,
+            'paciente_id'        => $c->paciente_id,
+            'paciente_nombre'    => $this->nombre($c->paciente) ?: 'Paciente',
+            'personal_id'        => $c->personal_id,
+            'personal_nombre'    => $this->nombre($c->personal) ?: '—',
+            'consultorio_id'     => $c->consultorio_id,
             'consultorio_nombre' => data_get($c, 'consultorio.nombre'),
-            'consultorio_piso' => data_get($c, 'consultorio.piso'),
-            'motivo'           => $c->motivo ?? '',
-            'tipo_consulta'    => $c->tipo_consulta ?? 'Primera Vez',
-            'estado'           => $c->estado ?? 'Pendiente',
-            'fecha'            => $inicio->format('Y-m-d'),
-            'hora'             => $inicio->format('H:i'),
-            'hora_fin'         => $fin->format('H:i'),
-            'duracion_min'     => (int) ($c->duracion_min ?? 30),
-            'inicio_iso'       => $inicio->format('Y-m-d\TH:i:s'),
-            'fin_iso'          => $fin->format('Y-m-d\TH:i:s'),
+            'consultorio_piso'   => data_get($c, 'consultorio.piso'),
+            'motivo'             => $c->motivo ?? '',
+            'tipo_consulta'      => $c->tipo_consulta ?? 'Primera Vez',
+            'estado'             => $c->estado ?? 'Pendiente',
+            'fecha'              => $inicio->format('Y-m-d'),
+            'hora'               => $inicio->format('H:i'),
+            'hora_fin'           => $fin->format('H:i'),
+            'duracion_min'       => (int) ($c->duracion_min ?? 30),
+            'inicio_iso'         => $inicio->format('Y-m-d\TH:i:s'),
+            'fin_iso'            => $fin->format('Y-m-d\TH:i:s'),
             // minutos que faltan para la cita (negativo = ya pasó la hora)
-            'faltan_min'       => (int) ceil(($inicio->timestamp - now()->timestamp) / 60),
+            'faltan_min'         => (int) ceil(($inicio->timestamp - now()->timestamp) / 60),
         ];
     }
 
@@ -233,7 +233,8 @@ class ConsultaController extends Controller
             $q->whereDate('fecha', '>=', Carbon::parse($request->start)->toDateString());
         }
         if ($request->filled('end')) {
-            $q->whereDate('fecha', '<=', Carbon::parse($request->end)->toDateString());
+            // FullCalendar manda "end" como el día SIGUIENTE al último visible (exclusivo)
+            $q->whereDate('fecha', '<', Carbon::parse($request->end)->toDateString());
         }
 
         $eventos = $q->orderBy('fecha')->orderBy('hora')->get()->map(function ($c) {
@@ -251,6 +252,12 @@ class ConsultaController extends Controller
         });
 
         return response()->json($eventos);
+    }
+
+    /** Alias: la ruta consultas.citas (/consultas/citas-asignadas) apunta a este nombre. */
+    public function getCitasAsignadas(Request $request)
+    {
+        return $this->citas($request);
     }
 
     /**

@@ -22,21 +22,21 @@ use App\Http\Controllers\CategoriaInventarioController;
 |--------------------------------------------------------------------------
 */
 
-// 1. Redirección raíz al Login
+// 1. Redirección Raíz
 Route::get('/', function () {
     return redirect()->route('login');
 });
 
 // 2. Autenticación (Login, Logout)
 Auth::routes([
-    'reset'    => false, // Desactiva recuperación pública
-    'register' => false, // Desactiva registro público
+    'reset'    => false,
+    'register' => false,
 ]);
 
-// 3. Rutas Protegidas por Autenticación
+// 3. Rutas Protegidas
 Route::middleware(['auth'])->group(function () {
 
-    // --- PANEL PRINCIPAL Y BÚSQUEDA ---
+    // --- PANEL PRINCIPAL Y BÚSQUEDA GLOBAL ---
     Route::get('/home', [HomeController::class, 'index'])->name('home');
     Route::get('/buscar-global', [BusquedaController::class, 'buscar'])->name('buscar.global');
 
@@ -55,7 +55,7 @@ Route::middleware(['auth'])->group(function () {
     // --- MÓDULO CONSULTAS ---
     Route::middleware(['permiso:Consultas'])->group(function () {
         Route::get('/consultas/agenda', [ConsultaController::class, 'agenda'])->name('consultas.agenda');
-        Route::get('/consultas/citas', [ConsultaController::class, 'citas'])->name('consultas.citas');
+        Route::get('/consultas/citas-asignadas', [ConsultaController::class, 'getCitasAsignadas'])->name('consultas.citas');
         Route::get('/consultas/detalle/{cita}', [ConsultaController::class, 'detalle'])->name('consultas.detalle');
         Route::post('/consultas/iniciar/{cita}', [ConsultaController::class, 'iniciar'])->name('consultas.iniciar');
         Route::post('/consultas/liberar/{cita}', [ConsultaController::class, 'liberar'])->name('consultas.liberar');
@@ -77,18 +77,22 @@ Route::middleware(['auth'])->group(function () {
 
     // --- MÓDULO INVENTARIO Y CATEGORÍAS ---
     Route::middleware(['permiso:Inventario'])->group(function () {
+        // Catálogo principal de medicamentos
         Route::get('/inventario', [InventarioController::class, 'index'])->name('inventario.index');
         Route::post('/inventario', [InventarioController::class, 'store'])->name('inventario.store');
         Route::put('/inventario/{id}', [InventarioController::class, 'update'])->name('inventario.update');
         Route::delete('/inventario/{id}', [InventarioController::class, 'destroy'])->name('inventario.destroy');
-        Route::post('/inventario/{id}/agregar-stock', [InventarioController::class, 'agregarStock'])->name('inventario.agregar-stock');
 
-        // Rutas del Modal de Categorías de Inventario
+        // Acciones de Reabastecimiento de Stock
+        Route::post('/inventario/{id}/agregar-stock', [InventarioController::class, 'agregarStock'])->name('inventario.agregar-stock');
+        Route::post('/inventario/surtir-lote', [InventarioController::class, 'surtirLote'])->name('inventario.surtir-lote');
+
+        // CRUD AJAX de Categorías dentro del Modal
         Route::post('/categorias-inventario', [CategoriaInventarioController::class, 'store'])->name('categorias-inventario.store');
         Route::delete('/categorias-inventario/{id}', [CategoriaInventarioController::class, 'destroy'])->name('categorias-inventario.destroy');
     });
 
-    // --- MÓDULO ADMINISTRACIÓN Y PERFILES ---
+    // --- MÓDULO ADMINISTRACIÓN Y ROLES ---
     Route::middleware(['permiso:Personal'])->group(function () {
         Route::resource('personal', PersonalController::class);
     });
@@ -106,7 +110,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/bitacora', [BitacoraController::class, 'index'])->name('bitacora.index');
     });
 
-    // --- UTILIDAD Y ESTADO ---
+    // --- UTILIDAD Y MONITOR DE ESTADO ---
     Route::get('/ping', function () {
         return response()->json(['status' => 'ok']);
     });
