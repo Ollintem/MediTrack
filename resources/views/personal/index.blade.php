@@ -27,12 +27,15 @@
             'email'        => data_get($p, 'usuario.email'),
             'especialidad' => $p->especialidad_principal ?: null,
             'telefono'     => $p->telefono ?: null,
-            'cedula'       => $p->cedula_profesional ?? $p->cedula ?? null,
+            'cedula'       => $p->cedula_profesional ?? $p->cedula ?? $p->rut ?? null,
             'rol'          => $rol,
             'activo'       => mb_strtolower((string) $estado) === 'activo',
             'estado'       => $estado,
             'soyYo'        => $miUsuarioId && (int) data_get($p, 'usuario.id') === (int) $miUsuarioId,
             'editar'       => route('personal.edit', $p->id),
+            'nomina'       => \Illuminate\Support\Facades\Route::has('personal.nomina.empleado') ? route('personal.nomina.empleado', $p->id) : '#',
+            'salario'      => (float) ($p->salario_diario ?? 0),
+            'tipo_pago'    => $p->tipo_pago ?? null,
             'buscar'       => \Illuminate\Support\Str::lower(\Illuminate\Support\Str::ascii(implode(' ', array_filter([
                 $nombre, data_get($p, 'usuario.email'), $p->especialidad_principal, $p->telefono, $rol,
             ])))),
@@ -50,6 +53,8 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <div class="space-y-6" x-data="moduloPersonal()">
+
+    @include('personal._pestanas', ['activa' => 'plantilla'])
 
     {{-- ===================== ENCABEZADO ===================== --}}
     <div class="aparece relative overflow-hidden rounded-3xl bg-gradient-to-br from-teal-900 via-teal-800 to-emerald-700 text-white shadow-xl shadow-teal-900/20">
@@ -227,6 +232,10 @@
                             </td>
                             <td class="py-3.5 px-5 text-right">
                                 <div class="inline-flex items-center gap-1.5">
+                                    <a :href="p.nomina" title="Nómina de este empleado"
+                                       class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center justify-center transition-all hover:scale-110">
+                                        <i class="bi bi-cash-coin text-[12px]"></i>
+                                    </a>
                                     @if ($puedeEditar)
                                         <a :href="p.editar" title="Editar"
                                            class="h-8 px-3 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 text-[11px] font-black flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95">
@@ -305,6 +314,9 @@
                                     <i class="bi bi-trash-fill text-[11px]"></i>
                                 </button>
                             @endif
+                            <a :href="p.nomina" title="Nómina" class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center justify-center transition-all">
+                                <i class="bi bi-cash-coin"></i>
+                            </a>
                             @if ($puedeEditar)
                                 <a :href="p.editar" class="h-8 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-black flex items-center gap-1.5 transition-all">
                                     <i class="bi bi-pencil-fill"></i> Editar

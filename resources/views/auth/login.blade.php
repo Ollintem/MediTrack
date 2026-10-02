@@ -1,6 +1,14 @@
 @extends('layouts.guest')
 
 @section('content')
+@php
+    // Todos los usuarios usan el mismo dominio: solo se escribe el usuario
+    $dominioLogin = '@meditrack.com';
+    $emailViejo   = (string) old('email', '');
+    $usuarioViejo = \Illuminate\Support\Str::endsWith(strtolower($emailViejo), $dominioLogin)
+        ? substr($emailViejo, 0, -strlen($dominioLogin))
+        : $emailViejo;
+@endphp
 <style>
     /* ================= ANIMACIONES ================= */
     @keyframes kenBurns    { from { transform: scale(1); } to { transform: scale(1.1); } }
@@ -78,6 +86,18 @@
     .fl-error .fl-input { border-color: #f87171; background: #fef2f2; }
     .fl-error .fl-label, .fl-error .fl-icon { color: #dc2626 !important; }
     .fl-error .fl-bar { background: #ef4444; }
+
+    /* Dominio fijo a la derecha del usuario */
+    .fl-dominio {
+        position: absolute; right: .6rem; top: 50%; transform: translateY(-50%); pointer-events: none;
+        font-size: .8rem; font-weight: 700; color: #64748b;
+        background: #eef2f6; border: 1px solid #e2e8f0; border-radius: .7rem; padding: .3rem .6rem;
+        transition: color .2s, background .2s, border-color .2s, opacity .2s;
+    }
+    .fl-field:focus-within .fl-dominio { color: #0f766e; background: #f0fdfa; border-color: #99f6e4; }
+    .fl-error .fl-dominio { color: #dc2626; background: #fee2e2; border-color: #fecaca; }
+    .fl-dominio.oculto { opacity: 0; }
+    @media (max-width: 380px) { .fl-dominio { font-size: .7rem; padding: .25rem .45rem; } }
 
     .mt-btn {
         position: relative; overflow: hidden; isolation: isolate;
@@ -243,15 +263,20 @@
             <form id="login-form" method="POST" action="{{ route('login') }}" class="mt-8 space-y-5" novalidate>
                 @csrf
 
-                {{-- Usuario --}}
+                {{-- Usuario (el dominio @meditrack.com se agrega solo) --}}
                 <div class="mt-rise d2">
+                    {{-- Este es el campo que recibe el servidor: usuario + @meditrack.com --}}
+                    <input type="hidden" name="email" id="email" value="{{ $emailViejo }}">
+
                     <div class="fl-field @error('email') fl-error @enderror">
                         <i class="bi bi-person fl-icon text-lg" aria-hidden="true"></i>
-                        <input type="text" name="email" id="email" value="{{ old('email') }}" placeholder=" "
+                        <input type="text" id="usuario" value="{{ $usuarioViejo }}" placeholder=" " maxlength="60"
+                               data-dominio="{{ $dominioLogin }}"
                                required autofocus autocomplete="username" autocapitalize="none" spellcheck="false"
                                @error('email') aria-invalid="true" aria-describedby="email-error" @enderror
-                               class="fl-input w-full h-14 pl-11 pr-4 pt-5 pb-1.5 rounded-2xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-900 outline-none transition focus:bg-white focus:border-teal-400 focus:shadow-[0_0_0_4px_rgba(20,184,166,.12)]">
-                        <label for="email" class="fl-label">Correo o usuario</label>
+                               class="fl-input w-full h-14 pl-11 pr-40 pt-5 pb-1.5 rounded-2xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-900 outline-none transition focus:bg-white focus:border-teal-400 focus:shadow-[0_0_0_4px_rgba(20,184,166,.12)]">
+                        <label for="usuario" class="fl-label">Usuario</label>
+                        <span id="dominio-fijo" class="fl-dominio" aria-hidden="true">{{ $dominioLogin }}</span>
                         <span class="fl-bar" aria-hidden="true"></span>
                     </div>
                     @error('email')
@@ -374,6 +399,23 @@ document.addEventListener('DOMContentLoaded', () => {
         panel.style.setProperty('--my', `${e.clientY - r.top}px`);
     });
 
+    /* ---------- Usuario + dominio fijo (@meditrack.com) ---------- */
+    const $usuario = $('usuario'), $email = $('email'), $dominio = $('dominio-fijo');
+    const DOMINIO = $usuario.dataset.dominio;
+    const sincronizarCorreo = () => {
+        let v = $usuario.value.replace(/\s+/g, '');
+        // Si pegan el correo completo, se deja solo el usuario
+        if (v.toLowerCase().endsWith(DOMINIO)) v = v.slice(0, -DOMINIO.length);
+        if (v !== $usuario.value) $usuario.value = v;
+        // Si escriben otro dominio (ej. una cuenta externa), se respeta tal cual
+        const tieneArroba = v.includes('@');
+        $dominio.classList.toggle('oculto', tieneArroba);
+        $email.value = v ? (tieneArroba ? v : v + DOMINIO) : '';
+    };
+    $usuario.addEventListener('input', sincronizarCorreo);
+    $usuario.addEventListener('change', sincronizarCorreo);   // autocompletado del navegador
+    sincronizarCorreo();
+
     /* ---------- Mostrar / ocultar contraseña ---------- */
     const $pwd = $('password'), $toggle = $('toggle-password'), $icon = $('password-icon');
     $toggle.addEventListener('click', () => {
@@ -416,6 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     $form.addEventListener('submit', e => {
+        sincronizarCorreo();
         if (!$form.checkValidity()) {
             e.preventDefault();
             const bad = $form.querySelector(':invalid');

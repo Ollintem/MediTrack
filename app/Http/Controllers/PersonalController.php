@@ -13,6 +13,9 @@ use Illuminate\Support\Facades\Hash;
 
 class PersonalController extends Controller
 {
+    /** Tipos de pago válidos para la nómina. */
+    private const TIPOS_PAGO = ['SEMANAL', 'QUINCENAL', 'MENSUAL'];
+
     public function index()
     {
         $personal = Personal::with('usuario')->get();
@@ -47,22 +50,28 @@ class PersonalController extends Controller
             ]);
         }
 
-        // 2. Validaciones generales de la ficha de personal
+        // 2. Validaciones generales de la ficha de personal (incluye datos de nómina)
         $request->validate([
-            'nombre'   => 'required|string|max:80',
-            'apellido' => 'required|string|max:80',
-            'rol_id'   => 'required|exists:roles,id',
-            'rut'      => 'nullable|unique:personals,rut',
-            'turno'    => 'required|in:Mañana,Tarde,Completo,Noche',
+            'nombre'         => 'required|string|max:80',
+            'apellido'       => 'required|string|max:80',
+            'rol_id'         => 'required|exists:roles,id',
+            'rut'            => 'nullable|unique:personals,rut',
+            'turno'          => 'required|in:Mañana,Tarde,Completo,Noche',
+            'salario_diario' => 'nullable|numeric|min:0|max:999999',
+            'tipo_pago'      => 'nullable|in:' . implode(',', self::TIPOS_PAGO),
         ], [
-            'rol_id.required' => 'Debes seleccionar un rol para el sistema.',
+            'rol_id.required'        => 'Debes seleccionar un rol para el sistema.',
+            'salario_diario.numeric' => 'El salario diario debe ser un número.',
+            'salario_diario.min'     => 'El salario diario no puede ser negativo.',
+            'tipo_pago.in'           => 'El tipo de pago debe ser semanal, quincenal o mensual.',
         ]);
 
         $rol = Rol::findOrFail($request->rol_id);
         $nombreRol = $rol->nombre;
         $nombreCompleto = trim($request->nombre . ' ' . $request->apellido);
+        $datosNomina = $this->datosNomina($request);
 
-        DB::transaction(function () use ($request, $emailCompleto, $nombreCompleto, $nombreRol, $requiereAcceso) {
+        DB::transaction(function () use ($request, $emailCompleto, $nombreCompleto, $nombreRol, $requiereAcceso, $datosNomina) {
             $clinicaId = DB::table('clinicas')->value('id') ?? 1;
             $userId = null;
 
@@ -93,6 +102,9 @@ class PersonalController extends Controller
                 'estado'                 => 'Activo',
             ]);
 
+            // 4.1 Datos de nómina (forceFill: se guardan aunque no estén en $fillable del modelo)
+            $personal->forceFill($datosNomina)->save();
+
             // 5. Registrar evento en Bitácora
             Bitacora::registrar(
                 'Personal',
@@ -103,7 +115,9 @@ class PersonalController extends Controller
                     'user_id'         => $userId,
                     'correo'          => $emailCompleto,
                     'rol'             => $nombreRol,
-                    'requiere_acceso' => $requiereAcceso
+                    'requiere_acceso' => $requiereAcceso,
+                    'salario_diario'  => $datosNomina['salario_diario'],
+                    'tipo_pago'       => $datosNomina['tipo_pago'],
                 ]
             );
         });
@@ -126,12 +140,17 @@ class PersonalController extends Controller
         $requiereAcceso = $request->boolean('requiere_acceso');
         $usuario = $personal->user_id ? User::find($personal->user_id) : null;
 
-        // 1. Validaciones base
+        // 1. Validaciones base (incluye datos de nómina)
         $request->validate([
             'nombre_completo' => 'required|string|max:150',
             'rol_id'          => 'required|exists:roles,id',
+            'salario_diario'  => 'nullable|numeric|min:0|max:999999',
+            'tipo_pago'       => 'nullable|in:' . implode(',', self::TIPOS_PAGO),
         ], [
-            'rol_id.required' => 'Debes seleccionar un rol para el sistema.',
+            'rol_id.required'        => 'Debes seleccionar un rol para el sistema.',
+            'salario_diario.numeric' => 'El salario diario debe ser un número.',
+            'salario_diario.min'     => 'El salario diario no puede ser negativo.',
+            'tipo_pago.in'           => 'El tipo de pago debe ser semanal, quincenal o mensual.',
         ]);
 
         $emailCompleto = null;
@@ -153,8 +172,12 @@ class PersonalController extends Controller
 
         $rol = Rol::findOrFail($request->rol_id);
         $nombreRol = $rol->nombre;
+        $datosNomina = $this->datosNomina($request);
 
-        DB::transaction(function () use ($request, $personal, $usuario, $emailCompleto, $nombreRol, $requiereAcceso) {
+        // Para la bitácora: salario anterior
+        $salarioAnterior = (float) ($personal->salario_diario ?? 0);
+
+        DB::transaction(function () use ($request, $personal, $usuario, $emailCompleto, $nombreRol, $requiereAcceso, $datosNomina, $salarioAnterior) {
             $clinicaId = DB::table('clinicas')->value('id') ?? 1;
 
             if ($requiereAcceso) {
@@ -197,17 +220,23 @@ class PersonalController extends Controller
                 'especialidad_principal' => $nombreRol,
             ]);
 
+            // Datos de nómina (forceFill: se guardan aunque no estén en $fillable del modelo)
+            $personal->forceFill($datosNomina)->save();
+
             // Registrar en la bitácora
             Bitacora::registrar(
                 'Personal',
                 'Editar',
                 "Se actualizó la información del personal: {$request->nombre_completo}",
                 [
-                    'personal_id'      => $personal->id,
-                    'correo'           => $emailCompleto,
-                    'rol'              => $nombreRol,
-                    'requiere_acceso'  => $requiereAcceso,
-                    'password_cambiado'=> $request->filled('password')
+                    'personal_id'       => $personal->id,
+                    'correo'            => $emailCompleto,
+                    'rol'               => $nombreRol,
+                    'requiere_acceso'   => $requiereAcceso,
+                    'password_cambiado' => $request->filled('password'),
+                    'salario_anterior'  => $salarioAnterior,
+                    'salario_diario'    => $datosNomina['salario_diario'],
+                    'tipo_pago'         => $datosNomina['tipo_pago'],
                 ]
             );
         });
@@ -261,5 +290,16 @@ class PersonalController extends Controller
         }
 
         return redirect()->route('personal.index')->with('error', 'No se encontró el registro a eliminar.');
+    }
+
+    /** Salario diario y tipo de pago que vienen del bloque "Datos de nómina". */
+    private function datosNomina(Request $request): array
+    {
+        $tipo = strtoupper((string) $request->input('tipo_pago', 'QUINCENAL'));
+
+        return [
+            'salario_diario' => round((float) ($request->input('salario_diario') ?: 0), 2),
+            'tipo_pago'      => in_array($tipo, self::TIPOS_PAGO, true) ? $tipo : 'QUINCENAL',
+        ];
     }
 }

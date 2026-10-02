@@ -11,7 +11,7 @@
                     Administración del Sistema
                 </span>
                 <h1 class="text-3xl font-black tracking-tight mt-2">Configuración General</h1>
-                <p class="text-teal-100 text-xs mt-1">Gestiona los parámetros de la clínica y preferencias globales del sistema.</p>
+                <p class="text-teal-100 text-xs mt-1">Gestiona los parámetros de la clínica, preferencias globales y seguridad de tu cuenta.</p>
             </div>
             <div class="p-4 bg-white/10 rounded-2xl backdrop-blur-md text-white/90">
                 <i class="bi bi-gear-fill text-4xl"></i>
@@ -19,7 +19,7 @@
         </div>
     </div>
 
-    <!-- PESTAÑAS DE NAVEGACIÓN (AHORA SOLO 2 PESTAÑAS) -->
+    <!-- PESTAÑAS DE NAVEGACIÓN -->
     <div class="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-2">
         <button type="button" 
                 @click="tab = 'perfil'" 
@@ -35,6 +35,14 @@
                 class="px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer">
             <i class="bi bi-shield-fill-check"></i>
             <span>Preferencias y Sistema</span>
+        </button>
+
+        <button type="button" 
+                @click="tab = 'cuenta'" 
+                :class="tab === 'cuenta' ? 'bg-teal-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                class="px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer">
+            <i class="bi bi-person-fill-lock"></i>
+            <span>Seguridad de la Cuenta</span>
         </button>
     </div>
 
@@ -60,8 +68,8 @@
         </div>
     @endif
 
-    <!-- FORMULARIO GENERAL -->
-    <form action="{{ route('configuracion.update') }}" method="POST">
+    <!-- FORMULARIO GENERAL (PERFIL DE LA CLÍNICA Y PREFERENCIAS) -->
+    <form action="{{ route('configuracion.update') }}" method="POST" x-show="tab === 'perfil' || tab === 'preferencias'">
         @csrf
         @method('PUT')
 
@@ -195,7 +203,7 @@
 
         </div>
 
-        <!-- BOTÓN GUARDAR -->
+        <!-- BOTÓN GUARDAR CONFIGURACIÓN DE LA CLÍNICA -->
         <div class="mt-6 flex justify-end">
             <button type="submit" 
                     class="px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-600/20 transition-all flex items-center gap-2 cursor-pointer">
@@ -203,7 +211,97 @@
                 <span>Guardar Cambios</span>
             </button>
         </div>
-
     </form>
+
+    <!-- PESTAÑA 3: SEGURIDAD DE LA CUENTA (ADMINISTRADOR) -->
+    <div x-show="tab === 'cuenta'" class="space-y-6" x-cloak>
+        <form action="{{ route('configuracion.cuenta.update') }}" method="POST">
+            @csrf
+            
+            <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-xs space-y-6">
+                <div class="flex items-center gap-2 border-b border-gray-100 pb-3">
+                    <div class="p-2 bg-teal-50 text-teal-600 rounded-xl">
+                        <i class="bi bi-shield-lock-fill text-lg"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-gray-800 uppercase">Credenciales y Acceso de Usuario</h3>
+                        <p class="text-[11px] text-gray-400">Puedes cambiar solo tu correo, solo tu contraseña o ambos.</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Correo Electrónico de Acceso -->
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-bold text-gray-600 uppercase mb-1">
+                            Correo Electrónico de Acceso <span class="text-red-500">*</span>
+                        </label>
+                        <div class="relative">
+                            <i class="bi bi-envelope-fill absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <input type="email" 
+                                   name="email" 
+                                   value="{{ old('email', auth()->user()->email) }}" 
+                                   placeholder="admin@meditrack.com" 
+                                   class="w-full pl-10 pr-4 py-2.5 bg-slate-50 rounded-xl border border-gray-200 text-xs text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500/20 font-semibold">
+                        </div>
+                    </div>
+
+                    <!-- Contraseña Actual (Confirmación opcional / requerida solo si hay cambios) -->
+                    <div class="md:col-span-2 p-4 bg-teal-50/50 rounded-2xl border border-teal-100/80 space-y-1">
+                        <label class="block text-xs font-extrabold text-teal-900 uppercase mb-1">
+                            Contraseña Actual
+                        </label>
+                        <div class="relative">
+                            <i class="bi bi-key-fill absolute left-3.5 top-1/2 -translate-y-1/2 text-teal-600 text-sm"></i>
+                            <input type="password" 
+                                   name="current_password" 
+                                   placeholder="Ingresa tu contraseña actual solo para autorizar cambios" 
+                                   class="w-full pl-10 pr-4 py-2.5 bg-white rounded-xl border border-teal-200 text-xs text-gray-800 outline-none focus:ring-2 focus:ring-teal-500 font-semibold">
+                        </div>
+                        <p class="text-[10px] text-teal-700/80 font-medium pt-0.5">
+                            <i class="bi bi-info-circle-fill"></i> Se te solicitará para confirmar la actualización de credenciales.
+                        </p>
+                    </div>
+
+                    <!-- Nueva Contraseña (Opcional) -->
+                    <div>
+                        <label class="block text-xs font-bold text-gray-600 uppercase mb-1">
+                            Nueva Contraseña <span class="text-gray-400 font-normal">(Opcional)</span>
+                        </label>
+                        <div class="relative">
+                            <i class="bi bi-lock-fill absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <input type="password" 
+                                   name="new_password" 
+                                   placeholder="Dejar en blanco si no deseas cambiarla" 
+                                   class="w-full pl-10 pr-4 py-2.5 bg-slate-50 rounded-xl border border-gray-200 text-xs text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500/20 font-semibold">
+                        </div>
+                    </div>
+
+                    <!-- Confirmar Nueva Contraseña -->
+                    <div>
+                        <label class="block text-xs font-bold text-gray-600 uppercase mb-1">
+                            Confirmar Nueva Contraseña
+                        </label>
+                        <div class="relative">
+                            <i class="bi bi-shield-check absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <input type="password" 
+                                   name="new_password_confirmation" 
+                                   placeholder="Repite la nueva contraseña" 
+                                   class="w-full pl-10 pr-4 py-2.5 bg-slate-50 rounded-xl border border-gray-200 text-xs text-gray-700 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500/20 font-semibold">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BOTÓN GUARDAR CAMBIOS DE CUENTA -->
+                <div class="pt-4 border-t border-gray-100 flex justify-end">
+                    <button type="submit" 
+                            class="px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-600/20 transition-all flex items-center gap-2 cursor-pointer">
+                        <i class="bi bi-check-circle-fill text-sm"></i>
+                        <span>Actualizar Credenciales</span>
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
 </div>
 @endsection

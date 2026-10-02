@@ -102,7 +102,7 @@
                                     <span x-show="Number(productoEditar.stock_minimo) > 0" class="absolute -top-0.5 -bottom-0.5 w-0.5 rounded bg-slate-500/60 transition-all duration-500" :style="'left:' + posMinimo + '%'"></span>
                                 </div>
                                 <p class="text-[10px] font-bold text-slate-400 mt-1"
-                                   x-text="fisico + ' físicas' + (fisico > disponible ? ' · ' + (fisico - disponible) + ' reservadas' : '') + ' · la marca indica el mínimo'"></p>
+                                   x-text="'Mínimo ' + (Number(productoEditar.stock_minimo) || 0) + ' piezas · la marca de la barra indica el mínimo'"></p>
                             </div>
                         </div>
                         <button type="button" x-show="typeof abrirSurtir === 'function'" @click="irASurtir()"
@@ -124,7 +124,7 @@
                                            @keydown.enter.prevent="$refs.nombre.focus()"
                                            class="me-campo font-mono tracking-wider uppercase"
                                            :class="codigoRepetido || (intento && !String(productoEditar.codigo || '').trim()) ? 'me-campo-error' : ''">
-                                    <p class="me-ayuda" :class="codigoRepetido || avisoEan ? 'text-rose-600' : 'text-slate-400'"
+                                    <p class="me-ayuda" :class="codigoRepetido ? 'text-rose-600' : (avisoEan ? 'text-amber-600' : 'text-slate-400')"
                                        x-text="codigoRepetido ? 'Ya lo usa: ' + codigoRepetido.nombre : (avisoEan || (cambio('codigo') ? 'Antes: ' + original.codigo : 'Escanéalo o escríbelo'))"></p>
                                     @error('codigo')<p class="me-ayuda text-rose-600">{{ $message }}</p>@enderror
                                 </div>
@@ -427,11 +427,12 @@
                 return codigo ? lista.find(p => String(p.codigo).toUpperCase() === codigo && String(p.id) !== String(this.productoEditar.id)) : null;
             },
             get avisoEan() {
+                // Solo avisa si se cambió el código; el que ya está guardado no se vuelve a revisar
                 const c = texto(this.productoEditar.codigo);
-                if (!/^\d{13}$/.test(c)) return '';
+                if (!this.cambio('codigo') || !/^\d{13}$/.test(c)) return '';
                 let suma = 0;
                 for (let i = 0; i < 12; i++) suma += Number(c[i]) * (i % 2 === 0 ? 1 : 3);
-                return (10 - (suma % 10)) % 10 === Number(c[12]) ? '' : 'El último dígito no coincide: revisa que el código esté bien capturado.';
+                return (10 - (suma % 10)) % 10 === Number(c[12]) ? '' : 'No es un EAN-13 estándar (el último dígito no corresponde). Si lo escaneaste de la caja, revisa que se haya leído completo.';
             },
 
             // ----- Precios -----
@@ -449,9 +450,8 @@
 
             // ----- Existencias (solo lectura) -----
             get disponible() { return Number(this.productoEditar.stock_disponible ?? this.productoEditar.stock_actual ?? 0); },
-            get fisico() { return Number(this.productoEditar.stock_actual ?? this.disponible); },
             get estado() { const m = Number(this.productoEditar.stock_minimo) || 0; return this.disponible <= 0 ? 'agotado' : (this.disponible <= m ? 'bajo' : 'ok'); },
-            get escala() { return Math.max((Number(this.productoEditar.stock_minimo) || 0) * 3, this.fisico, this.disponible, 1); },
+            get escala() { return Math.max((Number(this.productoEditar.stock_minimo) || 0) * 3, this.disponible, 1); },
             get nivel() { return Math.min(100, Math.round(this.disponible / this.escala * 100)); },
             get posMinimo() { return Math.min(100, Math.round((Number(this.productoEditar.stock_minimo) || 0) / this.escala * 100)); },
             irASurtir() {

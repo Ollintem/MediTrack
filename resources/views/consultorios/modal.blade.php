@@ -80,8 +80,8 @@
                 <!-- Estado -->
                 <div class="reveal-item" :class="openModal && 'reveal-on'" style="--d:3">
                     <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1.5">Estado</label>
-                    <div class="grid grid-cols-3 gap-2">
-                        <template x-for="op in opcionesEstado" :key="op.valor">
+                    <div class="grid gap-2" :class="modoEdicion ? 'grid-cols-3' : 'grid-cols-1'">
+                        <template x-for="op in (modoEdicion ? opcionesEstado : opcionesEstado.filter(o => o.valor === 'Disponible'))" :key="op.valor">
                             <button type="button" @click="form.estado = op.valor"
                                     :class="form.estado === op.valor ? op.activo : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300'"
                                     class="flex items-center justify-center gap-1.5 rounded-2xl border-2 py-3 px-1 text-[11px] font-black transition-all active:scale-95 cursor-pointer">
@@ -90,6 +90,10 @@
                             </button>
                         </template>
                     </div>
+                    <p class="text-[10px] text-slate-400 font-semibold mt-2 flex items-center gap-1.5" x-show="!modoEdicion" x-cloak>
+                        <i class="bi bi-info-circle"></i>
+                        Un consultorio nuevo siempre inicia como Disponible. Podrás marcarlo como Ocupado o en Mantenimiento al editarlo.
+                    </p>
                 </div>
 
                 <!-- Acciones -->

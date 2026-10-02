@@ -44,6 +44,10 @@ class ConsultorioController extends Controller
         $datos = $request->validate($this->reglas(), $this->mensajes());
         $datos['clinica_id'] = $datos['clinica_id'] ?? 1;
 
+        // Un consultorio recién creado nunca puede nacer "Ocupado" ni "Mantenimiento":
+        // se ignora cualquier valor que llegue del formulario y se fuerza en el servidor.
+        $datos['estado'] = 'Disponible';
+
         Consultorio::create($datos);
 
         return response()->json(['message' => 'Consultorio registrado correctamente']);

@@ -1,5 +1,5 @@
 {{-- MODAL: SURTIR EXISTENCIAS DE UN MEDICAMENTO --}}
-{{-- Usa del index: openSurtirModal, productoSeleccionado y openLoteModal. Envía a /inventario/{id}/agregar-stock (igual que antes) --}}
+{{-- Usa del index: openSurtirModal, productoSeleccionado y openLoteModal. Envía a /inventario/{id}/agregar-stock --}}
 <template x-teleport="body">
     <div x-show="openSurtirModal" x-cloak
          x-data="surtirStock()"
@@ -47,7 +47,7 @@
                         <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center">
                             <div>
                                 <p class="text-[9px] font-black text-slate-400 uppercase">Hoy</p>
-                                <p class="text-2xl font-black tabular-nums" :class="colorTexto(estadoAntes)" x-text="fisico"></p>
+                                <p class="text-2xl font-black tabular-nums" :class="colorTexto(estadoAntes)" x-text="disponible"></p>
                                 <span class="ss-chip" :class="colorChip(estadoAntes)" x-text="etiqueta(estadoAntes)"></span>
                             </div>
                             <div class="flex flex-col items-center">
@@ -64,12 +64,11 @@
                         {{-- Barra con el antes, lo que se suma y la marca del mínimo --}}
                         <div class="relative mt-4 h-3 rounded-full bg-white border border-slate-200 overflow-hidden">
                             <div class="absolute inset-y-0 left-0 bg-teal-300/70 rounded-full transition-all duration-500" :style="'width:' + nivel(despues) + '%'"></div>
-                            <div class="absolute inset-y-0 left-0 rounded-full transition-all duration-500" :class="colorBarra(estadoAntes)" :style="'width:' + nivel(fisico) + '%'"></div>
+                            <div class="absolute inset-y-0 left-0 rounded-full transition-all duration-500" :class="colorBarra(estadoAntes)" :style="'width:' + nivel(disponible) + '%'"></div>
                             <span x-show="minimo > 0" class="absolute inset-y-0 w-0.5 bg-slate-600/70" :style="'left:' + nivel(minimo) + '%'"></span>
                         </div>
-                        <div class="flex justify-between mt-1.5 text-[10px] font-bold text-slate-400">
+                        <div class="mt-1.5 text-[10px] font-bold text-slate-400">
                             <span x-text="'Mínimo: ' + minimo"></span>
-                            <span x-show="reservadas" x-text="reservadas + ' reservadas'"></span>
                         </div>
 
                         <p x-show="cantidadValida && estadoAntes !== 'ok' && estadoDespues === 'ok'" x-transition.opacity
@@ -215,20 +214,20 @@
             },
 
             // ----- Datos del medicamento -----
-            get fisico() { return Number(this.productoSeleccionado.stock_actual ?? this.productoSeleccionado.stock_disponible ?? 0); },
-            get disponible() { return Number(this.productoSeleccionado.stock_disponible ?? this.fisico); },
-            get reservadas() { return Math.max(0, this.fisico - this.disponible); },
+            // Solo se trabaja con el stock disponible (el mismo que se muestra en el inventario)
+            get disponible() { return Number(this.productoSeleccionado.stock_disponible) || 0; },
             get minimo() { return Number(this.productoSeleccionado.stock_minimo || 0); },
             get cantidadNum() { return parseInt(this.cantidad, 10) || 0; },
             get cantidadValida() { return this.cantidadNum >= 1 && Number(this.cantidad) === this.cantidadNum; },
-            get despues() { return this.fisico + (this.cantidadValida ? this.cantidadNum : 0); },
-            // El estado se calcula con lo disponible (lo reservado no se puede usar)
+            get despues() { return this.disponible + (this.cantidadValida ? this.cantidadNum : 0); },
+            
+            // El estado se calcula con lo disponible
             estadoDe(disponible) { return disponible <= 0 ? 'agotado' : (disponible <= this.minimo ? 'bajo' : 'ok'); },
             get estadoAntes() { return this.estadoDe(this.disponible); },
-            get estadoDespues() { return this.estadoDe(this.disponible + (this.cantidadValida ? this.cantidadNum : 0)); },
+            get estadoDespues() { return this.estadoDe(this.despues); },
             get faltanParaMinimo() { return Math.max(0, this.minimo + 1 - (this.disponible + (this.cantidadValida ? this.cantidadNum : 0))); },
             get sugerida() { return this.minimo > 0 ? Math.max(0, this.minimo * 3 - this.disponible) : 0; },
-            get muchas() { return this.cantidadNum >= 500 || (this.fisico > 0 && this.cantidadNum > this.fisico * 20 && this.cantidadNum > 50); },
+            get muchas() { return this.cantidadNum >= 500 || (this.disponible > 0 && this.cantidadNum > this.disponible * 20 && this.cantidadNum > 50); },
             get costo() { return this.cantidadValida ? this.cantidadNum * Number(this.productoSeleccionado.precio_compra || 0) : 0; },
 
             // ----- Visual -----
@@ -264,7 +263,7 @@
                     this.$refs.cantidad.focus();
                     return;
                 }
-                this.enviando = true;   // el formulario se envía normalmente al servidor
+                this.enviando = true;
             },
             swalAbierto() { return !!(window.Swal && Swal.isVisible && Swal.isVisible()); },
             cerrar() {

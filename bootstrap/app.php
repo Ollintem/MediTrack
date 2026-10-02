@@ -10,13 +10,15 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
-    ->withMiddleware(function (Middleware $middleware) {
-        
-        // REGISTRAMOS EL ALIAS 'permiso' PARA USARLO EN LAS RUTAS
+        ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
-            'permiso' => \App\Http\Middleware\CheckModuloPermiso::class,
+            'permiso' => \App\Http\Middleware\CheckPermission::class,
         ]);
 
+        // Asistente MediTrack en todas las páginas
+        $middleware->web(append: [
+            \App\Http\Middleware\InyectarChatbot::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

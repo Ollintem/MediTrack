@@ -14,7 +14,6 @@
 
     $productosJs = $productos->map(function ($p) {
         $disponible = (int) ($p->stock_disponible ?? 0);
-        $fisico     = (int) ($p->stock_actual ?? $disponible);
         $minimo     = (int) ($p->stock_minimo ?? 0);
         $compra     = (float) ($p->precio_compra ?? 0);
         $venta      = (float) ($p->precio_venta ?? 0);
@@ -35,8 +34,6 @@
             'venta'       => $venta,
             'margen'      => $compra > 0 ? round(($venta - $compra) / $compra * 100) : null,
             'disponible'  => $disponible,
-            'fisico'      => $fisico,
-            'reservado'   => max(0, $fisico - $disponible),
             'minimo'      => $minimo,
             'estado'      => $estado,
             'caducidad'   => $caducidad,
@@ -83,7 +80,7 @@
                     Inventario de medicamentos <i class="bi bi-heart-pulse-fill text-emerald-300 text-2xl latido-lento"></i>
                 </h1>
                 <p class="text-xs text-teal-100/80 font-medium max-w-xl leading-relaxed">
-                    Catálogo de fármacos, existencias físicas y disponibles, y alertas de reabastecimiento.
+                    Catálogo de fármacos, existencias disponibles y alertas de reabastecimiento.
                 </p>
             </div>
 
@@ -260,9 +257,7 @@
                                     <span x-show="p.minimo > 0" class="absolute -top-0.5 -bottom-0.5 w-0.5 rounded bg-slate-500/60" :style="'left:' + posMinimo(p) + '%'"></span>
                                 </div>
                                 <p class="text-[10px] font-bold text-slate-400 mt-1">
-                                    <span x-text="p.fisico + ' físicas'"></span>
-                                    <span x-show="p.reservado" class="text-sky-600" x-text="' · ' + p.reservado + ' reservadas'"></span>
-                                    <span x-text="' · mín. ' + p.minimo"></span>
+                                    <span x-text="'Mínimo ' + p.minimo"></span>
                                 </p>
                             </td>
                             <td class="py-3.5 px-5 text-right">
@@ -313,7 +308,7 @@
                     <div class="relative mt-4">
                         <div class="flex items-baseline justify-between">
                             <span class="text-2xl font-black tabular-nums" :class="{ 'text-rose-600': p.estado === 'agotado', 'text-amber-600': p.estado === 'bajo', 'text-slate-800': p.estado === 'ok' }" x-text="p.disponible"></span>
-                            <span class="text-[10px] font-bold text-slate-400" x-text="'de ' + p.fisico + ' físicas · mín. ' + p.minimo"></span>
+                            <span class="text-[10px] font-bold text-slate-400" x-text="'mín. ' + p.minimo"></span>
                         </div>
                         <div class="relative mt-1.5 h-2 rounded-full bg-slate-100">
                             <div class="barra-stock h-full rounded-full" :style="'width:' + nivel(p) + '%'"
@@ -471,7 +466,7 @@
                     total: this.productos.length,
                     bajo: this.productos.filter(p => p.estado === 'bajo').length,
                     agotado: this.productos.filter(p => p.estado === 'agotado').length,
-                    valor: this.productos.reduce((s, p) => s + p.compra * p.fisico, 0),
+                    valor: this.productos.reduce((s, p) => s + p.compra * p.disponible, 0),
                     unidades: this.productos.reduce((s, p) => s + p.disponible, 0)
                 };
             },
@@ -529,7 +524,7 @@
                 return colores[h % colores.length];
             },
             // Escala de la barra: el mínimo queda en el primer tercio para que se note cuándo se acerca
-            escala(p) { return Math.max(p.minimo * 3, p.fisico, p.disponible, 1); },
+            escala(p) { return Math.max(p.minimo * 3, p.disponible, 1); },
             nivel(p) { return Math.min(100, Math.round(p.disponible / this.escala(p) * 100)); },
             posMinimo(p) { return Math.min(100, Math.round(p.minimo / this.escala(p) * 100)); },
             diasParaCaducar(p) {
@@ -546,25 +541,13 @@
                 this.productoEditar = JSON.parse(JSON.stringify(producto));
                 this.openEditModal = true;
             },
-            
-
-            // Descarga la lista filtrada (se abre en Excel)
-            exportarCsv() {
-                const encabezado = ['Código', 'Medicamento', 'Descripción', 'Categoría', 'Precio compra', 'Precio venta', 'Disponible', 'Físico', 'Mínimo', 'Estado'];
-                const estado = { ok: 'Suficiente', bajo: 'Stock bajo', agotado: 'Agotado' };
-                const filas = this.filtrados.map(p => [p.codigo, p.nombre, p.descripcion, p.categoria, p.compra.toFixed(2), p.venta.toFixed(2), p.disponible, p.fisico, p.minimo, estado[p.estado]]);
-                const csv = [encabezado, ...filas].map(f => f.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')).join('\r\n');
-                const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'inventario_' + this.hoy + '.csv';
-                a.click();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-                avisoInventario(this.filtrados.length + ' medicamentos exportados', 'success');
+            async copiar(texto) {
+                try { await navigator.clipboard.writeText(texto); avisoInventario('Código copiado: ' + texto, 'success'); }
+                catch (e) { avisoInventario('No se pudo copiar', 'warning'); }
             },
 
             eliminar(p) {
-                const aviso = p.fisico > 0 ? `<br><span style="font-size:12px;color:#b45309">Todavía tiene ${p.fisico} piezas en existencia.</span>` : '';
+                const aviso = p.disponible > 0 ? `<br><span style="font-size:12px;color:#b45309">Todavía tiene ${p.disponible} piezas en existencia.</span>` : '';
                 Swal.fire({
                     title: '¿Eliminar medicamento?',
                     html: `Se eliminará <b>${this.escapar(p.nombre)}</b> (${this.escapar(p.codigo)}) del catálogo.${aviso}<br><span style="font-size:12px;color:#f43f5e">Esta acción no se puede deshacer.</span>`,

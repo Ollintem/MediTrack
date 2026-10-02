@@ -15,6 +15,11 @@ use App\Http\Controllers\ConfiguracionController;
 use App\Http\Controllers\BusquedaController;
 use App\Http\Controllers\InventarioController;
 use App\Http\Controllers\CategoriaInventarioController;
+use App\Http\Controllers\NominaController;
+use App\Http\Controllers\PosController;  
+use App\Http\Controllers\CajaController; 
+use App\Http\Controllers\ProveedorController;
+use App\Http\Controllers\ChatbotController;
 
 /*
 |--------------------------------------------------------------------------
@@ -36,9 +41,12 @@ Auth::routes([
 // 3. Rutas Protegidas
 Route::middleware(['auth'])->group(function () {
 
-    // --- PANEL PRINCIPAL Y BÚSQUEDA GLOBAL ---
+    // --- PANEL PRINCIPAL (DASHBOARD) ---
     Route::get('/home', [HomeController::class, 'index'])->name('home');
-    Route::get('/buscar-global', [BusquedaController::class, 'buscar'])->name('buscar.global');
+    Route::get('/home/datos', [HomeController::class, 'datos'])->name('home.datos');
+
+    // --- BÚSQUEDA GLOBAL DEL SIDEBAR ---
+    Route::get('/buscar', [BusquedaController::class, 'buscar'])->name('buscar.global');
 
     // --- MÓDULO PACIENTES ---
     Route::middleware(['permiso:Pacientes'])->group(function () {
@@ -75,6 +83,11 @@ Route::middleware(['auth'])->group(function () {
         Route::resource('recetas', RecetaController::class);
     });
 
+    Route::middleware(['auth', 'throttle:20,1'])->prefix('chatbot')->name('chatbot.')->group(function () {
+    Route::post('/mensaje', [ChatbotController::class, 'mensaje'])->name('mensaje');
+    Route::post('/reiniciar', [ChatbotController::class, 'reiniciar'])->name('reiniciar');
+    });
+
     // --- MÓDULO INVENTARIO Y CATEGORÍAS ---
     Route::middleware(['permiso:Inventario'])->group(function () {
         // Catálogo principal de medicamentos
@@ -92,8 +105,53 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/categorias-inventario/{id}', [CategoriaInventarioController::class, 'destroy'])->name('categorias-inventario.destroy');
     });
 
+    // --- MÓDULO PROVEEDORES ---
+    Route::resource('proveedores', ProveedorController::class)->except(['create', 'show', 'edit']);
+
+    // --- MÓDULO POS / PUNTO DE VENTA ---
+    Route::middleware(['permiso:POS'])->group(function () {
+        Route::get('/pos', [PosController::class, 'index'])->name('pos.index');
+        Route::post('/pos/buscar-producto', [PosController::class, 'buscarProducto'])->name('pos.buscar-producto');
+        Route::post('/pos/procesar-venta', [PosController::class, 'procesarVenta'])->name('pos.procesar-venta');
+        
+        // Rutas para generación de tickets de venta
+        Route::get('/pos/ticket/{venta}', [PosController::class, 'generarTicket'])->name('pos.generar-ticket');
+        Route::get('/pos/ticket/{venta}/imprimir', [PosController::class, 'ticket'])->name('pos.ticket');
+    });
+
+    // --- MÓDULO CAJA CENTRAL ---
+    Route::middleware(['permiso:Caja Central'])->group(function () {
+        Route::get('/caja', [CajaController::class, 'index'])->name('caja.index');
+        Route::post('/caja/aperturar', [CajaController::class, 'aperturar'])->name('caja.aperturar');
+        Route::post('/caja/cerrar', [CajaController::class, 'cerrar'])->name('caja.cerrar');
+        Route::post('/caja/movimiento', [CajaController::class, 'movimiento'])->name('caja.movimiento');
+        Route::get('/caja/corte/{id}', [CajaController::class, 'cortePdf'])->name('caja.corte-pdf');
+    });
+
     // --- MÓDULO ADMINISTRACIÓN Y ROLES ---
     Route::middleware(['permiso:Personal'])->group(function () {
+        // Nómina (sección del módulo de Personal)
+        Route::prefix('personal/nomina')->name('personal.nomina.')->group(function () {
+            Route::get('/', [NominaController::class, 'index'])->name('index');
+            Route::post('/', [NominaController::class, 'store'])->name('store');
+
+            // Ficha de nómina de cada empleado
+            Route::get('/empleado/{personal}', [NominaController::class, 'empleado'])->name('empleado');
+
+            // Recibos individuales
+            Route::put('/recibo/{recibo}', [NominaController::class, 'updateRecibo'])->name('recibo.update');
+            Route::delete('/recibo/{recibo}', [NominaController::class, 'quitarRecibo'])->name('recibo.quitar');
+            Route::post('/recibo/{recibo}/revertir', [NominaController::class, 'revertirPago'])->name('recibo.revertir');
+            Route::get('/recibo/{recibo}/pdf', [NominaController::class, 'pdf'])->name('recibo.pdf');
+
+            // Periodos
+            Route::get('/{periodo}', [NominaController::class, 'show'])->name('show');
+            Route::delete('/{periodo}', [NominaController::class, 'destroy'])->name('destroy');
+            Route::post('/{periodo}/empleado', [NominaController::class, 'agregarEmpleado'])->name('agregar');
+            Route::post('/{periodo}/pagar', [NominaController::class, 'pagar'])->name('pagar');
+            Route::post('/{periodo}/estado', [NominaController::class, 'cambiarEstado'])->name('estado');
+        });
+
         Route::resource('personal', PersonalController::class);
     });
 
@@ -101,9 +159,11 @@ Route::middleware(['auth'])->group(function () {
         Route::resource('roles', RolController::class);
     });
 
+    // --- MÓDULO CONFIGURACIÓN ---
     Route::middleware(['permiso:Configuración'])->group(function () {
         Route::get('/configuracion', [ConfiguracionController::class, 'index'])->name('configuracion.index');
         Route::put('/configuracion', [ConfiguracionController::class, 'update'])->name('configuracion.update');
+        Route::post('/configuracion/cuenta', [ConfiguracionController::class, 'actualizarCuenta'])->name('configuracion.cuenta.update');
     });
 
     Route::middleware(['permiso:Bitácora'])->group(function () {
