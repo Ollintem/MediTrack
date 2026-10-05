@@ -18,7 +18,6 @@
         $compra     = (float) ($p->precio_compra ?? 0);
         $venta      = (float) ($p->precio_venta ?? 0);
 
-        // Caducidad (solo si tu tabla tiene alguna de estas columnas)
         $caducidad = data_get($p, 'fecha_caducidad') ?: data_get($p, 'caducidad');
         try { $caducidad = $caducidad ? \Illuminate\Support\Carbon::parse($caducidad)->format('Y-m-d') : null; } catch (\Throwable $e) { $caducidad = null; }
 
@@ -40,18 +39,17 @@
             'buscar'      => \Illuminate\Support\Str::lower(\Illuminate\Support\Str::ascii(implode(' ', [
                 $p->codigo, $p->nombre, $p->descripcion, data_get($p, 'categoria.nombre'),
             ]))),
-            'raw'         => $p->toArray(),   // lo que reciben los modales de editar y surtir
+            'raw'         => $p->toArray(),
         ];
     })->values();
 
     $categoriasJs = $categorias->pluck('nombre')->filter()->unique()->sortBy(fn ($n) => mb_strtolower($n))->values();
 
     $tarjetas = [
-        // título, clave, icono, color, filtro al hacer clic
-        ['Medicamentos',     'total',    'bi-capsule',                 'bg-teal-50 text-teal-600',    'todos'],
+        ['Medicamentos',     'total',    'bi-capsule',                  'bg-teal-50 text-teal-600',    'todos'],
         ['Stock bajo',       'bajo',     'bi-exclamation-triangle-fill','bg-amber-50 text-amber-600',  'bajo'],
-        ['Agotados',         'agotado',  'bi-x-octagon-fill',          'bg-rose-50 text-rose-500',    'agotado'],
-        ['Valor en almacén', 'valor',    'bi-cash-stack',              'bg-sky-50 text-sky-600',      null],
+        ['Agotados',          'agotado',  'bi-x-octagon-fill',           'bg-rose-50 text-rose-500',    'agotado'],
+        ['Valor en almacén', 'valor',    'bi-cash-stack',               'bg-sky-50 text-sky-600',      null],
     ];
 @endphp
 
@@ -64,7 +62,6 @@
         <svg class="absolute inset-x-0 bottom-2 w-full h-12 opacity-25 pointer-events-none" viewBox="0 0 800 40" preserveAspectRatio="none" fill="none" aria-hidden="true">
             <path class="ecg-linea" d="M0 20 H300 L315 20 L325 6 L338 34 L350 2 L364 38 L374 20 H520 L532 13 L544 20 H800" stroke="#6ee7b7" stroke-width="2" stroke-linejoin="round"/>
         </svg>
-        {{-- Cápsulas decorativas --}}
         <div class="absolute right-10 top-8 hidden lg:flex gap-3 opacity-20 pointer-events-none">
             <span class="capsula w-7 h-16 rounded-full bg-gradient-to-b from-white from-50% to-emerald-300 to-50%"></span>
             <span class="capsula w-7 h-16 rounded-full bg-gradient-to-b from-emerald-200 from-50% to-white to-50%" style="animation-delay:-1.2s"></span>
@@ -250,7 +247,6 @@
                                           :class="{ 'bg-rose-100 text-rose-700': p.estado === 'agotado', 'bg-amber-100 text-amber-700': p.estado === 'bajo', 'bg-emerald-50 text-emerald-700': p.estado === 'ok' }"
                                           x-text="{ agotado: 'Agotado', bajo: 'Stock bajo', ok: 'Suficiente' }[p.estado]"></span>
                                 </div>
-                                {{-- Barra de existencias con marca del mínimo --}}
                                 <div class="relative mt-1.5 h-2 rounded-full bg-slate-100 overflow-visible" :title="'Mínimo: ' + p.minimo + ' pzas.'">
                                     <div class="barra-stock h-full rounded-full" :style="'width:' + nivel(p) + '%'"
                                          :class="{ 'bg-rose-500': p.estado === 'agotado', 'bg-amber-400': p.estado === 'bajo', 'bg-emerald-500': p.estado === 'ok' }"></div>
@@ -365,7 +361,7 @@
         </div>
     </div>
 
-    {{-- Modales (usan: openCreateModal, openEditModal, openSurtirModal, openCategoriaModal, openLoteModal, productoEditar, productoSeleccionado) --}}
+    {{-- Modales --}}
     @include('inventario.modalAgregarProducto')
     @include('inventario.modalEditarProducto')
     @include('inventario.modalSurtirStock')
@@ -430,7 +426,7 @@
             ],
             resumenMostrado: { total: 0, bajo: 0, agotado: 0, valor: 0 },
 
-            // ----- Modales (los usan los archivos incluidos) -----
+            // ----- Modales -----
             openCreateModal: @js($errors->any() || session('error')),
             openSurtirModal: false,
             openEditModal: false,
@@ -466,7 +462,7 @@
                     total: this.productos.length,
                     bajo: this.productos.filter(p => p.estado === 'bajo').length,
                     agotado: this.productos.filter(p => p.estado === 'agotado').length,
-                    valor: this.productos.reduce((s, p) => s + p.compra * p.disponible, 0),
+                    valor: this.productos.reduce((s, p) => s + (p.compra * p.disponible), 0),
                     unidades: this.productos.reduce((s, p) => s + p.disponible, 0)
                 };
             },
@@ -488,8 +484,7 @@
             conteoEstado(e) { return e === 'todos' ? this.productos.length : this.productos.filter(p => p.estado === e).length; },
 
             // ----- Filtros -----
-            normalizar(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); },
-            // Se conserva por compatibilidad con código anterior
+            normalizar(s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(); },
             cumpleFiltro(codigo, nombre, descripcion, categoria) {
                 const q = this.normalizar(this.searchQuery);
                 return (!q || this.normalizar(codigo + ' ' + nombre + ' ' + descripcion).includes(q))
@@ -504,7 +499,7 @@
                 );
                 const orden = {
                     nombre: (a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }),
-                    stock:  (a, b) => a.disponible - b.disponible || a.nombre.localeCompare(b.nombre),
+                    stock:  (a, b) => (a.disponible - b.disponible) || a.nombre.localeCompare(b.nombre),
                     venta:  (a, b) => b.venta - a.venta,
                     margen: (a, b) => (b.margen ?? -999) - (a.margen ?? -999)
                 }[this.orden];
@@ -523,10 +518,9 @@
                 for (const ch of String(c || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
                 return colores[h % colores.length];
             },
-            // Escala de la barra: el mínimo queda en el primer tercio para que se note cuándo se acerca
             escala(p) { return Math.max(p.minimo * 3, p.disponible, 1); },
-            nivel(p) { return Math.min(100, Math.round(p.disponible / this.escala(p) * 100)); },
-            posMinimo(p) { return Math.min(100, Math.round(p.minimo / this.escala(p) * 100)); },
+            nivel(p) { return Math.min(100, Math.round((p.disponible / this.escala(p)) * 100)); },
+            posMinimo(p) { return Math.min(100, Math.round((p.minimo / this.escala(p)) * 100)); },
             diasParaCaducar(p) {
                 if (!p.caducidad) return Infinity;
                 return Math.round((new Date(p.caducidad + 'T00:00:00') - new Date(this.hoy + 'T00:00:00')) / 86400000);

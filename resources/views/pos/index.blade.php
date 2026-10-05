@@ -53,7 +53,7 @@
                             </h4>
                         </div>
 
-                        <!-- REPRESENTACIÓN DE STOCK: DISPONIBLE (NEGRITAS) VS FÍSICO (TENUE) -->
+                        <!-- REPRESENTACIÓN DE STOCK -->
                         <div class="flex items-center justify-between pt-2 border-t border-gray-200/60 text-xs">
                             <span class="text-[10px] font-bold text-gray-400">DISPONIBLE:</span>
                             <div class="flex items-baseline gap-1">
@@ -167,7 +167,7 @@ function posApp() {
 
             if (prod) {
                 this.agregarAlCarrito(prod);
-                this.searchQuery = ''; // Limpiar tras escaneo exitoso
+                this.searchQuery = '';
             } else {
                 if (typeof window.notificar === 'function') {
                     window.notificar('PRODUCTO NO ENCONTRADO CON ESE CÓDIGO', 'error');

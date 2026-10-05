@@ -1,534 +1,460 @@
 @extends('layouts.admin')
 
 @section('content')
-@php
-    // Acepta colección o paginador
-    $lista = $productos instanceof \Illuminate\Contracts\Pagination\Paginator
-        ? collect($productos->items())
-        : collect($productos ?? []);
-    if ($lista instanceof \Illuminate\Database\Eloquent\Collection) {
-        $lista->loadMissing('categoria');
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<style>
+    /* FORZAR MAYÚSCULAS ÚNICAMENTE EN LOS CAMPOS DE TEXTO QUE ESCRIBE EL USUARIO */
+    input[type="text"], 
+    textarea {
+        text-transform: uppercase !important;
     }
 
-    $puedeCrear    = auth()->user()->tienePermiso('Inventario', 'crear');
-    $puedeEditar   = auth()->user()->tienePermiso('Inventario', 'editar');
-    $puedeEliminar = auth()->user()->tienePermiso('Inventario', 'eliminar');
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(15px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    .animate-stagger {
+        animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        opacity: 0;
+    }
 
-    // Se conserva el objeto completo del producto (lo usan los modales de surtir/editar)
-    // y se agregan campos auxiliares con prefijo "_" solo para la vista.
-    $productosJs = $lista->map(function ($p) {
-        $disp = (int) $p->stock_disponible;
-        $min  = (int) $p->stock_minimo;
-        $cat  = $p->categoria->nombre ?? 'General';
+    /* ESTILOS DE IMPRESIÓN */
+    @media print {
+        body * {
+            visibility: hidden !important;
+        }
+        #hoja-receta-medica, #hoja-receta-medica * {
+            visibility: visible !important;
+        }
+        #hoja-receta-medica {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 20px !important;
+            box-shadow: none !important;
+            border: none !important;
+            background: white !important;
+        }
+        .no-print {
+            display: none !important;
+        }
+    }
+</style>
 
-        return array_merge($p->toArray(), [
-            '_categoria' => $cat,
-            '_estado'    => $disp <= 0 ? 'agotado' : ($disp <= $min ? 'bajo' : 'ok'),
-            '_buscar'    => \Illuminate\Support\Str::lower(\Illuminate\Support\Str::ascii(implode(' ', [
-                $p->codigo, $p->nombre, $p->descripcion, $cat,
-            ]))),
-        ]);
-    })->values();
-@endphp
+<div class="space-y-8 w-full block" x-data="{ 
+    searchQuery: '',
+    viewMode: 'list',
+    openCreateModal: {{ $errors->any() ? 'true' : 'false' }},
+    openPrintModal: false,
+    printReceta: {},
+    medicamentosLista: [
+        { nombre: '', dosis: '', frecuencia: '' }
+    ],
 
-<div class="space-y-6 w-full block" x-data="moduloInventario()">
+    addMedicamento() {
+        this.medicamentosLista.push({ nombre: '', dosis: '', frecuencia: '' });
+    },
 
-    {{-- ===================== ENCABEZADO ===================== --}}
-    <div class="aparece relative overflow-hidden rounded-3xl bg-gradient-to-br from-teal-900 via-teal-800 to-emerald-700 text-white shadow-xl shadow-teal-900/20">
-        <div class="flotar absolute -right-16 -top-20 w-64 h-64 rounded-full bg-white/5"></div>
-        <div class="flotar absolute right-48 -bottom-24 w-56 h-56 rounded-full bg-emerald-400/10" style="animation-delay:-2.5s"></div>
-        <svg class="absolute inset-x-0 bottom-2 w-full h-12 opacity-25 pointer-events-none" viewBox="0 0 800 40" preserveAspectRatio="none" fill="none" aria-hidden="true">
-            <path class="ecg-linea" d="M0 20 H300 L315 20 L325 6 L338 34 L350 2 L364 38 L374 20 H520 L532 13 L544 20 H800" stroke="#6ee7b7" stroke-width="2" stroke-linejoin="round"/>
-        </svg>
-        <div class="absolute right-10 top-8 hidden md:flex gap-3 opacity-20 pointer-events-none">
-            <span class="capsula w-7 h-16 rounded-full bg-gradient-to-b from-white from-50% to-emerald-300 to-50%"></span>
-            <span class="capsula w-7 h-16 rounded-full bg-gradient-to-b from-emerald-200 from-50% to-white to-50%" style="animation-delay:-1.2s"></span>
-            <span class="capsula w-10 h-10 mt-6 rounded-full bg-white" style="animation-delay:-2.4s"></span>
-        </div>
+    removeMedicamento(index) {
+        if (this.medicamentosLista.length > 1) {
+            this.medicamentosLista.splice(index, 1);
+        }
+    },
 
-        <div class="relative p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div class="space-y-2 min-w-0">
-                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-[11px] font-bold uppercase tracking-wide text-emerald-300 backdrop-blur-md">
-                    <i class="bi bi-box-seam-fill"></i> Almacén de farmacia
+    abrirReceta(receta) {
+        this.printReceta = receta;
+        this.openPrintModal = true;
+    }
+}">
+    
+    <!-- BANNER HERO -->
+    <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-teal-800 via-teal-600 to-emerald-600 p-8 text-white shadow-xl shadow-teal-900/10 animate-stagger" style="animation-delay: 0ms;">
+        <div class="absolute -right-10 -top-10 h-64 w-64 rounded-full bg-white/10 blur-3xl pointer-events-none"></div>
+        <div class="absolute right-40 -bottom-20 h-48 w-48 rounded-full bg-emerald-400/20 blur-2xl pointer-events-none"></div>
+
+        <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div class="space-y-2">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-teal-100 text-xs font-semibold backdrop-blur-md">
+                    <i class="bi bi-journal-medical text-emerald-300"></i> Módulo de Consultas
                 </div>
-                <h1 class="text-2xl sm:text-3xl font-black tracking-tight flex items-center gap-3">Inventario de medicamentos <i class="bi bi-capsule-pill text-emerald-300 text-2xl latido-lento"></i></h1>
-                <p class="text-xs text-teal-100/80 font-medium max-w-xl leading-relaxed">
-                    Catálogo de fármacos, existencias físicas y reservas. Busca por código, nombre, descripción o categoría.
+                <h2 class="text-3xl font-extrabold tracking-tight">Recetas Médicas</h2>
+                <p class="text-sm text-teal-100/90 max-w-xl">
+                    Emite, gestiona e imprime las prescripciones e indicaciones médicas vinculadas a los pacientes.
                 </p>
             </div>
-            @if ($puedeCrear)
-                <div class="flex flex-wrap items-center gap-2 shrink-0">
-                    <button @click="openLoteModal = true" type="button"
-                            class="group bg-white/10 hover:bg-white/20 text-white font-black px-5 py-3 rounded-2xl text-xs border border-white/20 backdrop-blur-md transition-all hover:-translate-y-0.5 active:scale-95 flex items-center gap-2 cursor-pointer">
-                        <i class="bi bi-boxes text-sm text-emerald-300 transition-transform duration-300 group-hover:scale-110"></i> Surtir lote
-                    </button>
-                    <button @click="openCreateModal = true" type="button"
-                            class="group bg-white text-teal-900 hover:bg-emerald-50 font-black px-5 py-3 rounded-2xl text-xs shadow-lg shadow-teal-950/25 transition-all hover:-translate-y-0.5 active:scale-95 flex items-center gap-2 cursor-pointer">
-                        <i class="bi bi-plus-lg text-sm text-teal-700 transition-transform duration-300 group-hover:rotate-90"></i> Registrar medicamento
-                    </button>
-                </div>
-            @endif
-        </div>
-    </div>
 
-    {{-- ===================== RESUMEN ===================== --}}
-    @php
-        // [título, clave, ícono, color, estado al que filtra]
-        $tarjetas = [
-            ['Total en catálogo', 'total',    'bi-capsule-pill',             'bg-teal-50 text-teal-600',       'todos'],
-            ['Stock óptimo',      'ok',       'bi-check2-circle',            'bg-emerald-50 text-emerald-600', 'ok'],
-            ['Stock bajo',        'bajo',     'bi-exclamation-triangle-fill','bg-amber-50 text-amber-600',     'bajo'],
-            ['Agotados',          'agotados', 'bi-x-octagon-fill',           'bg-rose-50 text-rose-500',       'agotado'],
-        ];
-    @endphp
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        @foreach ($tarjetas as $i => [$titulo, $clave, $icono, $color, $filtro])
-            <button type="button" @click="estado = '{{ $filtro }}'"
-                    class="tarjeta-stat group text-left bg-white rounded-2xl border shadow-sm p-4 flex items-center justify-between gap-3 transition-all hover:shadow-md hover:-translate-y-1 cursor-pointer"
-                    :class="estado === '{{ $filtro }}' && '{{ $filtro }}' !== 'todos' ? 'border-teal-300 ring-4 ring-teal-500/10' : 'border-slate-100 hover:border-slate-200'"
-                    style="animation-delay: {{ $i * 70 }}ms">
-                <div>
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{{ $titulo }}</p>
-                    <p class="text-2xl font-black text-slate-800 mt-1 tabular-nums" x-text="resumenMostrado.{{ $clave }}">0</p>
-                </div>
-                <span class="w-11 h-11 rounded-2xl flex items-center justify-center text-lg shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6 {{ $color }}">
-                    <i class="bi {{ $icono }}"></i>
-                </span>
-            </button>
-        @endforeach
-    </div>
-
-    {{-- ===================== LISTADO ===================== --}}
-    <div class="aparece bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden" style="--d: 220ms">
-
-        <div class="p-5 sm:p-6 border-b border-slate-100 space-y-4">
-            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div class="flex items-center gap-3">
-                    <span class="w-9 h-9 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center"><i class="bi bi-box-seam"></i></span>
-                    <div>
-                        <h3 class="text-base font-black text-slate-800">Medicamentos</h3>
-                        <p class="text-[11px] font-semibold text-slate-400"
-                           x-text="filtrados.length === productos.length ? productos.length + ' en catálogo' : filtrados.length + ' de ' + productos.length + ' medicamentos'"></p>
-                    </div>
-                </div>
-
-                <div class="flex items-center gap-2">
-                    <div class="relative flex-1 md:w-80">
-                        <i class="bi bi-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                        <input type="search" x-ref="buscar" x-model.debounce.150ms="searchQuery" placeholder="Código, nombre, categoría…"
-                               class="campo-busqueda w-full pl-9 pr-9 py-2.5 rounded-2xl border border-slate-200 bg-slate-50 text-xs font-semibold focus:bg-white focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all">
-                        <kbd class="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400 border border-slate-200 rounded px-1.5 py-0.5 hidden sm:block" x-show="!searchQuery">/</kbd>
-                    </div>
-                    <div class="relative flex bg-slate-100 p-1 rounded-2xl shrink-0">
-                        <span class="absolute top-1 bottom-1 w-9 rounded-xl bg-white shadow-sm transition-all duration-300" :style="viewMode === 'list' ? 'left:4px' : 'left:40px'"></span>
-                        <button @click="cambiarVista('list')" type="button" title="Vista de tabla" class="relative z-10 w-9 h-8 rounded-xl flex items-center justify-center transition-colors cursor-pointer" :class="viewMode === 'list' ? 'text-teal-700' : 'text-slate-400 hover:text-slate-600'">
-                            <i class="bi bi-list-task"></i>
-                        </button>
-                        <button @click="cambiarVista('grid')" type="button" title="Vista de tarjetas" class="relative z-10 w-9 h-8 rounded-xl flex items-center justify-center transition-colors cursor-pointer" :class="viewMode === 'grid' ? 'text-teal-700' : 'text-slate-400 hover:text-slate-600'">
-                            <i class="bi bi-grid-fill"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Filtros rápidos --}}
-            <div class="flex flex-wrap items-center gap-2">
-                <template x-for="e in estados" :key="e.valor">
-                    <button type="button" @click="estado = e.valor"
-                            :class="estado === e.valor ? 'bg-teal-600 text-white border-teal-600 shadow-md shadow-teal-600/20' : 'bg-white text-slate-500 border-slate-200 hover:border-teal-300 hover:text-teal-700'"
-                            class="px-3 py-1.5 rounded-full border text-[11px] font-bold transition-all cursor-pointer" x-text="e.texto"></button>
-                </template>
-
-                <select x-model="categoriaFiltro" aria-label="Filtrar por categoría"
-                        class="bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5 text-[11px] font-bold text-slate-600 outline-none focus:border-teal-500 cursor-pointer">
-                    <option value="">Todas las categorías</option>
-                    @foreach ($categorias as $cat)
-                        <option value="{{ \Illuminate\Support\Str::lower($cat->nombre) }}">{{ \Illuminate\Support\Str::upper($cat->nombre) }}</option>
-                    @endforeach
-                </select>
-
-                @if ($puedeCrear)
-                    <button type="button" @click="openCategoriaModal = true" title="Gestionar categorías"
-                            class="px-3 py-1.5 rounded-full border border-slate-200 bg-white text-[11px] font-bold text-slate-500 hover:border-teal-300 hover:text-teal-700 flex items-center gap-1.5 transition-all cursor-pointer">
-                        <i class="bi bi-tags-fill text-teal-600"></i> Categorías
+            <div class="flex items-center gap-3">
+                @if(auth()->user()->tienePermiso('Recetas', 'crear'))
+                    <button @click="openCreateModal = true" type="button" class="group bg-white text-teal-800 hover:bg-teal-50 font-bold px-5 py-3 rounded-2xl text-sm shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2 transform hover:-translate-y-0.5">
+                        <i class="bi bi-plus-circle-fill text-teal-600 group-hover:scale-110 transition-transform duration-300 text-base"></i>
+                        <span>Nueva Receta</span>
                     </button>
                 @endif
+            </div>
+        </div>
+    </div>
 
-                <button type="button" @click="orden = orden === 'nombre' ? 'stock' : 'nombre'"
-                        class="ml-auto flex items-center gap-1.5 text-[11px] font-bold text-slate-500 hover:text-teal-700 cursor-pointer">
-                    <i class="bi" :class="orden === 'nombre' ? 'bi-sort-alpha-down' : 'bi-sort-numeric-down'"></i>
-                    <span x-text="orden === 'nombre' ? 'Nombre A-Z' : 'Menor stock primero'"></span>
-                </button>
-                <button type="button" x-show="hayFiltros" x-cloak @click="limpiarFiltros()" class="text-[11px] font-black text-teal-700 hover:text-teal-900 cursor-pointer">Limpiar</button>
+    <!-- TARJETAS DE MÉTRICAS -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-5 animate-stagger" style="animation-delay: 100ms;">
+        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center text-xl font-bold border border-teal-100">
+                <i class="bi bi-file-earmark-text-fill"></i>
+            </div>
+            <div>
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Recetas</p>
+                <h3 class="text-2xl font-bold text-gray-800">{{ $recetas->count() }}</h3>
             </div>
         </div>
 
-        {{-- ---------- TABLA ---------- --}}
-        <div x-show="viewMode === 'list' && filtrados.length" class="overflow-x-auto">
+        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold border border-rose-100">
+                <i class="bi bi-person-check-fill"></i>
+            </div>
+            <div>
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Pacientes Prescritos</p>
+                <h3 class="text-2xl font-bold text-gray-800">
+                    {{ $recetas->pluck('paciente_id')->unique()->count() }}
+                </h3>
+            </div>
+        </div>
+
+        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl font-bold border border-emerald-100">
+                <i class="bi bi-check-circle-fill"></i>
+            </div>
+            <div>
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Estado del Registro</p>
+                <span class="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 mt-1">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Al Día
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- TABLA DE RECETAS -->
+    <div class="bg-white rounded-3xl border border-gray-200/80 shadow-sm overflow-hidden animate-stagger" style="animation-delay: 200ms;">
+        
+        <div class="p-6 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-50 via-teal-50/20 to-transparent">
+            <div>
+                <h3 class="font-extrabold text-gray-800 text-lg">Historial de Recetas Emitidas</h3>
+                <p class="text-xs text-gray-500">Listado general de prescripciones médicas</p>
+            </div>
+
+            <div class="flex items-center gap-3 w-full md:w-auto">
+                <div class="relative w-full md:w-80">
+                    <i class="bi bi-search absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                    <input type="text" x-model="searchQuery" placeholder="Buscar por paciente, médico o folio..." class="w-full pl-9 pr-4 py-2.5 rounded-2xl border border-gray-200 bg-white text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500 focus:outline-none transition-all uppercase">
+                </div>
+
+                <div class="flex items-center bg-slate-100 p-1 rounded-2xl border border-gray-200 shrink-0">
+                    <button @click="viewMode = 'list'" type="button" :class="viewMode === 'list' ? 'bg-white text-teal-700 shadow-xs' : 'text-gray-400 hover:text-gray-600'" class="p-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1" title="Vista de Tabla">
+                        <i class="bi bi-list-task text-base"></i>
+                    </button>
+                    <button @click="viewMode = 'grid'" type="button" :class="viewMode === 'grid' ? 'bg-white text-teal-700 shadow-xs' : 'text-gray-400 hover:text-gray-600'" class="p-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1" title="Vista de Tarjetas">
+                        <i class="bi bi-grid-fill text-base"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TABLA -->
+        <div x-show="viewMode === 'list'" class="overflow-x-auto">
             <table class="w-full text-left text-xs">
-                <thead class="bg-slate-50/70 text-[10px] text-slate-400 font-black uppercase tracking-wider border-b border-slate-100">
+                <thead class="bg-slate-50 text-gray-400 font-bold uppercase tracking-wider border-b border-gray-100">
                     <tr>
-                        <th class="py-3.5 px-5">Código</th>
-                        <th class="py-3.5 px-5">Medicamento</th>
-                        <th class="py-3.5 px-5 hidden md:table-cell">Categoría</th>
-                        <th class="py-3.5 px-5 text-right hidden lg:table-cell">P. compra</th>
-                        <th class="py-3.5 px-5 text-right">P. venta</th>
-                        <th class="py-3.5 px-5">Existencias</th>
-                        <th class="py-3.5 px-5 text-right">Acciones</th>
+                        <th class="p-4">N° RECETA</th>
+                        <th class="p-4">PACIENTE</th>
+                        <th class="p-4">DIAGNÓSTICO</th>
+                        <th class="p-4">MÉDICO</th>
+                        <th class="p-4">FECHA</th>
+                        <th class="p-4 text-center">ACCIONES</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100 font-semibold text-slate-700">
-                    <template x-for="(p, i) in pagina" :key="p.id">
-                        <tr class="fila-in group hover:bg-teal-50/30 transition-colors" :style="'--d:' + Math.min(i * 35, 400) + 'ms'"
-                            :class="p._saliendo && 'fila-sale'">
-                            <td class="py-3.5 px-5">
-                                <span class="font-black text-teal-800 bg-teal-50 border border-teal-100 px-2 py-1 rounded-lg uppercase whitespace-nowrap" x-text="p.codigo"></span>
+                <tbody class="divide-y divide-gray-100 text-gray-700 font-semibold">
+                    @forelse ($recetas as $rec)
+                        @php
+                            $nombrePac = $rec->paciente->nombre_completo ?? trim(($rec->paciente->nombre ?? 'N/A') . ' ' . ($rec->paciente->apellido ?? ''));
+                            $nombreMed = 'Dr. ' . ($rec->personal->nombre_completo ?? auth()->user()->nombre_completo);
+                            $folio = '#' . str_pad($rec->id, 5, '0', STR_PAD_LEFT);
+                            $fechaFmt = \Carbon\Carbon::parse($rec->fecha_emision ?? $rec->fecha)->format('d/m/Y');
+                        @endphp
+                        <tr class="hover:bg-teal-50/20 transition-colors" x-show="!searchQuery || '{{ strtolower($folio) }}'.includes(searchQuery.toLowerCase()) || '{{ strtolower($nombrePac) }}'.includes(searchQuery.toLowerCase()) || '{{ strtolower($nombreMed) }}'.includes(searchQuery.toLowerCase()) || '{{ strtolower($rec->diagnostico ?? '') }}'.includes(searchQuery.toLowerCase())">
+                            <td class="p-4 font-bold text-teal-800">{{ $folio }}</td>
+                            <td class="p-4 font-bold text-gray-800 uppercase">{{ $nombrePac }}</td>
+                            <td class="p-4 text-teal-800 font-extrabold truncate max-w-[180px] uppercase" title="{{ $rec->diagnostico ?? 'Sin diagnóstico' }}">
+                                {{ $rec->diagnostico ?? 'N/D' }}
                             </td>
-                            <td class="py-3.5 px-5">
-                                <div class="flex items-center gap-3">
-                                    <span class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110"
-                                          :class="colorCategoria(p._categoria)"><i class="bi bi-capsule"></i></span>
-                                    <div class="min-w-0">
-                                        <p class="font-black text-slate-900 uppercase truncate max-w-[220px]" :title="p.nombre" x-text="p.nombre"></p>
-                                        <p class="text-[10px] font-bold text-slate-400 uppercase truncate max-w-[220px]" :title="p.descripcion" x-text="p.descripcion || 'Sin descripción'"></p>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="py-3.5 px-5 hidden md:table-cell">
-                                <span class="text-[10px] font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-full px-2.5 py-1 uppercase whitespace-nowrap" x-text="p._categoria"></span>
-                            </td>
-                            <td class="py-3.5 px-5 text-right hidden lg:table-cell text-slate-500 tabular-nums" x-text="dinero(p.precio_compra)"></td>
-                            <td class="py-3.5 px-5 text-right font-black text-slate-900 tabular-nums" x-text="dinero(p.precio_venta)"></td>
-                            <td class="py-3.5 px-5">
-                                <div class="w-36 space-y-1">
-                                    <div class="flex items-baseline justify-between gap-2">
-                                        <p class="font-black tabular-nums" :class="colorEstado(p._estado).texto" x-text="p.stock_disponible + ' pzas.'"></p>
-                                        <p class="text-[10px] font-bold text-slate-400 tabular-nums" x-text="p.stock_actual + ' físicas'"></p>
-                                    </div>
-                                    <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                                        <div class="h-full rounded-full transition-all duration-500" :class="colorEstado(p._estado).barra" :style="'width:' + nivel(p) + '%'"></div>
-                                    </div>
-                                    <p class="text-[10px] font-bold" :class="colorEstado(p._estado).texto" x-text="textoEstado(p)"></p>
-                                </div>
-                            </td>
-                            <td class="py-3.5 px-5 text-right">
-                                <div class="inline-flex items-center gap-1.5">
-                                    @if ($puedeEditar)
-                                        <button type="button" @click="abrirSurtir(p)" title="Surtir existencias"
-                                                class="h-8 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-black flex items-center gap-1.5 shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer">
-                                            <i class="bi bi-box-arrow-in-down"></i><span class="hidden sm:inline">Surtir</span>
-                                        </button>
-                                        <button type="button" @click="abrirEditar(p)" title="Editar"
-                                                class="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 hover:bg-amber-100 hover:scale-110 flex items-center justify-center transition-all active:scale-95 cursor-pointer">
-                                            <i class="bi bi-pencil-fill text-[11px]"></i>
-                                        </button>
-                                    @endif
-                                    @if ($puedeEliminar)
-                                        <button type="button" @click="eliminar(p)" title="Eliminar"
-                                                class="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 hover:scale-110 flex items-center justify-center transition-all active:scale-95 cursor-pointer">
-                                            <i class="bi bi-trash-fill text-[11px]"></i>
+                            <td class="p-4 text-gray-600 uppercase">{{ $nombreMed }}</td>
+                            <td class="p-4 text-gray-500">{{ $fechaFmt }}</td>
+                            <td class="p-4 text-center">
+                                <div class="flex items-center justify-center gap-1.5">
+                                    <button type="button" @click="abrirReceta({{ json_encode($rec->load(['paciente', 'personal', 'detalles'])) }})" class="bg-teal-600 hover:bg-teal-700 text-white p-2 px-3.5 rounded-xl text-xs font-bold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5" title="Ver Receta">
+                                        <i class="bi bi-eye-fill text-sm"></i>
+                                        <span>Ver Receta</span>
+                                    </button>
+
+                                    @if(auth()->user()->tienePermiso('Recetas', 'eliminar'))
+                                        <button type="button" onclick="confirmarEliminacionReceta({{ $rec->id }})" class="bg-rose-500 hover:bg-rose-600 text-white p-2 rounded-xl text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center justify-center" title="Eliminar Receta">
+                                            <i class="bi bi-trash"></i>
                                         </button>
                                     @endif
                                 </div>
                             </td>
                         </tr>
-                    </template>
+                    @empty
+                        <tr>
+                            <td colspan="6" class="p-12 text-center text-gray-400 italic">
+                                <i class="bi bi-prescription2 text-4xl mb-2 block text-gray-300"></i>
+                                No hay recetas registradas en el sistema.
+                            </td>
+                        </tr>
+                    @endforelse
                 </tbody>
             </table>
         </div>
 
-        {{-- ---------- TARJETAS ---------- --}}
-        <div x-show="viewMode === 'grid' && filtrados.length" x-cloak class="p-5 sm:p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            <template x-for="(p, i) in pagina" :key="p.id">
-                <div class="fila-in group relative bg-white rounded-2xl border border-slate-200 p-5 hover:border-teal-400 hover:shadow-lg hover:shadow-teal-900/5 hover:-translate-y-1 transition-all flex flex-col gap-4 overflow-hidden"
-                     :style="'--d:' + Math.min(i * 40, 400) + 'ms'" :class="p._saliendo && 'fila-sale'">
-                    <i class="bi bi-capsule-pill absolute -right-3 -bottom-4 text-7xl text-slate-50 group-hover:text-teal-50 transition-colors pointer-events-none"></i>
+        <!-- TARJETAS GRID -->
+        <div x-show="viewMode === 'grid'" class="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            @forelse ($recetas as $rec)
+                @php
+                    $nombrePac = $rec->paciente->nombre_completo ?? trim(($rec->paciente->nombre ?? 'N/A') . ' ' . ($rec->paciente->apellido ?? ''));
+                    $nombreMed = 'Dr. ' . ($rec->personal->nombre_completo ?? auth()->user()->nombre_completo);
+                    $folio = '#' . str_pad($rec->id, 5, '0', STR_PAD_LEFT);
+                    $fechaFmt = \Carbon\Carbon::parse($rec->fecha_emision ?? $rec->fecha)->format('d/m/Y');
+                    $inicial = strtoupper(substr($nombrePac, 0, 2));
+                @endphp
+                
+                <div x-show="!searchQuery || '{{ strtolower($folio) }}'.includes(searchQuery.toLowerCase()) || '{{ strtolower($nombrePac) }}'.includes(searchQuery.toLowerCase()) || '{{ strtolower($nombreMed) }}'.includes(searchQuery.toLowerCase())" 
+                     class="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs hover:border-teal-500 hover:shadow-md transition-all flex flex-col justify-between space-y-4">
+                    
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+                            <span class="text-xs font-extrabold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-200">
+                                {{ $folio }}
+                            </span>
+                            <span class="text-xs text-gray-400 font-bold flex items-center gap-1">
+                                <i class="bi bi-calendar3"></i> {{ $fechaFmt }}
+                            </span>
+                        </div>
 
-                    <div class="relative flex items-center justify-between gap-2">
-                        <span class="text-[11px] font-black text-teal-800 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-100 uppercase truncate" x-text="p.codigo"></span>
-                        <span class="text-[10px] font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5 uppercase truncate" x-text="p._categoria"></span>
-                    </div>
-
-                    <div class="relative flex items-center gap-3">
-                        <span class="w-11 h-11 rounded-2xl flex items-center justify-center text-base shrink-0" :class="colorCategoria(p._categoria)"><i class="bi bi-capsule"></i></span>
-                        <div class="min-w-0">
-                            <h4 class="font-black text-slate-800 text-xs truncate uppercase" x-text="p.nombre"></h4>
-                            <p class="text-[11px] text-slate-400 font-bold truncate uppercase" x-text="p.descripcion || 'Sin descripción'"></p>
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-2xl bg-teal-100 text-teal-800 font-black flex items-center justify-center text-xs shrink-0">
+                                {{ $inicial }}
+                            </div>
+                            <div class="truncate">
+                                <h4 class="font-bold text-gray-800 text-xs truncate uppercase">{{ $nombrePac }}</h4>
+                                <p class="text-[11px] text-teal-700 font-extrabold truncate uppercase">{{ $rec->diagnostico ?? 'Sin diagnóstico' }}</p>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="relative space-y-1">
-                        <div class="flex items-baseline justify-between">
-                            <p class="text-sm font-black tabular-nums" :class="colorEstado(p._estado).texto" x-text="p.stock_disponible + ' pzas. disponibles'"></p>
-                            <p class="text-[10px] font-bold text-slate-400 tabular-nums" x-text="p.stock_actual + ' físicas'"></p>
-                        </div>
-                        <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                            <div class="h-full rounded-full" :class="colorEstado(p._estado).barra" :style="'width:' + nivel(p) + '%'"></div>
-                        </div>
-                        <p class="text-[10px] font-bold" :class="colorEstado(p._estado).texto" x-text="textoEstado(p)"></p>
-                    </div>
-
-                    <div class="relative flex items-center gap-2 pt-3 border-t border-slate-100">
-                        <div class="mr-auto leading-tight">
-                            <p class="text-sm font-black text-slate-900 tabular-nums" x-text="dinero(p.precio_venta)"></p>
-                            <p class="text-[10px] font-bold text-slate-400 tabular-nums" x-text="'Compra ' + dinero(p.precio_compra)"></p>
-                        </div>
-                        @if ($puedeEliminar)
-                            <button type="button" @click="eliminar(p)" title="Eliminar"
-                                    class="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center transition-all cursor-pointer">
-                                <i class="bi bi-trash-fill text-[11px]"></i>
-                            </button>
-                        @endif
-                        @if ($puedeEditar)
-                            <button type="button" @click="abrirEditar(p)" title="Editar"
-                                    class="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 hover:bg-amber-100 flex items-center justify-center transition-all cursor-pointer">
-                                <i class="bi bi-pencil-fill text-[11px]"></i>
-                            </button>
-                            <button type="button" @click="abrirSurtir(p)"
-                                    class="h-8 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-black flex items-center gap-1.5 transition-all cursor-pointer">
-                                <i class="bi bi-box-arrow-in-down"></i> Surtir
+                    <div class="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                        <button type="button" @click="abrirReceta({{ json_encode($rec->load(['paciente', 'personal', 'detalles'])) }})" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition">
+                            <i class="bi bi-eye-fill"></i> Ver Receta
+                        </button>
+                        @if(auth()->user()->tienePermiso('Recetas', 'eliminar'))
+                            <button onclick="confirmarEliminacionReceta({{ $rec->id }})" type="button" class="bg-rose-500 hover:bg-rose-600 text-white p-2 rounded-xl text-xs font-semibold shadow-xs transition" title="Eliminar">
+                                <i class="bi bi-trash"></i>
                             </button>
                         @endif
                     </div>
                 </div>
-            </template>
-        </div>
-
-        {{-- Mostrar más --}}
-        <div x-show="filtrados.length > limite" class="px-6 pb-6 pt-2 text-center">
-            <button type="button" @click="limite += 24"
-                    class="px-5 py-2.5 rounded-2xl border border-slate-200 text-xs font-black text-slate-600 hover:border-teal-300 hover:text-teal-700 transition-all cursor-pointer"
-                    x-text="'Mostrar más (' + (filtrados.length - limite) + ' restantes)'"></button>
-        </div>
-
-        {{-- Vacío --}}
-        <div x-show="!filtrados.length" x-cloak class="py-16 text-center px-6">
-            <span class="flotar inline-flex w-16 h-16 rounded-3xl items-center justify-center text-3xl mb-3"
-                  :class="productos.length ? 'bg-slate-100 text-slate-400' : 'bg-teal-50 text-teal-500'">
-                <i class="bi" :class="productos.length ? 'bi-search' : 'bi-box-seam'"></i>
-            </span>
-            <p class="text-sm font-black text-slate-600" x-text="productos.length ? 'Ningún medicamento coincide con la búsqueda' : 'Aún no hay medicamentos en el inventario'"></p>
-            <button type="button" x-show="productos.length" @click="limpiarFiltros()" class="mt-2 text-xs font-black text-teal-700 hover:text-teal-900 cursor-pointer">Quitar filtros</button>
-            @if ($puedeCrear)
-                <button type="button" x-show="!productos.length" @click="openCreateModal = true" class="mt-2 text-xs font-black text-teal-700 hover:text-teal-900 cursor-pointer">+ Registrar el primero</button>
-            @endif
+            @empty
+                <div class="col-span-full p-8 text-center text-gray-400 italic">
+                    No hay recetas registradas en el sistema.
+                </div>
+            @endforelse
         </div>
     </div>
 
-    {{-- ===================== MODALES ===================== --}}
-    @include('inventario.modalAgregarProducto')
-    @include('inventario.modalEditarProducto')
-    @include('inventario.modalSurtirStock')         {{-- Surtir individual --}}
-    @include('inventario.modalGestionarCategorias')
-    @include('inventario.modalSurtirLote')          {{-- Surtir lote desde el encabezado --}}
+    <!-- HOJA CLÍNICA Y DE IMPRESIÓN OFICIAL -->
+    <template x-teleport="body">
+        <div x-show="openPrintModal" 
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-in duration-200"
+             x-transition:leave-start="opacity-100 scale-100"
+             x-transition:leave-end="opacity-0 scale-95"
+             class="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4" x-cloak>
+            
+            <div class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full border border-teal-100 flex flex-col overflow-hidden my-auto max-h-[92vh]">
+                
+                <!-- CÓDIGO NUEVO (Abre el PDF generado por DomPDF en pestaña nueva) -->
+<a :href="'/recetas/' + printReceta.id + '/pdf'" 
+   target="_blank" 
+   class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-xs shadow-sm transition-all flex items-center gap-2 cursor-pointer decoration-none">
+    <i class="bi bi-printer-fill"></i>
+    <span>Imprimir Ahora</span>
+</a>
+
+                <!-- HOJA IMPRESA DE RECETA -->
+                <div id="hoja-receta-medica" class="p-8 sm:p-10 space-y-6 text-slate-800 bg-white overflow-y-auto">
+                    
+                    @php
+    $clinicaData = \App\Models\Clinica::first();
+    $configData = \App\Models\Configuracion::pluck('valor', 'clave')->toArray();
+@endphp
+
+<!-- REEMPLAZO DINÁMICO CON DATOS DE LA CLÍNICA -->
+<div class="border-b-2 border-teal-600 pb-4 flex justify-between items-start gap-4">
+    <div>
+        <!-- Nombre de la Clínica -->
+        <h2 class="text-xl font-black text-teal-800 uppercase tracking-tight">
+            {{ $clinicaData->nombre ?? ($clinica->nombre ?? 'MEDITRACK') }}
+        </h2>
+        
+        <!-- Dirección -->
+        <p class="text-xs text-slate-600 font-bold mt-0.5">
+            {{ $clinicaData->direccion ?? ($clinica->direccion ?? 'DIRECCIÓN NO REGISTRADA') }}
+        </p>
+
+        <!-- Teléfono, Correo y RUT/RFC -->
+        <p class="text-[10px] text-slate-500 font-medium mt-0.5">
+            TEL: {{ $clinicaData->telefono ?? ($clinica->telefono ?? 'S/N') }}
+            @if(!empty($configData['email']) || !empty($clinicaData->email) || !empty($clinica->email))
+                <span class="mx-1">|</span> EMAIL: {{ $configData['email'] ?? ($clinicaData->email ?? $clinica->email) }}
+            @endif
+            @if(!empty($clinicaData->rut_empresa) || !empty($clinica->rut_empresa))
+                <span class="mx-1">|</span> RFC/RUT: {{ $clinicaData->rut_empresa ?? $clinica->rut_empresa }}
+            @endif
+        </p>
+    </div>
+
+    <div class="text-right shrink-0">
+        <span class="px-3 py-1 bg-teal-50 text-teal-700 font-bold text-xs rounded-full border border-teal-200 block mb-1">
+            RECETA: #<span x-text="String(recetaSeleccionada?.id || 0).padStart(5, '0')"></span>
+        </span>
+        <span class="text-[11px] font-semibold text-slate-400">
+            Fecha: <span x-text="recetaSeleccionada?.fecha_emision || ''"></span>
+        </span>
+    </div>
 </div>
 
-<style>
-    /* Mayúsculas en lo que escribe el usuario (excepto el buscador) */
-    input[type="text"]:not(.campo-busqueda), textarea { text-transform: uppercase !important; }
+                    <!-- INFORMACIÓN DEL MÉDICO Y PACIENTE -->
+                    <div class="grid grid-cols-2 gap-4 bg-slate-50/80 p-4 rounded-2xl border border-slate-200 text-xs">
+                        <div class="space-y-1">
+                            <p class="text-[10px] font-black uppercase text-teal-700">Médico Prescriptor</p>
+                            <p class="font-black text-slate-900 text-sm uppercase" x-text="printReceta.personal ? `Dr. ${printReceta.personal.nombre_completo}` : 'Dr. {{ auth()->user()->nombre_completo }}'"></p>
+                            <p class="text-[11px] text-slate-600 font-bold uppercase" x-text="`Céd. Prof: ${printReceta.personal?.cedula_profesional || printReceta.personal?.cedula || '12345678'}`"></p>
+                            <p class="text-[11px] text-slate-500 font-semibold uppercase" x-text="printReceta.personal?.especialidad || 'Médico Cirujano y Partero'"></p>
+                        </div>
 
-    @keyframes fadeUp   { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-    @keyframes filaIn   { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-    @keyframes filaSale { to { opacity: 0; transform: translateX(30px); } }
-    @keyframes flotar   { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-    @keyframes capsula  { 0%, 100% { transform: translateY(0) rotate(-12deg); } 50% { transform: translateY(-10px) rotate(8deg); } }
-    @keyframes latidoLento { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.2); } 30% { transform: scale(1); } 45% { transform: scale(1.12); } }
-    @keyframes ecg { from { stroke-dashoffset: 1000; } to { stroke-dashoffset: 0; } }
+                        <div class="space-y-1 border-l border-slate-200 pl-4">
+                            <p class="text-[10px] font-black uppercase text-teal-700">Paciente Atendido</p>
+                            <p class="font-black text-slate-900 text-sm uppercase" x-text="printReceta.paciente ? (printReceta.paciente.nombre_completo || `${printReceta.paciente.nombre || ''} ${printReceta.paciente.apellido || ''}`) : 'N/A'"></p>
+                            <p class="text-[11px] text-slate-500 font-semibold uppercase" x-text="printReceta.paciente?.rut ? `CURP: ${printReceta.paciente.rut}` : 'Expediente Verificado'"></p>
+                        </div>
+                    </div>
 
-    .aparece      { animation: fadeUp .55s cubic-bezier(.16, 1, .3, 1) backwards; animation-delay: var(--d, 0ms); }
-    .tarjeta-stat { animation: fadeUp .55s cubic-bezier(.16, 1, .3, 1) backwards; }
-    .fila-in      { animation: filaIn .4s cubic-bezier(.16, 1, .3, 1) backwards; animation-delay: var(--d, 0ms); }
-    .fila-sale    { animation: filaSale .35s ease-in forwards !important; }
-    .flotar       { animation: flotar 5s ease-in-out infinite; }
-    .ecg-linea    { stroke-dasharray: 160 840; animation: ecg 4s linear infinite; }
-    .latido-lento { display: inline-block; animation: latidoLento 1.6s ease-in-out infinite; }
-    .capsula      { display: block; animation: capsula 4s ease-in-out infinite; }
+                    <!-- DIAGNÓSTICO CLÍNICO RESALTADO -->
+                    <div class="p-4 bg-teal-50 border-2 border-teal-200 rounded-2xl text-xs space-y-1">
+                        <span class="text-[10px] font-black uppercase text-teal-800 flex items-center gap-1.5">
+                            <i class="bi bi-stethoscope"></i> Diagnóstico Clínico:
+                        </span>
+                        <p class="font-black text-slate-900 text-sm uppercase" x-text="printReceta.diagnostico ? printReceta.diagnostico : 'No especificado en la consulta'"></p>
+                    </div>
 
-    [x-cloak] { display: none !important; }
+                    <!-- PRESCRIPCIÓN FARMACOLÓGICA -->
+                    <div class="space-y-3">
+                        <h4 class="text-[11px] font-black uppercase tracking-wider text-teal-800 border-b border-slate-100 pb-1 flex items-center gap-1.5">
+                            <i class="bi bi-capsule"></i> Prescripción de Medicamentos
+                        </h4>
+                        <div class="space-y-2">
+                            <template x-for="(d, idx) in printReceta.detalles" :key="idx">
+                                <div class="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-start gap-3">
+                                    <span class="w-6 h-6 rounded-lg bg-teal-700 text-white flex items-center justify-center font-black text-xs shrink-0" x-text="idx + 1"></span>
+                                    <div class="space-y-0.5 text-xs">
+                                        <p class="font-black text-slate-900 text-sm uppercase" x-text="d.medicamento"></p>
+                                        <p class="text-teal-800 font-bold uppercase" x-text="`Dosis: ${d.dosis || 'Según indicaciones'} | Frecuencia: ${d.frecuencia || 'N/A'}`"></p>
+                                        <p class="text-slate-500 font-semibold uppercase" x-show="d.duracion" x-text="`Duración: ${d.duracion}`"></p>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
 
-    @media (prefers-reduced-motion: reduce) {
-        .aparece, .tarjeta-stat, .fila-in, .flotar, .capsula, .latido-lento, .ecg-linea { animation: none !important; }
-    }
-</style>
+                    <!-- INDICACIONES GENERALES -->
+                    <template x-if="printReceta.indicaciones_generales">
+                        <div class="space-y-1 pt-1">
+                            <h4 class="text-[10px] font-black uppercase tracking-wider text-slate-400">Indicaciones y Recomendaciones Generales</h4>
+                            <p class="text-xs text-slate-700 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 font-semibold leading-relaxed uppercase" x-text="printReceta.indicaciones_generales"></p>
+                        </div>
+                    </template>
+
+                    <!-- FIRMA Y SELLO MÉDICO -->
+                    <div class="pt-12 flex justify-center text-center">
+                        <div class="w-72 border-t-2 border-slate-300 pt-2 space-y-1">
+                            <p class="font-black text-xs text-slate-800 uppercase" x-text="printReceta.personal ? `Dr. ${printReceta.personal.nombre_completo}` : 'Dr. {{ auth()->user()->nombre_completo }}'"></p>
+                            <p class="text-[10px] font-extrabold text-slate-600 uppercase" x-text="`Céd. Prof. ${printReceta.personal?.cedula_profesional || printReceta.personal?.cedula || '12345678'}`"></p>
+                            <p class="text-[10px] font-bold text-slate-400 uppercase">Firma y Cédula Profesional</p>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </template>
+
+    @include('recetas.modalRecetas')
+</div>
 
 <script>
-    const URL_INVENTARIO = @js(url('inventario'));
-    const CSRF_INVENTARIO = @js(csrf_token());
-
-    function avisoInventario(mensaje, icono = 'success') {
-        if (typeof window.notificar === 'function') return window.notificar(mensaje, icono);
-        if (window.Swal) Swal.fire({ toast: true, position: 'top-end', timer: 3000, showConfirmButton: false, icon: icono, title: mensaje });
-    }
-
-    function moduloInventario() {
-        return {
-            // ----- Datos -----
-            productos: @json($productosJs),
-
-            // ----- Vista y filtros -----
-            searchQuery: '',
-            categoriaFiltro: '',
-            estado: 'todos',
-            orden: 'nombre',
-            viewMode: 'list',
-            limite: 24,
-            estados: [
-                { valor: 'todos',   texto: 'Todos' },
-                { valor: 'ok',      texto: 'Con existencia' },
-                { valor: 'bajo',    texto: 'Stock bajo' },
-                { valor: 'agotado', texto: 'Agotados' }
-            ],
-
-            // ----- Modales (los usan los @include de inventario.*) -----
-            openCreateModal: @js($errors->any() || session('error')),
-            openSurtirModal: false,
-            openEditModal: false,
-            openCategoriaModal: false,
-            openLoteModal: false,
-            productoSeleccionado: {},
-            productoEditar: {},
-
-            resumenMostrado: { total: 0, ok: 0, bajo: 0, agotados: 0 },
-
-            init() {
-                try { this.viewMode = localStorage.getItem('inventario_vista') || (window.innerWidth < 768 ? 'grid' : 'list'); } catch (e) {}
-
-                ['searchQuery', 'categoriaFiltro', 'estado', 'orden'].forEach(k => this.$watch(k, () => { this.limite = 24; }));
-
-                this.$nextTick(() => this.animarResumen());
-
-                window.addEventListener('keydown', e => {
-                    const hayModal = this.openCreateModal || this.openSurtirModal || this.openEditModal || this.openCategoriaModal || this.openLoteModal;
-                    if (e.key === '/' && !hayModal && !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
-                        e.preventDefault();
-                        this.$refs.buscar.focus();
-                    }
-                });
-            },
-
-            // ----- Resumen -----
-            get resumen() {
-                const l = this.productos;
-                return {
-                    total: l.length,
-                    ok: l.filter(p => p._estado === 'ok').length,
-                    bajo: l.filter(p => p._estado === 'bajo').length,
-                    agotados: l.filter(p => p._estado === 'agotado').length
-                };
-            },
-            animarResumen() {
-                const meta = this.resumen;
-                const sinMov = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-                Object.keys(meta).forEach(k => {
-                    const destino = meta[k], origen = this.resumenMostrado[k];
-                    if (sinMov || origen === destino) { this.resumenMostrado[k] = destino; return; }
-                    const t0 = performance.now(), dur = 800;
-                    const paso = t => {
-                        const p = Math.min(1, (t - t0) / dur);
-                        this.resumenMostrado[k] = Math.round(origen + (destino - origen) * (1 - Math.pow(1 - p, 3)));
-                        if (p < 1) requestAnimationFrame(paso);
-                    };
-                    requestAnimationFrame(paso);
-                });
-            },
-
-            // ----- Filtros -----
-            normalizar(s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(); },
-            get filtrados() {
-                const q = this.normalizar(this.searchQuery);
-                const cat = this.normalizar(this.categoriaFiltro);
-                const lista = this.productos.filter(p =>
-                    (!q || p._buscar.includes(q)) &&
-                    (!cat || this.normalizar(p._categoria) === cat) &&
-                    (this.estado === 'todos' || p._estado === this.estado)
-                );
-                return lista.sort((a, b) => this.orden === 'stock'
-                    ? (Number(a.stock_disponible) - Number(b.stock_disponible)) || String(a.nombre).localeCompare(String(b.nombre), 'es')
-                    : String(a.nombre).localeCompare(String(b.nombre), 'es'));
-            },
-            get pagina() { return this.filtrados.slice(0, this.limite); },
-            get hayFiltros() { return this.searchQuery.trim() !== '' || this.categoriaFiltro !== '' || this.estado !== 'todos'; },
-            limpiarFiltros() { this.searchQuery = ''; this.categoriaFiltro = ''; this.estado = 'todos'; },
-            cambiarVista(v) {
-                this.viewMode = v;
-                try { localStorage.setItem('inventario_vista', v); } catch (e) {}
-            },
-
-            // ----- Formato -----
-            dinero(v) { return '$' + Number(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
-            colorCategoria(n) {
-                const colores = ['bg-teal-100 text-teal-800', 'bg-sky-100 text-sky-800', 'bg-violet-100 text-violet-800', 'bg-amber-100 text-amber-800', 'bg-rose-100 text-rose-800', 'bg-emerald-100 text-emerald-800'];
-                let h = 0;
-                for (const ch of String(n || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-                return colores[h % colores.length];
-            },
-            colorEstado(e) {
-                return {
-                    ok:      { texto: 'text-slate-800', barra: 'bg-emerald-500' },
-                    bajo:    { texto: 'text-amber-600', barra: 'bg-amber-500' },
-                    agotado: { texto: 'text-rose-600',  barra: 'bg-rose-500' }
-                }[e] || { texto: 'text-slate-800', barra: 'bg-slate-400' };
-            },
-            // Llenado de la barra: el mínimo equivale a la mitad
-            nivel(p) {
-                const disp = Number(p.stock_disponible) || 0;
-                const tope = Math.max((Number(p.stock_minimo) || 0) * 2, 1);
-                return disp <= 0 ? 0 : Math.max(6, Math.min(100, Math.round(disp / tope * 100)));
-            },
-            textoEstado(p) {
-                if (p._estado === 'agotado') return 'Agotado';
-                if (p._estado === 'bajo') return 'Stock bajo · mínimo ' + p.stock_minimo;
-                return 'Mínimo ' + p.stock_minimo;
-            },
-
-            // ----- Acciones -----
-            abrirSurtir(p) {
-                this.productoSeleccionado = JSON.parse(JSON.stringify(p));
-                this.openSurtirModal = true;
-            },
-            abrirEditar(p) {
-                this.productoEditar = JSON.parse(JSON.stringify(p));
-                this.openEditModal = true;
-            },
-            eliminar(p) {
-                Swal.fire({
-                    title: '¿Eliminar medicamento?',
-                    html: `Se eliminará <b style="color:#0f766e">${this.escapar(p.codigo)}</b> · <b>${this.escapar(p.nombre)}</b>.<br><span style="font-size:12px;color:#f43f5e">Esta acción no se puede deshacer.</span>`,
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonColor: '#f43f5e',
-                    cancelButtonColor: '#64748b',
-                    confirmButtonText: 'Sí, eliminar',
-                    cancelButtonText: 'Cancelar',
-                    reverseButtons: true,
-                    showLoaderOnConfirm: true,
-                    customClass: { popup: 'rounded-3xl' },
-                    preConfirm: async () => {
-                        try {
-                            const res = await fetch(`${URL_INVENTARIO}/${p.id}`, {
-                                method: 'DELETE',
-                                headers: { 'X-CSRF-TOKEN': CSRF_INVENTARIO, 'Accept': 'application/json' }
-                            });
-                            const data = await res.json().catch(() => ({}));
-                            if (!res.ok || data.success === false) throw new Error(data.message || 'No se pudo eliminar el medicamento.');
-                            return data;
-                        } catch (e) {
-                            Swal.showValidationMessage(e.message || 'Error de conexión');
-                        }
-                    },
-                    allowOutsideClick: () => !Swal.isLoading()
-                }).then(result => {
-                    if (!result.isConfirmed) return;
-                    p._saliendo = true;
+function confirmarEliminacionReceta(id) {
+    Swal.fire({
+        title: '¿Eliminar receta médica?',
+        html: `Estás a punto de eliminar la receta <b class="text-teal-700">#${String(id).padStart(5, '0')}</b>.<br><span class="text-xs text-rose-500">Esta acción no se puede deshacer.</span>`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#f43f5e',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: '<i class="bi bi-trash-fill"></i> Sí, eliminar',
+        cancelButtonText: 'Cancelar',
+        target: 'body',
+        customClass: {
+            container: 'z-[10050]',
+            popup: 'rounded-3xl p-6 border border-slate-100 shadow-2xl bg-white font-sans',
+            title: 'text-xl font-black text-slate-800',
+            confirmButton: 'px-5 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-95',
+            cancelButton: 'px-5 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all active:scale-95'
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            fetch(`/recetas/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json'
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    // Dispara la notificación flotante en la esquina superior derecha
+                    window.notificar(data.message || 'La receta ha sido eliminada del sistema.', 'success');
+                    
+                    // Recarga la pantalla tras unos milisegundos para actualizar la lista
                     setTimeout(() => {
-                        this.productos = this.productos.filter(x => x.id !== p.id);
-                        this.animarResumen();
-                    }, 330);
-                    avisoInventario((result.value && result.value.message) || 'Medicamento eliminado.', 'success');
-                });
-            },
-            escapar(t) { const d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
-        };
-    }
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    window.notificar('No se pudo eliminar la receta.', 'error');
+                }
+            })
+            .catch(() => {
+                window.notificar('Ocurrió un error al procesar la solicitud.', 'error');
+            });
+        }
+    });
+}
 </script>
 @endsection
