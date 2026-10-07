@@ -232,8 +232,8 @@
 
     const SUGERENCIAS = [
         { texto: '¿Qué citas hay hoy?', icono: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' },
-        { texto: '¿Qué productos tienen stock bajo?', icono: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>' },
-        { texto: '¿Cómo cambio mi contraseña?', icono: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' },
+        { texto: '¿Qué medicamentos tienen stock bajo?', icono: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>' },
+        { texto: '¿Cómo registro un paciente?', icono: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>' },
     ];
 
     /* ---------- Abrir / cerrar ---------- */
@@ -338,7 +338,7 @@
             } else if (res.status === 419 || res.status === 401) {
                 agregar('Tu sesión expiró. Recarga la página e inicia sesión de nuevo.', 'error');
             } else if (!res.ok || datos.error) {
-                agregar(datos.respuesta || 'Ocurrió un error inesperado.', 'error', datos.detalle);
+                agregar(datos.respuesta || 'Ocurrió un error inesperado.', 'error', datos.detalle || ('Código ' + res.status + (datos.message ? ': ' + datos.message : '') + ' · revisa storage/logs/laravel.log'));
             } else {
                 agregar(datos.respuesta, 'bot');
             }

@@ -3,6 +3,7 @@
 namespace App\Services\Chatbot;
 
 use App\Models\User;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -16,6 +17,9 @@ use RuntimeException;
 class ChatbotService
 {
     private HerramientasChatbot $herramientas;
+
+    /** Modelo que respondió bien en esta conversación (para no cambiarlo a la mitad) */
+    private ?string $modeloActivo = null;
 
     public function __construct(private User $user)
     {
@@ -114,23 +118,75 @@ class ChatbotService
             $cuerpo['tools'] = [['functionDeclarations' => $funciones]];
         }
 
-        $url = config('chatbot.api_url') . '/' . config('chatbot.model') . ':generateContent';
+        // Se prueba el modelo principal y, si está saturado, los de respaldo.
+        // Dentro de una misma respuesta se mantiene el modelo que ya funcionó.
+        $modelos = array_values(array_unique(array_filter(array_merge(
+            [$this->modeloActivo, config('chatbot.model')],
+            (array) config('chatbot.modelos_respaldo', [])
+        ))));
 
-        $http = Http::withHeaders(['x-goog-api-key' => config('chatbot.api_key')])
-            ->timeout(60)
-            ->post($url, $cuerpo);
+        $ultimoError = null;
+        $sinRespuesta = false;
 
-        if ($http->status() === 429) {
+        foreach ($modelos as $modelo) {
+            $url = config('chatbot.api_url') . '/' . $modelo . ':generateContent';
+
+            // Hasta 2 intentos por modelo si Google responde "saturado" (503) o error interno (500)
+            for ($intento = 1; $intento <= 2; $intento++) {
+                try {
+                    $http = Http::withHeaders(['x-goog-api-key' => config('chatbot.api_key')])
+                        ->connectTimeout(10)
+                        ->timeout(30)
+                        ->post($url, $cuerpo);
+                } catch (ConnectionException $e) {
+                    // Gemini no respondió a tiempo: se pasa directo al siguiente modelo
+                    Log::warning('Chatbot: Gemini tardó demasiado', ['modelo' => $modelo, 'error' => $e->getMessage()]);
+                    $sinRespuesta = true;
+                    continue 2;
+                }
+
+                if ($http->successful()) {
+                    $this->modeloActivo = $modelo;
+                    return $http->json();
+                }
+
+                $ultimoError = $http;
+
+                if (!in_array($http->status(), [500, 503], true)) {
+                    break;
+                }
+
+                usleep(800_000); // espera 0.8 s antes de reintentar
+            }
+
+            Log::warning('Chatbot: falló el modelo de Gemini', [
+                'modelo' => $modelo,
+                'status' => $http->status(),
+                'body'   => mb_substr($http->body(), 0, 500),
+            ]);
+
+            // Un modelo de respaldo que no existe (404) o está saturado se salta y se prueba el siguiente.
+            // Errores de la key (400/401/403) no se arreglan cambiando de modelo.
+            if (!in_array($http->status(), [404, 429, 500, 503], true)) {
+                break;
+            }
+        }
+
+        if ($sinRespuesta && (!$ultimoError || $ultimoError->status() === 404)) {
+            throw new RuntimeException('Gemini está tardando demasiado en responder (servidores saturados). Intenta de nuevo en unos minutos.');
+        }
+
+        $status = $ultimoError?->status();
+
+        if ($status === 429) {
             throw new RuntimeException('Se alcanzó el límite gratuito de Gemini. Espera un minuto e intenta de nuevo.');
         }
-
-        if ($http->failed()) {
-            Log::error('Chatbot: error de Gemini', ['status' => $http->status(), 'body' => $http->body()]);
-            $mensaje = $http->json('error.message') ?? 'sin detalle';
-            throw new RuntimeException('Gemini respondió con error ' . $http->status() . ': ' . $mensaje);
+        if (in_array($status, [500, 503], true)) {
+            throw new RuntimeException('Los servidores de Gemini están saturados en este momento. Intenta de nuevo en unos minutos.');
         }
 
-        return $http->json();
+        $mensaje = $ultimoError?->json('error.message') ?? 'sin detalle';
+        throw new RuntimeException('Gemini respondió con error ' . $status . ': ' . $mensaje);
     }
 
     /** Convierte las herramientas (formato JSON Schema) al formato que pide Gemini. */

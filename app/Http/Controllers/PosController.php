@@ -13,23 +13,35 @@ use Illuminate\Support\Str;
 
 class PosController extends Controller
 {
+    /**
+     * Muestra la pantalla principal del POS con el catálogo y la lista de tickets recientes.
+     */
     public function index()
     {
-        // Obtener productos con su cálculo de stock disponible dinámico
         $productos = ProductoInventario::with('categoria')->get();
+        
         $pacientes = Paciente::orderBy('primer_nombre', 'asc')
-                        ->orderBy('apellido_paterno', 'asc')
-                        ->get();
+            ->orderBy('apellido_paterno', 'asc')
+            ->get();
 
-        return view('pos.index', compact('productos', 'pacientes'));
+        // Cargar los últimos 30 tickets generados para la búsqueda y consulta en el POS
+        $ticketsRecientes = TicketVenta::with(['paciente', 'vendedor', 'detalles.producto'])
+            ->orderBy('created_at', 'desc')
+            ->take(30)
+            ->get();
+
+        return view('pos.index', compact('productos', 'pacientes', 'ticketsRecientes'));
     }
 
+    /**
+     * Genera un nuevo ticket de venta con 25 minutos de vigencia.
+     */
     public function generarTicket(Request $request)
     {
         $request->validate([
-            'paciente_id' => 'nullable|exists:pacientes,id',
-            'carrito'     => 'required|array|min:1',
-            'carrito.*.id' => 'required|exists:productos_inventario,id',
+            'paciente_id'        => 'nullable|exists:pacientes,id',
+            'carrito'            => 'required|array|min:1',
+            'carrito.*.id'       => 'required|exists:productos_inventario,id',
             'carrito.*.cantidad' => 'required|integer|min:1',
         ]);
 
@@ -43,10 +55,12 @@ class PosController extends Controller
             foreach ($request->carrito as $item) {
                 $producto = ProductoInventario::findOrFail($item['id']);
                 
-                if ($item['cantidad'] > $producto->stock_disponible) {
+                $stockDisp = $producto->stock_disponible ?? $producto->stock_actual ?? 0;
+
+                if ($item['cantidad'] > $stockDisp) {
                     return response()->json([
-                        'status' => 'error',
-                        'message' => "EL MEDICAMENTO '{$producto->nombre}' SOLO TIENE {$producto->stock_disponible} PZAS. DISPONIBLES."
+                        'status'  => 'error',
+                        'message' => "EL MEDICAMENTO '{$producto->nombre}' SOLO TIENE {$stockDisp} PZAS. DISPONIBLES."
                     ], 422);
                 }
 
@@ -69,12 +83,13 @@ class PosController extends Controller
                 'codigo_ticket' => $codigoTicket,
                 'paciente_id'   => $request->paciente_id,
                 'user_id'       => Auth::id() ?? 1,
-                'monto_total'   => $montoTotal,
+                'monto_total'   => $montoTotal, // Usamos el total calculado acumulado
                 'status'        => 'pendiente',
-                'expires_at'    => now()->addMinutes(25),
+                'created_at'    => now('America/Mexico_City'),
+                'expires_at'    => now('America/Mexico_City')->addMinutes(25),
             ]);
 
-            // Guardar detalles
+            // Guardar detalles del pedido
             foreach ($detallesAgregados as $detalle) {
                 $detalle['ticket_id'] = $ticket->id;
                 TicketDetalle::create($detalle);
@@ -85,7 +100,7 @@ class PosController extends Controller
             return response()->json([
                 'status'  => 'success',
                 'message' => 'TICKET GENERADO CON ÉXITO',
-                'ticket'  => $ticket->load('paciente', 'detalles.producto')
+                'ticket'  => $ticket->load(['paciente', 'detalles.producto'])
             ]);
 
         } catch (\Exception $e) {
@@ -95,5 +110,44 @@ class PosController extends Controller
                 'message' => 'ERROR AL GENERAR EL TICKET: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Obtiene los datos de un ticket por su ID para AJAX / Modal de impresión.
+     */
+    public function obtenerTicket($id)
+    {
+        $ticket = TicketVenta::with(['paciente', 'vendedor', 'detalles.producto'])->findOrFail($id);
+        return response()->json($ticket);
+    }
+
+    /**
+     * Búsqueda dinámica de productos por AJAX (código de barras o nombre).
+     */
+    public function buscarProducto(Request $request)
+    {
+        $q = strtoupper(trim($request->q ?? $request->search ?? ''));
+
+        if (empty($q)) {
+            return response()->json([]);
+        }
+
+        $productos = ProductoInventario::with('categoria')
+            ->where(function ($query) use ($q) {
+                $query->where(DB::raw('UPPER(codigo)'), 'LIKE', "%{$q}%")
+                      ->orWhere(DB::raw('UPPER(nombre)'), 'LIKE', "%{$q}%");
+            })
+            ->get();
+
+        return response()->json($productos);
+    }
+
+    /**
+     * Imprimir ticket / comprobante de venta en formato imprimible.
+     */
+    public function ticket($id)
+    {
+        $ticket = TicketVenta::with(['paciente', 'vendedor', 'detalles.producto'])->findOrFail($id);
+        return view('pos.ticket', compact('ticket'));
     }
 }

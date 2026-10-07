@@ -16,8 +16,9 @@ use App\Http\Controllers\BusquedaController;
 use App\Http\Controllers\InventarioController;
 use App\Http\Controllers\CategoriaInventarioController;
 use App\Http\Controllers\NominaController;
-use App\Http\Controllers\PosController;  
-use App\Http\Controllers\CajaController; 
+use App\Http\Controllers\PosController;
+use App\Http\Controllers\CajaController;
+use App\Http\Controllers\FarmaciaDespachoController;
 use App\Http\Controllers\ProveedorController;
 use App\Http\Controllers\ChatbotController;
 
@@ -47,6 +48,12 @@ Route::middleware(['auth'])->group(function () {
 
     // --- BÚSQUEDA GLOBAL DEL SIDEBAR ---
     Route::get('/buscar', [BusquedaController::class, 'buscar'])->name('buscar.global');
+
+    // --- CHATBOT ---
+    Route::middleware(['throttle:20,1'])->prefix('chatbot')->name('chatbot.')->group(function () {
+        Route::post('/mensaje', [ChatbotController::class, 'mensaje'])->name('mensaje');
+        Route::post('/reiniciar', [ChatbotController::class, 'reiniciar'])->name('reiniciar');
+    });
 
     // --- MÓDULO PACIENTES ---
     Route::middleware(['permiso:Pacientes'])->group(function () {
@@ -83,11 +90,6 @@ Route::middleware(['auth'])->group(function () {
         Route::resource('recetas', RecetaController::class);
     });
 
-    Route::middleware(['auth', 'throttle:20,1'])->prefix('chatbot')->name('chatbot.')->group(function () {
-    Route::post('/mensaje', [ChatbotController::class, 'mensaje'])->name('mensaje');
-    Route::post('/reiniciar', [ChatbotController::class, 'reiniciar'])->name('reiniciar');
-    });
-
     // --- MÓDULO INVENTARIO Y CATEGORÍAS ---
     Route::middleware(['permiso:Inventario'])->group(function () {
         // Catálogo principal de medicamentos
@@ -113,23 +115,35 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/pos', [PosController::class, 'index'])->name('pos.index');
         Route::post('/pos/buscar-producto', [PosController::class, 'buscarProducto'])->name('pos.buscar-producto');
         Route::post('/pos/procesar-venta', [PosController::class, 'procesarVenta'])->name('pos.procesar-venta');
+        Route::post('/pos/generar-ticket', [PosController::class, 'generarTicket'])->name('pos.generar-ticket');
         
-        // Rutas para generación de tickets de venta
-        Route::get('/pos/ticket/{venta}', [PosController::class, 'generarTicket'])->name('pos.generar-ticket');
+        // Rutas para ver/imprimir tickets de venta (parámetro opcional)
+        Route::get('/pos/ticket/{venta?}', [PosController::class, 'generarTicket'])->name('pos.generar-ticket-get');
         Route::get('/pos/ticket/{venta}/imprimir', [PosController::class, 'ticket'])->name('pos.ticket');
     });
 
     // --- MÓDULO CAJA CENTRAL ---
-    Route::middleware(['permiso:Caja Central'])->group(function () {
-        Route::get('/caja', [CajaController::class, 'index'])->name('caja.index');
-        Route::post('/caja/aperturar', [CajaController::class, 'aperturar'])->name('caja.aperturar');
-        Route::post('/caja/cerrar', [CajaController::class, 'cerrar'])->name('caja.cerrar');
-        Route::post('/caja/movimiento', [CajaController::class, 'movimiento'])->name('caja.movimiento');
-        Route::get('/caja/corte/{id}', [CajaController::class, 'cortePdf'])->name('caja.corte-pdf');
+Route::middleware(['permiso:Caja Central'])->group(function () {
+    Route::get('/caja', [CajaController::class, 'index'])->name('caja.index');
+    Route::get('/caja/ticket/{codigo}', [CajaController::class, 'buscarPorCodigo'])->name('caja.buscar-ticket'); // NUEVA
+    Route::post('/caja/procesar-pago/{id}', [CajaController::class, 'procesarPago'])->name('caja.procesar-pago');
+    Route::post('/caja/aperturar', [CajaController::class, 'aperturar'])->name('caja.aperturar');
+    Route::post('/caja/cerrar', [CajaController::class, 'cerrar'])->name('caja.cerrar');
+    Route::post('/caja/movimiento', [CajaController::class, 'movimiento'])->name('caja.movimiento');
+    Route::get('/caja/corte/{id}', [CajaController::class, 'cortePdf'])->name('caja.corte-pdf');
+});
+
+    // --- MÓDULO DESPACHO DE FARMACIA ---
+    Route::middleware(['permiso:Inventario'])->group(function () {
+        Route::get('/farmacia/despacho', [FarmaciaDespachoController::class, 'index'])->name('farmacia.despacho');
+        Route::post('/farmacia/marcar-entregado/{id}', [FarmaciaDespachoController::class, 'marcarEntregado'])->name('farmacia.marcar-entregado');
     });
 
     // --- MÓDULO ADMINISTRACIÓN Y ROLES ---
     Route::middleware(['permiso:Personal'])->group(function () {
+        // Acceso directo por menú
+        Route::get('/nomina', [NominaController::class, 'index'])->name('nomina.index');
+
         // Nómina (sección del módulo de Personal)
         Route::prefix('personal/nomina')->name('personal.nomina.')->group(function () {
             Route::get('/', [NominaController::class, 'index'])->name('index');

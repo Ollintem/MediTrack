@@ -13,8 +13,12 @@ return [
 
     'api_url' => 'https://generativelanguage.googleapis.com/v1beta/models',
 
-    // gemini-flash-latest siempre apunta al modelo Flash más reciente (incluido en la capa gratuita)
-    'model' => env('CHATBOT_MODEL', 'gemini-flash-latest'),
+    // Flash-Lite es el más rápido y con menos demanda; Flash queda como respaldo
+    'model' => env('CHATBOT_MODEL', 'gemini-flash-lite-latest'),
+
+    // Si el modelo principal está saturado (error 503) se intenta con estos, en orden.
+    // Puedes poner varios separados por coma en el .env: CHATBOT_MODELOS_RESPALDO=modelo1,modelo2
+    'modelos_respaldo' => array_filter(array_map('trim', explode(',', env('CHATBOT_MODELOS_RESPALDO', 'gemini-flash-latest')))),
 
     'max_tokens' => (int) env('CHATBOT_MAX_TOKENS', 1024),
 
@@ -34,10 +38,9 @@ return [
     'guia' => resource_path('chatbot/guia_meditrack.md'),
 
     /*
-    | Nombre del módulo (tabla `modulos`) que se revisa en `permisos` para cada
-    | grupo de consultas. Si el rol del usuario no tiene `puede_ver` en ese
-    | módulo, el chatbot no puede consultar esos datos. Ajusta los nombres para
-    | que coincidan exactamente con los que registres en la tabla `modulos`.
+    | Módulo (tabla `modulos`) que se revisa con User::tienePermiso() para cada
+    | grupo de consultas. Son los mismos nombres que usan tus rutas con
+    | el middleware 'permiso:...'.
     */
     'modulos' => [
         'citas'        => 'Citas',
@@ -45,6 +48,6 @@ return [
         'personal'     => 'Personal',
         'consultorios' => 'Consultorios',
         'inventario'   => 'Inventario',
-        'facturacion'  => 'Facturación',
+        'caja'         => 'Caja Central',
     ],
 ];

@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
-    <!-- CSS y JS de SweetAlert2 -->
+    <!-- CSS y JS de SweetAlert2 y Flatpickr -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -26,6 +26,13 @@
                 tip: { texto: '', top: 0, left: 0 },
                 headerHover: false,
                 ultimoScroll: 0,
+                search: '', // Buscador reactivo del sidebar
+
+                coincide(texto) {
+                    if (!this.search || !this.search.trim()) return true;
+                    const normalize = str => String(str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+                    return normalize(texto).includes(normalize(this.search));
+                },
 
                 get saludo() {
                     const h = this.ahora.getHours();
@@ -60,7 +67,7 @@
 
                 alMoverCursor(e, el) {
                     if (this.headerVisible) return;
-                    if (e.clientY - el.getBoundingClientRect().top < 40) this.headerVisible = true;
+                    if ((e.clientY - el.getBoundingClientRect().top) < 40) this.headerVisible = true;
                 },
 
                 mostrarTip(el, texto) {
@@ -73,6 +80,12 @@
                 alternarMenu() {
                     if (this.ancho < 1024) this.mobileOpen = !this.mobileOpen;
                     else { this.sidebarOpen = !this.sidebarOpen; this.ocultarTip(); }
+                },
+
+                enfocarBuscador() {
+                    if (this.ancho < 1024) this.mobileOpen = true;
+                    else this.sidebarOpen = true;
+                    setTimeout(() => this.$refs.inputBuscadorSidebar?.focus(), 250);
                 }
             };
         }
@@ -176,11 +189,6 @@
             to   { opacity: 1; transform: translateX(0); }
         }
 
-        @media (prefers-reduced-motion: reduce) {
-            .latido, .ecg-trazo, .pulso-online::after, .nav-item { animation: none !important; }
-            .ecg-trazo { stroke-dashoffset: 0; }
-        }
-
         /* FIX DE SWEETALERT2 */
         .swal2-container.swal2-top-end,
         .swal2-container.swal2-top-right {
@@ -210,90 +218,13 @@
             color: #1e293b !important;
             margin: 0 0 0 0.5rem !important;
         }
-
-        /* ESTILOS DE FLATPICKR */
-        .flatpickr-calendar {
-            background: #ffffff !important;
-            border-radius: 1.5rem !important;
-            border: 1px solid rgba(226, 232, 240, 0.9) !important;
-            box-shadow: 0 25px 50px -12px rgba(13, 148, 136, 0.22), 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
-            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-            padding: 1rem !important;
-            width: 330px !important;
-            z-index: 99999 !important;
-            backdrop-filter: blur(8px) !important;
-            margin-top: -8px !important;
-        }
-        .flatpickr-calendar::before,
-        .flatpickr-calendar::after { display: none !important; }
-        .flatpickr-months { align-items: center !important; margin-bottom: 0.5rem !important; padding: 0 0.25rem !important; }
-        .flatpickr-months .flatpickr-month { background: transparent !important; color: #0f766e !important; height: 38px !important; }
-        .flatpickr-current-month { font-size: 0.9rem !important; font-weight: 800 !important; color: #0f766e !important; padding-top: 4px !important; }
-        .flatpickr-current-month .flatpickr-monthDropdown-months { font-weight: 800 !important; border-radius: 0.75rem !important; padding: 2px 6px !important; }
-        .flatpickr-current-month .flatpickr-monthDropdown-months:hover { background: #f0fdf4 !important; }
-        .flatpickr-current-month input.cur-year { font-weight: 800 !important; color: #0f766e !important; }
-        .flatpickr-months .flatpickr-prev-month,
-        .flatpickr-months .flatpickr-next-month {
-            fill: #0d9488 !important;
-            padding: 6px !important;
-            border-radius: 0.75rem !important;
-            transition: all 0.2s ease !important;
-            top: 0.6rem !important;
-        }
-        .flatpickr-months .flatpickr-prev-month:hover,
-        .flatpickr-months .flatpickr-next-month:hover { background-color: #ccfbf1 !important; color: #0d9488 !important; }
-        .flatpickr-innerContainer { display: block !important; }
-        .flatpickr-rContainer { display: block !important; width: 100% !important; }
-        .flatpickr-weekdays { display: flex !important; justify-content: space-between !important; width: 100% !important; background: transparent !important; text-align: center !important; }
-        span.flatpickr-weekday {
-            color: #94a3b8 !important;
-            font-weight: 800 !important;
-            font-size: 0.68rem !important;
-            text-transform: uppercase !important;
-            letter-spacing: 0.05em !important;
-            flex: 1 !important;
-            text-align: center !important;
-        }
-        .flatpickr-days { width: 100% !important; display: block !important; }
-        .dayContainer {
-            display: flex !important;
-            flex-wrap: wrap !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            min-width: 100% !important;
-            justify-content: flex-start !important;
-        }
-        .flatpickr-day {
-            border-radius: 0.75rem !important;
-            color: #334155 !important;
-            font-weight: 700 !important;
-            font-size: 0.78rem !important;
-            height: 35px !important;
-            line-height: 35px !important;
-            width: 14.28% !important;
-            max-width: 14.28% !important;
-            flex-basis: 14.28% !important;
-            margin: 0 !important;
-            border: 1px solid transparent !important;
-            transition: all 0.15s ease-in-out !important;
-        }
-        .flatpickr-day:hover { background: #f0fdf4 !important; color: #0d9488 !important; border-color: #99f6e4 !important; }
-        .flatpickr-day.today { border-color: #0d9488 !important; color: #0d9488 !important; background: #f0fdf4 !important; }
-        .flatpickr-day.selected,
-        .flatpickr-day.selected:hover {
-            background: linear-gradient(135deg, #0d9488 0%, #059669 100%) !important;
-            color: #ffffff !important;
-            box-shadow: 0 4px 12px rgba(13, 148, 136, 0.35) !important;
-            border: none !important;
-        }
-        .flatpickr-day.flatpickr-disabled,
-        .flatpickr-day.prevMonthDay,
-        .flatpickr-day.nextMonthDay { color: #cbd5e1 !important; }
     </style>
 </head>
 <body class="bg-slate-100/70 flex h-screen overflow-hidden font-sans text-gray-800"
       x-data="layoutMeditrack()"
-      @keydown.escape.window="mobileOpen = false">
+      @keydown.escape.window="mobileOpen = false"
+      @keydown.window.ctrl.k.prevent="enfocarBuscador()"
+      @keydown.window.meta.k.prevent="enfocarBuscador()">
 
     <!-- BARRA DE PROGRESO DE NAVEGACIÓN -->
     <div id="top-progress-bar"></div>
@@ -303,15 +234,8 @@
         $isSuperAdmin = $user ? ($user->id === 1 ? true : ($user->rol ? in_array(strtolower($user->rol->nombre), ['super admin', 'administrador']) : false)) : false;
 
         $tienePermiso = function($nombreModulo) use ($user, $isSuperAdmin) {
-            if ($isSuperAdmin) {
-                return true;
-            }
-            if (!$user) {
-                return false;
-            }
-            if (!$user->rol_id) {
-                return false;
-            }
+            if ($isSuperAdmin) return true;
+            if (!$user || !$user->rol_id) return false;
 
             return \App\Models\Permiso::where('rol_id', $user->rol_id)
                 ->whereHas('modulo', function($query) use ($nombreModulo) {
@@ -321,33 +245,32 @@
                 ->exists();
         };
 
-        // ===== MENÚ CONFIGURADO CON PROVEEDORES, POS, CAJA Y NÓMINA =====
-       // ===== MENÚ CONFIGURADO DIRECTO =====
+        // ===== MENÚ RESTAURADO CON CORRECCIONES DE RUTAS Y PERMISOS =====
         $menu = [
             ['titulo' => null, 'items' => [
                 ['texto' => 'Dashboard',        'ruta' => 'home',               'activo' => 'home',           'icono' => 'bi-grid-1x2-fill',          'permiso' => null],
             ]],
             ['titulo' => 'Gestión Médica', 'items' => [
-                ['texto' => 'Pacientes',        'ruta' => 'pacientes.index',     'activo' => 'pacientes.*',    'icono' => 'bi-people-fill',            'permiso' => null],
-                ['texto' => 'Citas',            'ruta' => 'citas.index',         'activo' => 'citas.*',        'icono' => 'bi-calendar2-week-fill',    'permiso' => null],
-                ['texto' => 'Consultas',        'ruta' => 'consultas.index',     'activo' => 'consultas.*',    'icono' => 'bi-clipboard2-pulse-fill',  'permiso' => null],
-                ['texto' => 'Consultorios',     'ruta' => 'consultorios.index',  'activo' => 'consultorios.*', 'icono' => 'bi-hospital-fill',          'permiso' => null],
+                ['texto' => 'Pacientes',        'ruta' => 'pacientes.index',     'activo' => 'pacientes.*',    'icono' => 'bi-people-fill',            'permiso' => 'Pacientes'],
+                ['texto' => 'Citas',            'ruta' => 'citas.index',         'activo' => 'citas.*',        'icono' => 'bi-calendar2-week-fill',    'permiso' => 'Citas'],
+                ['texto' => 'Consultas',        'ruta' => 'consultas.index',     'activo' => 'consultas.*',    'icono' => 'bi-clipboard2-pulse-fill',  'permiso' => 'Consultas'],
+                ['texto' => 'Consultorios',     'ruta' => 'consultorios.index',  'activo' => 'consultorios.*', 'icono' => 'bi-hospital-fill',          'permiso' => 'Consultorios'],
             ]],
             ['titulo' => 'Farmacia y Finanzas', 'items' => [
-                ['texto' => 'Terminal POS',     'ruta' => 'pos.index',           'activo' => 'pos.*',          'icono' => 'bi-shop',           'permiso' => null],
-                ['texto' => 'Caja Central',     'ruta' => 'caja.index',          'activo' => 'caja.*',         'icono' => 'bi-cash-coin',      'permiso' => null],
-                ['texto' => 'Despacho Farmacia','ruta' => 'farmacia.despacho',   'activo' => 'farmacia.*',     'icono' => 'bi-bag-check-fill', 'permiso' => null],
-                ['texto' => 'Inventario',       'ruta' => 'inventario.index',    'activo' => 'inventario.*',   'icono' => 'bi-box-seam-fill',  'permiso' => null],
-                ['texto' => 'Proveedores',      'ruta' => 'proveedores.index',   'activo' => 'proveedores.*',  'icono' => 'bi-truck',                  'permiso' => null],
-                ['texto' => 'Recetas',          'ruta' => 'recetas.index',       'activo' => 'recetas.*',      'icono' => 'bi-file-earmark-medical-fill','permiso' => null],
-                ['texto' => 'Facturación',      'ruta' => null,                  'activo' => 'facturacion.*',  'icono' => 'bi-credit-card-2-front-fill','permiso' => null],
+                ['texto' => 'Terminal POS',     'ruta' => 'pos.index',           'activo' => 'pos.*',          'icono' => 'bi-shop',                   'permiso' => 'POS'],
+                ['texto' => 'Caja Central',     'ruta' => 'caja.index',          'activo' => 'caja.*',         'icono' => 'bi-cash-coin',              'permiso' => 'Caja'],
+                ['texto' => 'Despacho Farmacia','ruta' => 'farmacia.despacho',   'activo' => 'farmacia.*',     'icono' => 'bi-bag-check-fill',         'permiso' => 'Farmacia'],
+                ['texto' => 'Inventario',       'ruta' => 'inventario.index',    'activo' => 'inventario.*',   'icono' => 'bi-box-seam-fill',          'permiso' => 'Inventario'],
+                ['texto' => 'Proveedores',      'ruta' => 'proveedores.index',   'activo' => 'proveedores.*',  'icono' => 'bi-truck',                  'permiso' => 'Proveedores'],
+                ['texto' => 'Recetas',          'ruta' => 'recetas.index',       'activo' => 'recetas.*',      'icono' => 'bi-file-earmark-medical-fill','permiso' => 'Recetas'],
+                ['texto' => 'Facturación',      'ruta' => null,                  'activo' => 'facturacion.*',  'icono' => 'bi-credit-card-2-front-fill','permiso' => 'Facturación'],
             ]],
             ['titulo' => 'Administración', 'items' => [
-                ['texto' => 'Personal',         'ruta' => 'personal.index',      'activo' => 'personal.*',     'icono' => 'bi-person-badge-fill', 'permiso' => null],
-                ['texto' => 'Roles y Permisos', 'ruta' => 'roles.index',         'activo' => 'roles.*',        'icono' => 'bi-shield-lock-fill',       'permiso' => null],
-                ['texto' => 'Reportes',         'ruta' => null,                  'activo' => 'reportes.*',     'icono' => 'bi-bar-chart-line-fill',    'permiso' => null],
-                ['texto' => 'Configuración',    'ruta' => 'configuracion.index', 'activo' => 'configuracion.*','icono' => 'bi-gear-fill',              'permiso' => null],
-                ['texto' => 'Bitácora',         'ruta' => 'bitacora.index',      'activo' => 'bitacora.*',     'icono' => 'bi-journal-text',           'permiso' => null],
+                ['texto' => 'Personal',         'ruta' => 'personal.index',      'activo' => 'personal.*',     'icono' => 'bi-person-badge-fill',      'permiso' => 'Personal'],
+                ['texto' => 'Roles y Permisos', 'ruta' => 'roles.index',         'activo' => 'roles.*',        'icono' => 'bi-shield-lock-fill',       'permiso' => 'Roles'],
+                ['texto' => 'Reportes',         'ruta' => null,                  'activo' => 'reportes.*',     'icono' => 'bi-bar-chart-line-fill',    'permiso' => 'Reportes'],
+                ['texto' => 'Configuración',    'ruta' => 'configuracion.index', 'activo' => 'configuracion.*','icono' => 'bi-gear-fill',              'permiso' => 'Configuración'],
+                ['texto' => 'Bitácora',         'ruta' => 'bitacora.index',      'activo' => 'bitacora.*',     'icono' => 'bi-journal-text',           'permiso' => 'Bitácora'],
             ]],
         ];
 
@@ -381,8 +304,7 @@
          class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-30 lg:hidden"></div>
 
     <!-- BARRA LATERAL (SIDEBAR) -->
-    <aside x-cloak
-           class="mt-sidebar h-full flex flex-col flex-shrink-0 text-slate-700 border-r border-slate-200"
+    <aside class="mt-sidebar h-full flex flex-col flex-shrink-0 text-slate-700 border-r border-slate-200"
            :class="{ 'movil-abierto': mobileOpen, 'rail': !sidebarOpen }">
 
         <!-- MARCA -->
@@ -409,13 +331,9 @@
             </div>
         </div>
 
-        <!-- BUSCADOR GLOBAL -->
-        <div x-data="buscadorGlobal()"
-             @keydown.window.ctrl.k.prevent="enfocar()"
-             @keydown.window.meta.k.prevent="enfocar()"
-             class="relative flex-shrink-0 px-4 mb-2 z-[60]">
-
-            <button type="button" @click="enfocar()"
+        <!-- BUSCADOR DEL SIDEBAR -->
+        <div class="relative flex-shrink-0 px-4 mb-2 z-[10]">
+            <button type="button" @click="enfocarBuscador()"
                     @mouseenter="mostrarTip($el, 'Buscar módulo (Ctrl+K)')" @mouseleave="ocultarTip()"
                     class="solo-rail w-full h-11 rounded-2xl bg-slate-100 hover:bg-teal-50 text-slate-500 hover:text-teal-700 items-center justify-center transition">
                 <i class="bi bi-search"></i>
@@ -427,54 +345,30 @@
                 </span>
 
                 <input type="text"
-                       x-ref="buscador"
-                       x-model="query"
-                       @input.debounce.200ms="realizarBusqueda()"
-                       @focus="open = true"
-                       @click.away="open = false"
-                       @keydown.escape="open = false; $el.blur()"
+                       x-ref="inputBuscadorSidebar"
+                       x-model="search"
                        placeholder="Ir a un módulo…"
-                       class="w-full pl-9 pr-14 py-2.5 bg-slate-100 hover:bg-slate-200/60 focus:bg-white border border-transparent focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 rounded-2xl text-xs text-slate-700 placeholder-slate-400 outline-none transition-all">
+                       class="w-full pl-9 pr-14 py-2.5 bg-slate-100 hover:bg-slate-200/60 focus:bg-white border border-transparent focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 rounded-2xl text-xs font-bold text-slate-700 placeholder-slate-400 outline-none transition-all">
 
-                <span class="absolute right-2.5 flex items-center">
-                    <i x-show="cargando" class="bi bi-arrow-repeat animate-spin text-teal-600 text-xs"></i>
-                    <kbd x-show="!cargando" class="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-[9px] font-bold text-slate-400 font-sans">Ctrl K</kbd>
+                <span class="absolute right-2.5 flex items-center gap-1">
+                    <button type="button" @click="search = ''" x-show="search" x-cloak class="text-slate-400 hover:text-slate-600">
+                        <i class="bi bi-x-circle-fill text-xs"></i>
+                    </button>
+                    <kbd x-show="!search" class="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-[9px] font-bold text-slate-400 font-sans">Ctrl K</kbd>
                 </span>
-            </div>
-
-            <div x-show="open && (resultados.length > 0 || (query.length >= 2 && !cargando))"
-                 x-transition:enter="transition ease-out duration-150"
-                 x-transition:enter-start="opacity-0 -translate-y-1 scale-95"
-                 x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                 class="absolute left-4 right-4 mt-2 bg-white rounded-2xl shadow-2xl shadow-slate-900/10 ring-1 ring-black/5 z-[99999] overflow-hidden max-h-80 overflow-y-auto text-gray-800"
-                 x-cloak>
-
-                <template x-for="(item, index) in resultados" :key="index">
-                    <a :href="item.url" class="flex items-center gap-2.5 p-2.5 hover:bg-teal-50/70 transition-colors border-b border-gray-50 last:border-none">
-                        <div class="p-2 bg-teal-50 text-teal-600 rounded-xl flex-shrink-0">
-                            <i :class="'bi ' + item.icono + ' text-sm'"></i>
-                        </div>
-                        <div class="overflow-hidden flex-1">
-                            <span class="text-[9px] font-bold uppercase text-teal-700 px-1.5 py-0.5 bg-teal-50 rounded-md" x-text="item.categoria"></span>
-                            <p class="text-xs font-black text-gray-800 truncate mt-0.5" x-text="item.titulo"></p>
-                        </div>
-                        <i class="bi bi-arrow-return-left text-gray-300 text-xs"></i>
-                    </a>
-                </template>
-
-                <template x-if="resultados.length === 0 && query.length >= 2 && !cargando">
-                    <div class="p-4 text-center text-xs text-gray-400">
-                        <i class="bi bi-door-closed text-base block mb-1"></i>
-                        <span>Módulo no encontrado o sin acceso.</span>
-                    </div>
-                </template>
             </div>
         </div>
 
-        <!-- NAVEGACIÓN -->
+        <!-- NAVEGACIÓN CON FILTRADO EN TIEMPO REAL -->
         <nav class="nav-scroll relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-2 space-y-5">
             @foreach($menu as $seccion)
-                @continue(count($seccion['items']) === 0)
+                @php
+                    $itemsVisibles = collect($seccion['items'])->filter(function($item) use ($tienePermiso) {
+                        return is_null($item['permiso']) || $tienePermiso($item['permiso']);
+                    });
+                @endphp
+
+                @continue($itemsVisibles->count() === 0)
 
                 <div>
                     @if($seccion['titulo'])
@@ -486,7 +380,7 @@
                     @endif
 
                     <div class="space-y-1">
-                        @foreach($seccion['items'] as $item)
+                        @foreach($itemsVisibles as $item)
                             @php
                                 $esActivo  = request()->routeIs($item['activo']);
                                 $pendiente = empty($item['ruta']) || !\Illuminate\Support\Facades\Route::has($item['ruta']);
@@ -495,6 +389,7 @@
                             @endphp
 
                             <a href="{{ $href }}"
+                               x-show="coincide(@js($item['texto'])) || (search && coincide(@js($seccion['titulo'])))"
                                @if($pendiente) aria-disabled="true" @endif
                                @if($esActivo) aria-current="page" @endif
                                @mouseenter="mostrarTip($el, @js($item['texto'] . ($pendiente ? ' · Pronto' : '')))"
@@ -562,111 +457,6 @@
             <span x-text="tip.texto"></span>
         </div>
     </div>
-
-    <!-- TRANSICIÓN LÍQUIDA -->
-    <div x-data="{
-            activo: true,
-            reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-            init() {
-                requestAnimationFrame(() => requestAnimationFrame(() => { this.activo = false; }));
-            },
-            navegar(url) {
-                this.activo = true;
-                if (this.reducedMotion) { window.location.href = url; return; }
-
-                let yaNavego = false;
-                const ir = () => { if (!yaNavego) { yaNavego = true; window.location.href = url; } };
-                this.$refs.panel.addEventListener('transitionend', ir, { once: true });
-                setTimeout(ir, 700);
-            }
-        }"
-        x-init="init()"
-        @disparar-liquido.window="navegar($event.detail)"
-        role="status"
-        aria-live="polite"
-        :aria-hidden="(!activo).toString()"
-        class="pointer-events-none fixed inset-0 z-[999999] overflow-hidden flex items-center justify-center"
-        :class="activo && 'pointer-events-auto'">
-
-        <div x-ref="panel"
-             class="absolute inset-x-0 -top-[3%] h-[106%] bg-gradient-to-br from-teal-950 via-teal-900 to-emerald-950 will-change-transform"
-             :class="reducedMotion ? '' : 'transition-transform duration-[600ms] ease-[cubic-bezier(0.83,0,0.17,1)]'"
-             :style="activo ? 'transform: translateY(0%);' : 'transform: translateY(-100%);'">
-
-            <svg class="absolute -bottom-px left-0 w-[200%] h-10 text-emerald-400/70"
-                 :class="activo && !reducedMotion && 'animate-ola'"
-                 viewBox="0 0 1200 60" preserveAspectRatio="none" aria-hidden="true">
-                <path d="M0,30 C150,55 150,5 300,30 C450,55 450,5 600,30 C750,55 750,5 900,30 C1050,55 1050,5 1200,30 L1200,60 L0,60 Z" fill="currentColor" opacity="0.55"/>
-            </svg>
-            <div class="absolute bottom-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_18px_#34d399]"></div>
-        </div>
-
-        <div class="relative z-20 flex items-center justify-center pointer-events-none">
-            <div :class="reducedMotion ? '' : 'transition-all duration-500 ease-out'"
-                 :style="activo ? 'opacity:1; transform: translateY(0) scale(1);' : 'opacity:0; transform: translateY(-8px) scale(0.94);'"
-                 class="text-center space-y-3">
-
-                  <div class="relative w-16 h-16 mx-auto">
-                      <div class="absolute inset-0 rounded-2xl bg-emerald-400/25 blur-xl" :class="activo && !reducedMotion && 'animate-resplandor'"></div>
-                      <div class="relative w-16 h-16 rounded-2xl bg-teal-900/90 border border-emerald-500/40 shadow-[0_0_30px_rgba(52,211,153,0.35)] flex items-center justify-center">
-                          <i class="bi bi-heart-pulse-fill text-emerald-400 text-2xl" aria-hidden="true"></i>
-                      </div>
-                  </div>
-
-                  <div class="space-y-1">
-                      <h2 class="text-white font-black tracking-[0.4em] text-sm uppercase drop-shadow-md">MediTrack</h2>
-                      <p class="text-[10px] text-emerald-300/70 tracking-widest uppercase">Sistema médico</p>
-                  </div>
-
-                  <div class="w-24 h-[3px] mx-auto rounded-full bg-white/10 overflow-hidden mt-1">
-                      <div class="h-full bg-emerald-400 rounded-full" :class="activo && !reducedMotion && 'animate-progreso'"></div>
-                  </div>
-             </div>
-             <span class="sr-only">Cargando…</span>
-        </div>
-    </div>
-
-    <style>
-        @keyframes ola { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-        .animate-ola { animation: ola 3.4s linear infinite; }
-        @keyframes resplandor { 0%, 100% { opacity: .55; transform: scale(1); } 50% { opacity: .15; transform: scale(1.35); } }
-        .animate-resplandor { animation: resplandor 1.8s ease-in-out infinite; }
-        @keyframes progreso { from { width: 0%; } to { width: 100%; } }
-        .animate-progreso { animation: progreso 600ms ease-out forwards; }
-        @media (prefers-reduced-motion: reduce) { .animate-ola, .animate-resplandor, .animate-progreso { animation: none !important; } }
-    </style>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            document.querySelectorAll('a').forEach((enlace) => {
-                enlace.addEventListener('click', (e) => {
-                    const href = enlace.getAttribute('href');
-                    const esExterno = enlace.hostname && enlace.hostname !== window.location.hostname;
-
-                    if (href === '#' || enlace.getAttribute('aria-disabled') === 'true') {
-                        e.preventDefault();
-                        return;
-                    }
-
-                    if (
-                        href &&
-                        !href.startsWith('#') &&
-                        !href.startsWith('javascript:') &&
-                        !href.startsWith('mailto:') &&
-                        !href.startsWith('tel:') &&
-                        enlace.target !== '_blank' &&
-                        !href.includes('logout') &&
-                        !enlace.hasAttribute('download') &&
-                        !esExterno &&
-                        !e.ctrlKey && !e.metaKey && !e.shiftKey
-                    ) {
-                        e.preventDefault();
-                        window.dispatchEvent(new CustomEvent('disparar-liquido', { detail: href }));
-                    }
-                });
-            });
-        });
-    </script>
 
     <!-- ÁREA PRINCIPAL -->
     <div class="flex-1 min-w-0 flex flex-col overflow-y-auto"
@@ -809,7 +599,7 @@
             </div>
         </header>
 
-        <!-- CONTENIDO DINÁMICO -->
+        <!-- CONTENIDO DINÁMICO DE LAS VISTAS DE LARAVEL -->
         <main id="main-content" class="px-4 sm:px-6 lg:px-8 pt-3 pb-8 space-y-6 w-full min-w-0 flex-1 block page-fade-in">
             @yield('content')
         </main>
@@ -899,60 +689,5 @@
         });
     </script>
     @endif
-
-   <!-- BUSCADOR GLOBAL DINÁMICO DEL SIDEBAR -->
-    <script>
-        // Extraemos automáticamente los módulos registrados en el menú de Laravel
-        const modulosRegistrados = @js(
-            collect($menu)->flatMap(function($seccion) {
-                return collect($seccion['items'])->map(function($item) use ($seccion) {
-                    return [
-                        'titulo'    => $item['texto'],
-                        'categoria' => $seccion['titulo'] ?? 'General',
-                        'icono'     => $item['icono'],
-                        'url'       => (!empty($item['ruta']) && \Illuminate\Support\Facades\Route::has($item['ruta'])) ? route($item['ruta']) : '#',
-                        'pendiente' => empty($item['ruta']) || !\Illuminate\Support\Facades\Route::has($item['ruta'])
-                    ];
-                });
-            })->values()->all()
-        );
-
-        function buscadorGlobal() {
-            return {
-                query: '',
-                resultados: [],
-                cargando: false,
-                open: false,
-
-                enfocar() {
-                    if (window.innerWidth < 1024) this.mobileOpen = true;
-                    else this.sidebarOpen = true;
-                    setTimeout(() => this.$refs.buscador?.focus(), 320);
-                },
-
-                realizarBusqueda() {
-                    const q = this.query.trim().toLowerCase();
-
-                    if (q.length < 2) {
-                        this.resultados = [];
-                        return;
-                    }
-
-                    this.cargando = true;
-                    this.open = true;
-
-                    // Filtra dinámicamente sobre los módulos registrados en el menú
-                    this.resultados = modulosRegistrados.filter(m => 
-                        !m.pendiente && (
-                            m.titulo.toLowerCase().includes(q) || 
-                            m.categoria.toLowerCase().includes(q)
-                        )
-                    );
-
-                    this.cargando = false;
-                }
-            }
-        }
-    </script>
 </body>
 </html>

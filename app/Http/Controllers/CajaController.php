@@ -12,20 +12,59 @@ class CajaController extends Controller
 {
     public function index()
     {
-        // Obtener tickets pendientes que aún no hayan expirado (dentro de los 25 minutos)
-        $ticketsPendientes = TicketVenta::with(['paciente', 'vendedor', 'detalles.producto'])
+        $ticketsPendientes = TicketVenta::with(['paciente', 'detalles.producto'])
             ->where('status', 'pendiente')
             ->where('expires_at', '>', now())
             ->orderBy('created_at', 'desc')
             ->get();
 
-        // Obtener historial de cobros recientes del día
-        $cobrosHoy = MovimientoCaja::with(['ticket.paciente', 'usuario'])
-            ->whereDate('created_at', now()->today())
+        $cobrosHoy = MovimientoCaja::with(['ticket.paciente'])
+            ->whereDate('created_at', today())
             ->orderBy('created_at', 'desc')
             ->get();
 
         return view('caja.index', compact('ticketsPendientes', 'cobrosHoy'));
+    }
+
+    /**
+     * NUEVO: busca el ticket por el folio que manda el lector de código de barras.
+     * GET /caja/ticket/{codigo}
+     */
+    public function buscarPorCodigo(string $codigo)
+    {
+        // Lector en inglés + teclado en español => el guion llega como apóstrofo
+        $codigo = strtoupper(str_replace("'", '-', trim($codigo)));
+
+        $ticket = TicketVenta::with(['paciente', 'detalles.producto'])
+            ->where('codigo_ticket', $codigo)
+            ->first();
+
+        if (!$ticket) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => "NO EXISTE UN TICKET CON EL FOLIO {$codigo}.",
+            ], 404);
+        }
+
+        if ($ticket->status === 'pendiente' && $ticket->expires_at <= now()) {
+            $ticket->update(['status' => 'expirado']);
+        }
+
+        $mensajes = [
+            'pagado'    => 'ESTE TICKET YA FUE PAGADO.',
+            'entregado' => 'ESTE TICKET YA FUE PAGADO Y ENTREGADO.',
+            'expirado'  => 'EL TICKET HA EXPIRADO. REVALIDAR EN TERMINAL POS.',
+        ];
+
+        if ($ticket->status !== 'pendiente') {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $mensajes[$ticket->status] ?? 'ESTE TICKET YA FUE PROCESADO O CANCELADO.',
+                'ticket'  => $ticket,
+            ], 422);
+        }
+
+        return response()->json(['status' => 'success', 'ticket' => $ticket]);
     }
 
     public function procesarPago(Request $request, $id)
@@ -35,54 +74,49 @@ class CajaController extends Controller
         ]);
 
         try {
-            DB::beginTransaction();
+            $resultado = DB::transaction(function () use ($request, $id) {
+                // lockForUpdate: si dos cajas escanean el mismo ticket, la segunda
+                // espera y luego ve status 'pagado', así no se cobra dos veces.
+                $ticket = TicketVenta::lockForUpdate()->findOrFail($id);
 
-            $ticket = TicketVenta::findOrFail($id);
+                if ($ticket->status === 'pendiente' && $ticket->expires_at <= now()) {
+                    $ticket->update(['status' => 'expirado']);
+                    return ['error' => 'EL TICKET HA EXPIRADO. REVALIDAR EN TERMINAL POS.'];
+                }
 
-            // 1. Validar que no haya expirado por el temporizador de 25 minutos
-            if ($ticket->status === 'pendiente' && $ticket->expires_at <= now()) {
-                $ticket->update(['status' => 'expirado']);
-                DB::commit();
+                if ($ticket->status !== 'pendiente') {
+                    return ['error' => 'ESTE TICKET YA FUE PROCESADO O CANCELADO.'];
+                }
 
-                return response()->json([
-                    'status'  => 'error',
-                    'message' => 'EL TICKET HA EXPIRADO (EXCEDIÓ LOS 25 MINUTOS). REVALIDAR CON MOSTRADOR.'
-                ], 422);
+                $ticket->update(['status' => 'pagado']);
+
+                MovimientoCaja::create([
+                    'ticket_id'   => $ticket->id,
+                    'user_id'     => Auth::id(),
+                    'tipo'        => 'Ingreso',
+                    'concepto'    => "PAGO DE TICKET DE FARMACIA: {$ticket->codigo_ticket}",
+                    'monto'       => $ticket->monto_total,
+                    'metodo_pago' => $request->metodo_pago,
+                ]);
+
+                return ['ticket' => $ticket->load(['paciente', 'detalles.producto'])];
+            });
+
+            if (isset($resultado['error'])) {
+                return response()->json(['status' => 'error', 'message' => $resultado['error']], 422);
             }
-
-            if ($ticket->status !== 'pendiente') {
-                return response()->json([
-                    'status'  => 'error',
-                    'message' => 'ESTE TICKET YA FUE PROCESADO O CANCELADO.'
-                ], 422);
-            }
-
-            // 2. Cambiar estatus a 'pagado'
-            $ticket->update(['status' => 'pagado']);
-
-            // 3. Registrar el ingreso monetario en la caja
-            $movimiento = MovimientoCaja::create([
-                'ticket_id'   => $ticket->id,
-                'user_id'     => Auth::id() ?? 1,
-                'tipo'        => 'Ingreso',
-                'concepto'    => "PAGO DE TICKET DE FARMACIA: {$ticket->codigo_ticket}",
-                'monto'       => $ticket->monto_total,
-                'metodo_pago' => $request->metodo_pago,
-            ]);
-
-            DB::commit();
 
             return response()->json([
                 'status'  => 'success',
-                'message' => "PAGO REGISTRADO CORRECTAMENTE. TICKET {$ticket->codigo_ticket} ENVIADO A FARMACIA PARA SURTIDO.",
-                'ticket'  => $ticket
+                'message' => 'PAGO REGISTRADO CORRECTAMENTE. TICKET ENVIADO A DESPACHO.',
+                'ticket'  => $resultado['ticket'],
             ]);
 
         } catch (\Exception $e) {
-            DB::rollBack();
+            report($e);
             return response()->json([
                 'status'  => 'error',
-                'message' => 'ERROR AL PROCESAR EL COBRO: ' . $e->getMessage()
+                'message' => 'ERROR AL PROCESAR EL COBRO.',
             ], 500);
         }
     }

@@ -10,7 +10,7 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
-        ->withMiddleware(function (Middleware $middleware) {
+    ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
             'permiso' => \App\Http\Middleware\CheckPermission::class,
         ]);
@@ -19,6 +19,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             \App\Http\Middleware\InyectarChatbot::class,
         ]);
+
+        // Confía en el túnel (cloudflared) para que Laravel sepa que la
+        // página llegó por HTTPS y genere todas las URLs con https://
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

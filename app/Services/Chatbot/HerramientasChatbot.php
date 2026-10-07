@@ -7,15 +7,14 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Consultas a la base de datos que el chatbot puede ejecutar ("tools").
+ * Consultas a la base de datos que el chatbot puede ejecutar ("funciones").
  *
  * Reglas de seguridad:
- *  - Solo LECTURA. Ninguna herramienta crea, edita ni elimina registros.
- *  - Cada herramienta pertenece a un módulo y se valida contra la tabla `permisos`
- *    (puede_ver) igual que el middleware CheckPermission.
- *  - Todo se filtra por la clínica del usuario (excepto el Super Admin, ID 1).
+ *  - Solo LECTURA. Ninguna función crea, edita ni elimina registros.
+ *  - Cada función pertenece a un módulo y se valida con User::tienePermiso()
+ *    (la misma regla que usa el middleware de permisos del sistema).
  *  - NUNCA se envía información clínica (diagnósticos, alergias, condiciones,
- *    medicamentos, recetas, signos vitales, consultas ni archivos clínicos).
+ *    medicamentos del paciente, recetas, signos vitales ni consultas).
  */
 class HerramientasChatbot
 {
@@ -23,7 +22,7 @@ class HerramientasChatbot
     {
     }
 
-    /** Herramientas que el usuario actual tiene permiso de usar. */
+    /** Funciones que el usuario actual tiene permiso de usar. */
     public function definiciones(): array
     {
         $rangoFechas = [
@@ -35,7 +34,7 @@ class HerramientasChatbot
             [
                 'modulo' => 'citas',
                 'name' => 'consultar_citas',
-                'description' => 'Lista citas médicas en un rango de fechas. Se puede filtrar por médico, paciente o estado.',
+                'description' => 'Lista las citas médicas de un rango de fechas con hora, paciente, médico, consultorio, tipo y estado. Se puede filtrar por médico, paciente o estado.',
                 'input_schema' => [
                     'type' => 'object',
                     'properties' => $rangoFechas + [
@@ -49,7 +48,7 @@ class HerramientasChatbot
             [
                 'modulo' => 'citas',
                 'name' => 'contar_citas',
-                'description' => 'Cuenta citas en un rango de fechas, agrupadas por estado, médico, tipo de consulta o día. Úsala para preguntas de "cuántas".',
+                'description' => 'Cuenta citas en un rango de fechas agrupadas por estado, médico, tipo de consulta o día. Úsala para preguntas de "cuántas".',
                 'input_schema' => [
                     'type' => 'object',
                     'properties' => $rangoFechas + [
@@ -61,11 +60,11 @@ class HerramientasChatbot
             [
                 'modulo' => 'pacientes',
                 'name' => 'buscar_pacientes',
-                'description' => 'Busca pacientes por nombre o código. Devuelve solo datos administrativos (código, estado, médico tratante, aseguradora, fecha de registro). No incluye información clínica.',
+                'description' => 'Busca pacientes por nombre, apellido o código. Devuelve solo datos administrativos (código, nombre, estado, médico tratante, fecha de registro). No incluye información clínica.',
                 'input_schema' => [
                     'type' => 'object',
                     'properties' => [
-                        'texto'  => ['type' => 'string', 'description' => 'Nombre o código del paciente'],
+                        'texto'  => ['type' => 'string', 'description' => 'Nombre, apellido o código del paciente'],
                         'estado' => ['type' => 'string', 'enum' => ['Activo', 'Inactivo']],
                     ],
                     'required' => ['texto'],
@@ -74,17 +73,16 @@ class HerramientasChatbot
             [
                 'modulo' => 'pacientes',
                 'name' => 'estadisticas_pacientes',
-                'description' => 'Totales de pacientes: registrados en un rango de fechas, activos/inactivos, por aseguradora y por género.',
+                'description' => 'Totales de pacientes: total, activos/inactivos, por género y registrados en un rango de fechas (opcional).',
                 'input_schema' => [
                     'type' => 'object',
                     'properties' => $rangoFechas,
-                    'required' => [],
                 ],
             ],
             [
                 'modulo' => 'personal',
                 'name' => 'consultar_personal',
-                'description' => 'Lista al personal de la clínica (médicos y demás). Filtros por nombre, especialidad, turno y estado.',
+                'description' => 'Lista al personal de la clínica (médicos y demás) con especialidad, turno y estado.',
                 'input_schema' => [
                     'type' => 'object',
                     'properties' => [
@@ -93,38 +91,35 @@ class HerramientasChatbot
                         'turno'        => ['type' => 'string', 'enum' => ['Mañana', 'Tarde', 'Completo', 'Noche']],
                         'estado'       => ['type' => 'string', 'enum' => ['Activo', 'Inactivo']],
                     ],
-                    'required' => [],
                 ],
             ],
             [
                 'modulo' => 'consultorios',
                 'name' => 'consultar_consultorios',
-                'description' => 'Lista consultorios y su estado (Disponible, Ocupado, Mantenimiento).',
+                'description' => 'Lista los consultorios y su estado (Disponible, Ocupado, Mantenimiento).',
                 'input_schema' => [
                     'type' => 'object',
                     'properties' => [
                         'estado' => ['type' => 'string', 'enum' => ['Disponible', 'Ocupado', 'Mantenimiento']],
                     ],
-                    'required' => [],
                 ],
             ],
             [
                 'modulo' => 'inventario',
                 'name' => 'consultar_inventario',
-                'description' => 'Busca productos del inventario con su stock. Puede devolver solo los productos con stock bajo, crítico o agotado.',
+                'description' => 'Busca medicamentos y productos del inventario con su stock disponible, stock mínimo y estado (Normal, Bajo stock, Agotado). Puede devolver solo los que tienen stock bajo o agotado.',
                 'input_schema' => [
                     'type' => 'object',
                     'properties' => [
                         'texto'           => ['type' => 'string', 'description' => 'Nombre o código del producto'],
-                        'solo_bajo_stock' => ['type' => 'boolean'],
+                        'solo_bajo_stock' => ['type' => 'boolean', 'description' => 'true para traer solo productos con stock bajo o agotados'],
                     ],
-                    'required' => [],
                 ],
             ],
             [
-                'modulo' => 'facturacion',
-                'name' => 'resumen_facturacion',
-                'description' => 'Resumen de facturas en un rango de fechas: cantidad y monto total por estado (Pendiente, Pagada, Vencida, Cancelada).',
+                'modulo' => 'caja',
+                'name' => 'resumen_ventas',
+                'description' => 'Resumen de ventas del punto de venta (tickets) y de los movimientos de caja (ingresos y egresos por método de pago) en un rango de fechas.',
                 'input_schema' => [
                     'type' => 'object',
                     'properties' => $rangoFechas,
@@ -134,10 +129,10 @@ class HerramientasChatbot
         ];
 
         $permitidas = [];
-        foreach ($todas as $herramienta) {
-            if ($this->puedeVer($herramienta['modulo'])) {
-                unset($herramienta['modulo']);
-                $permitidas[] = $herramienta;
+        foreach ($todas as $funcion) {
+            if ($this->puedeVer($funcion['modulo'])) {
+                unset($funcion['modulo']);
+                $permitidas[] = $funcion;
             }
         }
 
@@ -154,20 +149,16 @@ class HerramientasChatbot
             'consultar_personal'     => 'personal',
             'consultar_consultorios' => 'consultorios',
             'consultar_inventario'   => 'inventario',
-            'resumen_facturacion'    => 'facturacion',
+            'resumen_ventas'         => 'caja',
         ];
 
         if (!isset($modulos[$nombre])) {
-            return ['error' => 'Herramienta desconocida.'];
+            return ['error' => 'Función desconocida.'];
         }
 
-        // Doble verificación: aunque el modelo pida una herramienta, se revisa el permiso.
+        // Doble verificación: aunque el modelo pida una función, se revisa el permiso.
         if (!$this->puedeVer($modulos[$nombre])) {
             return ['error' => 'El usuario no tiene permiso para consultar este módulo.'];
-        }
-
-        if (!$this->user->isSuperAdmin() && !$this->user->clinica_id) {
-            return ['error' => 'El usuario no tiene una clínica asignada.'];
         }
 
         try {
@@ -179,7 +170,7 @@ class HerramientasChatbot
                 'consultar_personal'     => $this->consultarPersonal($args),
                 'consultar_consultorios' => $this->consultarConsultorios($args),
                 'consultar_inventario'   => $this->consultarInventario($args),
-                'resumen_facturacion'    => $this->resumenFacturacion($args),
+                'resumen_ventas'         => $this->resumenVentas($args),
             };
         } catch (\Throwable $e) {
             report($e);
@@ -187,13 +178,18 @@ class HerramientasChatbot
         }
     }
 
+    /* ---------------------------------------------------------------------
+     | Citas
+     * ------------------------------------------------------------------- */
+
     private function consultarCitas(array $a): array
     {
         $q = DB::table('citas')
             ->join('pacientes', 'pacientes.id', '=', 'citas.paciente_id')
-            ->join('personals', 'personals.id', '=', 'citas.personal_id')
-            ->leftJoin('consultorios', 'consultorios.id', '=', 'citas.consultorio_id')
-            ->whereBetween('citas.fecha', [$this->fecha($a['fecha_inicio'] ?? null), $this->fecha($a['fecha_fin'] ?? null)]);
+            ->leftJoin('personals', 'personals.id', '=', 'citas.personal_id')
+            ->leftJoin('consultorios', 'consultorios.id', '=', 'citas.consultorio_id');
+
+        $this->filtrarFechas($q, 'citas.fecha', $a);
 
         $this->filtrarClinica($q, 'citas');
 
@@ -204,10 +200,7 @@ class HerramientasChatbot
             $q->where('personals.nombre_completo', 'like', '%' . $a['medico'] . '%');
         }
         if (!empty($a['paciente'])) {
-            $q->where(function ($w) use ($a) {
-                $w->where('pacientes.nombre_completo', 'like', '%' . $a['paciente'] . '%')
-                  ->orWhere('pacientes.codigo', 'like', '%' . $a['paciente'] . '%');
-            });
+            $this->buscarNombrePaciente($q, $a['paciente']);
         }
 
         $total = (clone $q)->count();
@@ -215,11 +208,21 @@ class HerramientasChatbot
         $filas = $q->orderBy('citas.fecha')->orderBy('citas.hora')
             ->limit($this->limite())
             ->get([
-                'citas.fecha', 'citas.hora', 'citas.duracion_min', 'citas.tipo_consulta', 'citas.estado',
-                'pacientes.codigo as paciente_codigo', 'pacientes.nombre_completo as paciente',
+                'citas.fecha', 'citas.hora', 'citas.duracion_min', 'citas.tipo_consulta', 'citas.estado', 'citas.motivo',
+                'pacientes.codigo', 'pacientes.primer_nombre', 'pacientes.apellido_paterno', 'pacientes.apellido_materno',
                 'personals.nombre_completo as medico', 'consultorios.nombre as consultorio',
             ])
-            ->map(fn ($c) => $this->anonimizar((array) $c));
+            ->map(fn ($c) => [
+                'fecha'         => substr((string) $c->fecha, 0, 10),
+                'hora'          => substr((string) $c->hora, 0, 5),
+                'duracion_min'  => $c->duracion_min,
+                'paciente'      => $this->nombrePaciente($c),
+                'medico'        => $c->medico,
+                'consultorio'   => $c->consultorio,
+                'tipo_consulta' => $c->tipo_consulta,
+                'estado'        => $c->estado,
+                'motivo'        => $c->motivo,
+            ]);
 
         return ['total' => $total, 'mostrando' => $filas->count(), 'citas' => $filas->all()];
     }
@@ -232,11 +235,13 @@ class HerramientasChatbot
             'tipo_consulta' => 'citas.tipo_consulta',
             'dia'           => 'citas.fecha',
         ];
-        $col = $columnas[$a['agrupar_por'] ?? 'estado'] ?? 'citas.estado';
+        $agrupar = isset($columnas[$a['agrupar_por'] ?? '']) ? $a['agrupar_por'] : 'estado';
+        $col = $columnas[$agrupar];
 
         $q = DB::table('citas')
-            ->join('personals', 'personals.id', '=', 'citas.personal_id')
-            ->whereBetween('citas.fecha', [$this->fecha($a['fecha_inicio'] ?? null), $this->fecha($a['fecha_fin'] ?? null)]);
+            ->leftJoin('personals', 'personals.id', '=', 'citas.personal_id');
+
+        $this->filtrarFechas($q, 'citas.fecha', $a);
 
         $this->filtrarClinica($q, 'citas');
 
@@ -244,34 +249,38 @@ class HerramientasChatbot
             ->orderBy($col)
             ->get([DB::raw("$col as grupo"), DB::raw('COUNT(*) as total')]);
 
-        return ['total' => $grupos->sum('total'), 'por_' . ($a['agrupar_por'] ?? 'estado') => $grupos->all()];
+        return ['total' => (int) $grupos->sum('total'), "por_$agrupar" => $grupos->all()];
     }
+
+    /* ---------------------------------------------------------------------
+     | Pacientes
+     * ------------------------------------------------------------------- */
 
     private function buscarPacientes(array $a): array
     {
-        $texto = trim($a['texto'] ?? '');
-
         $q = DB::table('pacientes')
-            ->leftJoin('personals', 'personals.id', '=', 'pacientes.medico_tratante_id')
-            ->where(function ($w) use ($texto) {
-                $w->where('pacientes.nombre_completo', 'like', "%$texto%")
-                  ->orWhere('pacientes.codigo', 'like', "%$texto%");
-            });
+            ->leftJoin('personals', 'personals.id', '=', 'pacientes.medico_tratante_id');
 
+        $this->buscarNombrePaciente($q, $a['texto'] ?? '');
         $this->filtrarClinica($q, 'pacientes');
 
         if (!empty($a['estado'])) {
             $q->where('pacientes.estado', $a['estado']);
         }
 
-        $filas = $q->orderBy('pacientes.nombre_completo')
+        $filas = $q->orderBy('pacientes.apellido_paterno')->orderBy('pacientes.primer_nombre')
             ->limit($this->limite())
             ->get([
-                'pacientes.codigo as paciente_codigo', 'pacientes.nombre_completo as paciente',
-                'pacientes.estado', 'pacientes.aseguradora', 'personals.nombre_completo as medico_tratante',
-                'pacientes.created_at as fecha_registro',
+                'pacientes.codigo', 'pacientes.primer_nombre', 'pacientes.apellido_paterno', 'pacientes.apellido_materno',
+                'pacientes.estado', 'personals.nombre_completo as medico_tratante', 'pacientes.created_at',
             ])
-            ->map(fn ($p) => $this->anonimizar((array) $p));
+            ->map(fn ($p) => [
+                'codigo'          => $p->codigo,
+                'paciente'        => $this->nombrePaciente($p),
+                'estado'          => $p->estado,
+                'medico_tratante' => $p->medico_tratante,
+                'fecha_registro'  => substr((string) $p->created_at, 0, 10),
+            ]);
 
         return ['encontrados' => $filas->count(), 'pacientes' => $filas->all()];
     }
@@ -282,21 +291,24 @@ class HerramientasChatbot
         $this->filtrarClinica($base, 'pacientes');
 
         $resultado = [
-            'total'           => (clone $base)->count(),
-            'por_estado'      => (clone $base)->groupBy('estado')->get(['estado', DB::raw('COUNT(*) as total')])->all(),
-            'por_genero'      => (clone $base)->groupBy('genero')->get(['genero', DB::raw('COUNT(*) as total')])->all(),
-            'por_aseguradora' => (clone $base)->groupBy('aseguradora')->orderByDesc('total')->limit(10)
-                ->get(['aseguradora', DB::raw('COUNT(*) as total')])->all(),
+            'total'      => (clone $base)->count(),
+            'por_estado' => (clone $base)->groupBy('estado')->get(['estado', DB::raw('COUNT(*) as total')])->all(),
+            'por_genero' => (clone $base)->groupBy('genero')->get(['genero', DB::raw('COUNT(*) as total')])->all(),
         ];
 
         if (!empty($a['fecha_inicio']) && !empty($a['fecha_fin'])) {
+            [$inicio, $fin] = $this->rango($a);
             $resultado['registrados_en_rango'] = (clone $base)
-                ->whereBetween('created_at', [$this->fecha($a['fecha_inicio']) . ' 00:00:00', $this->fecha($a['fecha_fin']) . ' 23:59:59'])
+                ->whereBetween('created_at', ["$inicio 00:00:00", "$fin 23:59:59"])
                 ->count();
         }
 
         return $resultado;
     }
+
+    /* ---------------------------------------------------------------------
+     | Personal y consultorios
+     * ------------------------------------------------------------------- */
 
     private function consultarPersonal(array $a): array
     {
@@ -322,7 +334,8 @@ class HerramientasChatbot
             $q->where('personals.estado', $a['estado']);
         }
 
-        $filas = $q->limit($this->limite() * 3)
+        $filas = $q->orderBy('personals.nombre_completo')
+            ->limit($this->limite() * 3)
             ->get(['personals.id', 'personals.nombre_completo', 'personals.especialidad_principal',
                    'personals.turno', 'personals.estado', 'especialidades.nombre as especialidad'])
             ->groupBy('id')
@@ -350,8 +363,18 @@ class HerramientasChatbot
             $q->where('estado', $a['estado']);
         }
 
-        return ['consultorios' => $q->orderBy('nombre')->limit($this->limite())->get(['nombre', 'piso', 'estado'])->all()];
+        $filas = $q->orderBy('nombre')->limit($this->limite())->get(['nombre', 'piso', 'estado']);
+
+        return [
+            'total'         => $filas->count(),
+            'por_estado'    => $filas->countBy('estado')->all(),
+            'consultorios'  => $filas->all(),
+        ];
     }
+
+    /* ---------------------------------------------------------------------
+     | Inventario (igual que InventarioController: se usa stock_disponible)
+     * ------------------------------------------------------------------- */
 
     private function consultarInventario(array $a): array
     {
@@ -367,78 +390,156 @@ class HerramientasChatbot
             });
         }
         if (!empty($a['solo_bajo_stock'])) {
-            $q->where(function ($w) {
-                $w->whereIn('productos_inventario.estado', ['Bajo Stock', 'Critico', 'Agotado'])
-                  ->orWhereColumn('productos_inventario.stock_actual', '<=', 'productos_inventario.stock_minimo');
-            });
+            $q->whereColumn('productos_inventario.stock_disponible', '<=', 'productos_inventario.stock_minimo');
         }
 
-        $filas = $q->orderBy('productos_inventario.stock_actual')
+        $filas = $q->orderBy('productos_inventario.stock_disponible')
+            ->orderBy('productos_inventario.nombre')
             ->limit($this->limite())
-            ->get(['productos_inventario.codigo', 'productos_inventario.nombre', 'categorias_inventario.nombre as categoria',
-                   'productos_inventario.stock_actual', 'productos_inventario.stock_minimo', 'productos_inventario.estado']);
+            ->get([
+                'productos_inventario.codigo', 'productos_inventario.nombre', 'categorias_inventario.nombre as categoria',
+                'productos_inventario.stock_disponible', 'productos_inventario.stock_minimo', 'productos_inventario.precio_venta',
+            ])
+            ->map(fn ($p) => [
+                'codigo'           => $p->codigo,
+                'nombre'           => $p->nombre,
+                'categoria'        => $p->categoria,
+                'stock_disponible' => (int) $p->stock_disponible,
+                'stock_minimo'     => (int) $p->stock_minimo,
+                'precio_venta'     => (float) $p->precio_venta,
+                'estado'           => $this->estadoStock((int) $p->stock_disponible, (int) $p->stock_minimo),
+            ]);
 
-        return ['encontrados' => $filas->count(), 'productos' => $filas->all()];
-    }
-
-    private function resumenFacturacion(array $a): array
-    {
-        $q = DB::table('facturas')
-            ->whereBetween('fecha_emision', [$this->fecha($a['fecha_inicio'] ?? null), $this->fecha($a['fecha_fin'] ?? null)]);
-
-        $this->filtrarClinica($q, 'facturas');
-
-        $grupos = $q->groupBy('estado')
-            ->get(['estado', DB::raw('COUNT(*) as cantidad'), DB::raw('SUM(monto_total) as monto')]);
+        // Totales del inventario completo (mismas métricas que las tarjetas del módulo Inventario)
+        $todos = DB::table('productos_inventario');
+        $this->filtrarClinica($todos, 'productos_inventario');
+        $todos = $todos->get(['stock_disponible', 'stock_minimo']);
 
         return [
-            'cantidad_total' => $grupos->sum('cantidad'),
-            'monto_total'    => round((float) $grupos->sum('monto'), 2),
-            'por_estado'     => $grupos->all(),
+            'resumen_inventario' => [
+                'total_productos' => $todos->count(),
+                'stock_bajo'      => $todos->filter(fn ($p) => $p->stock_disponible > 0 && $p->stock_disponible <= $p->stock_minimo)->count(),
+                'agotados'        => $todos->filter(fn ($p) => $p->stock_disponible <= 0)->count(),
+            ],
+            'encontrados' => $filas->count(),
+            'productos'   => $filas->all(),
         ];
     }
 
-    /** Misma lógica que CheckPermission: Super Admin todo, los demás según `permisos`. */
-    public function puedeVer(string $clave): bool
+    private function estadoStock(int $disponible, int $minimo): string
     {
-        if ($this->user->isSuperAdmin()) {
-            return true;
+        if ($disponible <= 0) {
+            return 'Agotado';
         }
 
+        return $disponible <= $minimo ? 'Bajo stock' : 'Normal';
+    }
+
+    /* ---------------------------------------------------------------------
+     | Ventas y caja
+     * ------------------------------------------------------------------- */
+
+    private function resumenVentas(array $a): array
+    {
+        [$inicio, $fin] = $this->rango($a);
+        $desde = "$inicio 00:00:00";
+        $hasta = "$fin 23:59:59";
+
+        $tickets = DB::table('tickets_venta')
+            ->whereBetween('created_at', [$desde, $hasta])
+            ->groupBy('status')
+            ->get(['status', DB::raw('COUNT(*) as cantidad'), DB::raw('SUM(monto_total) as monto')]);
+
+        $caja = DB::table('movimientos_caja')
+            ->whereBetween('created_at', [$desde, $hasta])
+            ->groupBy('tipo', 'metodo_pago')
+            ->get(['tipo', 'metodo_pago', DB::raw('COUNT(*) as movimientos'), DB::raw('SUM(monto) as monto')]);
+
+        $ingresos = (float) $caja->where('tipo', 'Ingreso')->sum('monto');
+        $egresos  = (float) $caja->where('tipo', 'Egreso')->sum('monto');
+
+        return [
+            'periodo'           => "$inicio a $fin",
+            'tickets_por_estado' => $tickets->all(),
+            'caja' => [
+                'total_ingresos'   => round($ingresos, 2),
+                'total_egresos'    => round($egresos, 2),
+                'balance'          => round($ingresos - $egresos, 2),
+                'detalle'          => $caja->all(),
+            ],
+        ];
+    }
+
+    /* ---------------------------------------------------------------------
+     | Utilidades
+     * ------------------------------------------------------------------- */
+
+    /** Usa la misma regla de permisos que el resto del sistema (User::tienePermiso). */
+    public function puedeVer(string $clave): bool
+    {
         $modulo = config("chatbot.modulos.$clave");
-        if (!$modulo || !$this->user->rol_id) {
+        if (!$modulo) {
             return false;
         }
 
-        return DB::table('permisos')
-            ->join('modulos', 'modulos.id', '=', 'permisos.modulo_id')
-            ->where('permisos.rol_id', $this->user->rol_id)
-            ->where('modulos.nombre', $modulo)
-            ->where('permisos.puede_ver', true)
-            ->exists();
+        if (method_exists($this->user, 'tienePermiso')) {
+            return (bool) $this->user->tienePermiso($modulo, 'ver');
+        }
+
+        return $this->user->isSuperAdmin();
     }
 
+    /** Igual que el resto del sistema: whereDate, porque la fecha puede guardarse con hora */
+    private function filtrarFechas(Builder $q, string $columna, array $a): void
+    {
+        [$inicio, $fin] = $this->rango($a);
+        $q->whereDate($columna, '>=', $inicio)->whereDate($columna, '<=', $fin);
+    }
+
+    /** Solo filtra por clínica si el usuario tiene una asignada (el Super Admin ve todo). */
     private function filtrarClinica(Builder $q, string $tabla): void
     {
-        if (!$this->user->isSuperAdmin()) {
+        if (!$this->user->isSuperAdmin() && $this->user->clinica_id) {
             $q->where("$tabla.clinica_id", $this->user->clinica_id);
         }
     }
 
-    private function anonimizar(array $fila): array
+    /** Cada palabra debe aparecer en el nombre, en algún apellido o en el código. */
+    private function buscarNombrePaciente(Builder $q, string $texto): void
+    {
+        foreach (preg_split('/\s+/', trim($texto), -1, PREG_SPLIT_NO_EMPTY) as $palabra) {
+            $q->where(function ($w) use ($palabra) {
+                $w->where('pacientes.primer_nombre', 'like', "%$palabra%")
+                  ->orWhere('pacientes.apellido_paterno', 'like', "%$palabra%")
+                  ->orWhere('pacientes.apellido_materno', 'like', "%$palabra%")
+                  ->orWhere('pacientes.codigo', 'like', "%$palabra%");
+            });
+        }
+    }
+
+    private function nombrePaciente(object $fila): ?string
     {
         if (config('chatbot.ocultar_nombres_pacientes')) {
-            unset($fila['paciente']);
+            return $fila->codigo ? 'Paciente ' . $fila->codigo : 'Paciente';
         }
-        return $fila;
+
+        return trim("{$fila->primer_nombre} {$fila->apellido_paterno} {$fila->apellido_materno}") ?: null;
+    }
+
+    private function rango(array $a): array
+    {
+        $inicio = $this->fecha($a['fecha_inicio'] ?? null);
+        $fin = $this->fecha($a['fecha_fin'] ?? ($a['fecha_inicio'] ?? null));
+
+        return $inicio <= $fin ? [$inicio, $fin] : [$fin, $inicio];
     }
 
     private function fecha(?string $valor): string
     {
         try {
-            return \Carbon\Carbon::parse($valor ?? 'today')->toDateString();
+            return \Carbon\Carbon::parse($valor ?? 'today', 'America/Mexico_City')->toDateString();
         } catch (\Throwable) {
-            return now()->toDateString();
+            return now('America/Mexico_City')->toDateString();
         }
     }
 

@@ -13,6 +13,10 @@ class ChatbotController extends Controller
     /** Recibe un mensaje del widget y devuelve la respuesta del asistente. */
     public function mensaje(Request $request): JsonResponse
     {
+        // Gemini puede tardar (sobre todo si reintenta). PHP corta a los 30 s por defecto,
+        // y ese corte no se puede atrapar con try/catch: por eso se amplía aquí.
+        set_time_limit(120);
+
         $datos = $request->validate([
             'mensaje' => ['required', 'string', 'max:1000'],
         ]);
