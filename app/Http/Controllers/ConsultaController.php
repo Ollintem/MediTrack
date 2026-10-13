@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Cita;
 use App\Models\Consulta;
 use App\Models\Personal;
+use App\Models\SignosVitales;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -110,7 +111,7 @@ class ConsultaController extends Controller
     /** Citas que el usuario actual tiene permitido ver. */
     private function citasVisibles(?int $personalFiltro = null)
     {
-        $q = Cita::with(['paciente', 'personal', 'consultorio']);
+        $q = Cita::with(['paciente.alergias', 'personal', 'consultorio']);
 
         if ($this->esAdmin()) {
             return $personalFiltro ? $q->where('personal_id', $personalFiltro) : $q;
@@ -142,6 +143,7 @@ class ConsultaController extends Controller
             'cita_id'            => $c->id,
             'paciente_id'        => $c->paciente_id,
             'paciente_nombre'    => $this->nombre($c->paciente) ?: 'Paciente',
+            'alergia'            => $c->paciente?->alergias?->pluck('descripcion')->filter()->first(),
             'personal_id'        => $c->personal_id,
             'personal_nombre'    => $this->nombre($c->personal) ?: '—',
             'consultorio_id'     => $c->consultorio_id,
@@ -211,11 +213,16 @@ class ConsultaController extends Controller
         $esAdmin = $this->esAdmin();
         $personal = $this->personalActual();
 
-        $doctores = $esAdmin
-            ? Personal::all()
-                ->map(fn ($m) => ['id' => $m->id, 'nombre' => $this->nombre($m)])
-                ->sortBy('nombre', SORT_NATURAL | SORT_FLAG_CASE)->values()
-            : collect();
+        // El administrador puede ver la agenda de cualquier médico (solo personal con rol de médico)
+        $doctores = collect();
+        if ($esAdmin) {
+            $todos = Personal::with('usuario.rol')->where('estado', '!=', 'Inactivo')->get();
+            $esMedico = fn ($m) => in_array(mb_strtolower(trim((string) optional(optional($m->usuario)->rol)->nombre)), ['doctor', 'doctora', 'médico', 'medico', 'médica', 'medica'], true);
+            $medicos = $todos->filter($esMedico);
+            $doctores = ($medicos->isNotEmpty() ? $medicos : $todos)
+                ->map(fn ($m) => ['id' => $m->id, 'nombre' => $this->nombre($m), 'especialidad' => $m->especialidad_principal])
+                ->sortBy('nombre', SORT_NATURAL | SORT_FLAG_CASE)->values();
+        }
 
         return view('consultas.index', [
             'esAdmin'      => $esAdmin,
@@ -310,21 +317,24 @@ class ConsultaController extends Controller
         ]);
     }
 
-    /** Datos para atender una cita: consulta guardada (borrador), historial y datos del paciente. */
+    /** Datos para atender una cita: consulta guardada (borrador), signos vitales, historial y ficha del paciente. */
     public function detalle(Cita $cita)
     {
         abort_unless($this->puedeVer($cita), 403);
 
-        $cita->load(['paciente', 'personal', 'consultorio']);
+        $cita->load(['paciente.alergias', 'paciente.condiciones', 'paciente.medicamentos', 'personal', 'consultorio']);
         $consulta = Consulta::where('cita_id', $cita->id)->first();
 
-        $historial = Consulta::where('paciente_id', $cita->paciente_id)
-            ->where('cita_id', '!=', $cita->id)
-            ->orderByDesc('id')->limit(5)->get()
+        $historial = Consulta::with('personal')
+            ->where('paciente_id', $cita->paciente_id)
+            ->where(fn ($q) => $q->whereNull('cita_id')->orWhere('cita_id', '!=', $cita->id))
+            ->orderByDesc('fecha')->orderByDesc('id')->limit(6)->get()
             ->map(fn ($c) => [
                 'id'      => $c->id,
                 'fecha'   => $c->fecha ? Carbon::parse($c->fecha)->format('Y-m-d') : null,
-                'resumen' => Str::limit((string) ($c->notas_generales ?? ''), 140),
+                'medico'  => $this->nombre($c->personal),
+                'estado'  => $c->estado,
+                'resumen' => Str::limit((string) ($c->notas_generales ?? ''), 160),
             ])->values();
 
         $p = $cita->paciente;
@@ -336,6 +346,12 @@ class ConsultaController extends Controller
             }
         }
 
+        // Signos de esta consulta y los últimos registrados antes, para comparar
+        $signos = $consulta ? SignosVitales::where('consulta_id', $consulta->id)->latest('id')->first() : null;
+        $signosPrevios = SignosVitales::where('paciente_id', $cita->paciente_id)
+            ->when($consulta, fn ($q) => $q->where(fn ($w) => $w->whereNull('consulta_id')->orWhere('consulta_id', '!=', $consulta->id)))
+            ->latest('fecha_registro')->first();
+
         // Momento en que se inició la consulta (para el cronómetro)
         $inicio = $consulta?->created_at ?? $cita->updated_at;
         $segundos = ($cita->estado === 'En curso' && $inicio)
@@ -345,20 +361,41 @@ class ConsultaController extends Controller
         return response()->json([
             'cita'      => $this->dto($cita),
             'paciente'  => [
-                'nombre'   => $this->nombre($p),
-                'edad'     => $edad ?? data_get($p, 'edad'),
-                'sexo'     => data_get($p, 'sexo'),
-                'telefono' => data_get($p, 'telefono'),
-                'alergias' => data_get($p, 'alergias'),
+                'id'           => $p?->id,
+                'nombre'       => $this->nombre($p),
+                'edad'         => $edad,
+                'sexo'         => data_get($p, 'genero'),
+                'telefono'     => data_get($p, 'celular') ?: data_get($p, 'telefono'),
+                'curp'         => data_get($p, 'rut'),
+                'sangre'       => data_get($p, 'grupo_sanguineo'),
+                'alergias'     => $p ? $p->alergias->pluck('descripcion')->filter()->values() : [],
+                'condiciones'  => $p ? $p->condiciones->pluck('descripcion')->filter()->values() : [],
+                'medicamentos' => $p ? $p->medicamentos->pluck('nombre')->filter()->values() : [],
             ],
             'consulta'  => $consulta ? collect($consulta->toArray())->only([
                 'exploracion_fisica', 'cabeza_cuello', 'torax', 'abdomen',
                 'extremidades', 'piel_faneras', 'neurologico', 'notas_generales',
             ]) : null,
+            'signos'         => $signos ? $this->signosDto($signos) : null,
+            'signos_previos' => $signosPrevios ? $this->signosDto($signosPrevios) + ['fecha' => Carbon::parse($signosPrevios->fecha_registro)->format('Y-m-d')] : null,
             'historial' => $historial,
             'segundos'  => $segundos,
+            'guardado'  => $consulta?->updated_at?->format('H:i'),
             'receta_url' => $this->recetaUrl($consulta),
         ]);
+    }
+
+    private const SIGNOS = ['pa_sistolica', 'pa_diastolica', 'frecuencia_cardiaca', 'frecuencia_respiratoria', 'temperatura', 'saturacion_oxigeno', 'peso_kg', 'talla_cm', 'glucosa_sangre', 'nivel_dolor'];
+
+    private function signosDto(SignosVitales $s): array
+    {
+        $d = [];
+        foreach (self::SIGNOS as $k) {
+            $d[$k] = $s->{$k} !== null ? (float) $s->{$k} : null;
+        }
+        $d['imc'] = $s->imc !== null ? (float) $s->imc : null;
+
+        return $d;
     }
 
     // ================================================================= ACCIONES
@@ -440,6 +477,20 @@ class ConsultaController extends Controller
             'piel_faneras'       => 'nullable|string|max:2000',
             'neurologico'        => 'nullable|string|max:2000',
             'notas_generales'    => 'nullable|string|max:5000',
+            'signos'                          => 'nullable|array',
+            'signos.pa_sistolica'             => 'nullable|numeric|between:40,300',
+            'signos.pa_diastolica'            => 'nullable|numeric|between:20,200',
+            'signos.frecuencia_cardiaca'      => 'nullable|numeric|between:20,250',
+            'signos.frecuencia_respiratoria'  => 'nullable|numeric|between:4,80',
+            'signos.temperatura'              => 'nullable|numeric|between:30,45',
+            'signos.saturacion_oxigeno'       => 'nullable|numeric|between:50,100',
+            'signos.peso_kg'                  => 'nullable|numeric|between:0.5,400',
+            'signos.talla_cm'                 => 'nullable|numeric|between:30,250',
+            'signos.glucosa_sangre'           => 'nullable|numeric|between:10,900',
+            'signos.nivel_dolor'              => 'nullable|integer|between:0,10',
+        ], [
+            'signos.*.between' => 'Un signo vital está fuera del rango posible. Revísalo.',
+            'signos.*.numeric' => 'Los signos vitales deben ser números.',
         ]);
 
         $finalizar = $request->boolean('finalizar', true);
@@ -473,6 +524,22 @@ class ConsultaController extends Controller
                 'estado'      => $finalizar ? 'Finalizada' : 'En curso',
             ])->save();
 
+            // Signos vitales de esta consulta (un registro por consulta)
+            $signos = collect(request()->input('signos', []))->only(self::SIGNOS)
+                ->map(fn ($v) => ($v === '' || $v === null) ? null : $v);
+            if ($signos->filter(fn ($v) => $v !== null)->isNotEmpty()) {
+                $peso = $signos['peso_kg'] ?? null;
+                $talla = $signos['talla_cm'] ?? null;
+                SignosVitales::updateOrCreate(
+                    ['consulta_id' => $consulta->id],
+                    $signos->all() + [
+                        'paciente_id'    => $cita->paciente_id,
+                        'fecha_registro' => now(),
+                        'imc'            => ($peso && $talla) ? round($peso / pow($talla / 100, 2), 1) : null,
+                    ]
+                );
+            }
+
             if ($finalizar) {
                 $cita->forceFill(['estado' => 'Finalizada'])->save();
                 $this->liberarConsultorio($cita);
@@ -489,6 +556,7 @@ class ConsultaController extends Controller
             'finalizada'         => $finalizar,
             'consulta_id'        => $consulta->id,
             'message'            => $finalizar ? 'Consulta finalizada correctamente.' : 'Borrador guardado.',
+            'guardado'           => now()->format('H:i'),
             'redireccion_receta' => $finalizar ? $this->recetaUrl($consulta) : null,
         ]);
     }

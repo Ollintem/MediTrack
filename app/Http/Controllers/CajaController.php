@@ -14,7 +14,7 @@ class CajaController extends Controller
     {
         $ticketsPendientes = TicketVenta::with(['paciente', 'detalles.producto'])
             ->where('status', 'pendiente')
-            ->where('expires_at', '>', now())
+            ->where('expires_at', '>', now('America/Mexico_City'))
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -26,13 +26,8 @@ class CajaController extends Controller
         return view('caja.index', compact('ticketsPendientes', 'cobrosHoy'));
     }
 
-    /**
-     * NUEVO: busca el ticket por el folio que manda el lector de código de barras.
-     * GET /caja/ticket/{codigo}
-     */
     public function buscarPorCodigo(string $codigo)
     {
-        // Lector en inglés + teclado en español => el guion llega como apóstrofo
         $codigo = strtoupper(str_replace("'", '-', trim($codigo)));
 
         $ticket = TicketVenta::with(['paciente', 'detalles.producto'])
@@ -46,7 +41,7 @@ class CajaController extends Controller
             ], 404);
         }
 
-        if ($ticket->status === 'pendiente' && $ticket->expires_at <= now()) {
+        if ($ticket->status === 'pendiente' && $ticket->expires_at <= now('America/Mexico_City')) {
             $ticket->update(['status' => 'expirado']);
         }
 
@@ -75,11 +70,9 @@ class CajaController extends Controller
 
         try {
             $resultado = DB::transaction(function () use ($request, $id) {
-                // lockForUpdate: si dos cajas escanean el mismo ticket, la segunda
-                // espera y luego ve status 'pagado', así no se cobra dos veces.
-                $ticket = TicketVenta::lockForUpdate()->findOrFail($id);
+                $ticket = TicketVenta::with('detalles.producto')->lockForUpdate()->findOrFail($id);
 
-                if ($ticket->status === 'pendiente' && $ticket->expires_at <= now()) {
+                if ($ticket->status === 'pendiente' && $ticket->expires_at <= now('America/Mexico_City')) {
                     $ticket->update(['status' => 'expirado']);
                     return ['error' => 'EL TICKET HA EXPIRADO. REVALIDAR EN TERMINAL POS.'];
                 }
@@ -88,18 +81,20 @@ class CajaController extends Controller
                     return ['error' => 'ESTE TICKET YA FUE PROCESADO O CANCELADO.'];
                 }
 
+                // Marca como pagado
                 $ticket->update(['status' => 'pagado']);
 
+                // Registra el ingreso financiero
                 MovimientoCaja::create([
                     'ticket_id'   => $ticket->id,
-                    'user_id'     => Auth::id(),
+                    'user_id'     => Auth::id() ?? 1,
                     'tipo'        => 'Ingreso',
                     'concepto'    => "PAGO DE TICKET DE FARMACIA: {$ticket->codigo_ticket}",
                     'monto'       => $ticket->monto_total,
                     'metodo_pago' => $request->metodo_pago,
                 ]);
 
-                return ['ticket' => $ticket->load(['paciente', 'detalles.producto'])];
+                return ['ticket' => $ticket->fresh(['paciente', 'detalles.producto'])];
             });
 
             if (isset($resultado['error'])) {
@@ -108,7 +103,7 @@ class CajaController extends Controller
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'PAGO REGISTRADO CORRECTAMENTE. TICKET ENVIADO A DESPACHO.',
+                'message' => 'PAGO REGISTRADO CORRECTAMENTE. TICKET LISTO PARA SURTIR EN POS.',
                 'ticket'  => $resultado['ticket'],
             ]);
 
@@ -116,7 +111,7 @@ class CajaController extends Controller
             report($e);
             return response()->json([
                 'status'  => 'error',
-                'message' => 'ERROR AL PROCESAR EL COBRO.',
+                'message' => 'ERROR AL PROCESAR EL COBRO: ' . $e->getMessage(),
             ], 500);
         }
     }

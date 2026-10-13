@@ -26,40 +26,36 @@ class ProductoInventario extends Model
         'estado'
     ];
 
-    // Asegura que estas propiedades calculadas se incluyan en las respuestas JSON
+    // Incluir stock reservado y disponible dinámicamente en respuestas JSON
     protected $appends = ['stock_reservado', 'stock_disponible'];
 
-    // Guarda el cálculo para no repetir la consulta en el mismo request
-    protected $stockReservadoCache = null;
-
+    /**
+     * Relación con el modelo CategoriaInventario
+     */
     public function categoria()
     {
         return $this->belongsTo(CategoriaInventario::class, 'categoria_id');
     }
 
     /**
-     * Calcula la cantidad de piezas 'flotantes' reservadas en tickets 'pendiente' vigentes (< 25 min)
+     * Calcula las piezas apartadas en tickets PENDIENTES vigentes (< 25 min)
      */
     public function getStockReservadoAttribute()
     {
-        if ($this->stockReservadoCache === null) {
-            $this->stockReservadoCache = (int) DB::table('ticket_detalles')
-                ->join('tickets_venta', 'ticket_detalles.ticket_id', '=', 'tickets_venta.id')
-                ->where('ticket_detalles.producto_id', $this->id)
-                ->where('tickets_venta.status', 'pendiente')
-                ->where('tickets_venta.expires_at', '>', now())
-                ->sum('ticket_detalles.cantidad');
-        }
-
-        return $this->stockReservadoCache;
+        return DB::table('ticket_detalles')
+            ->join('tickets_venta', 'ticket_detalles.ticket_id', '=', 'tickets_venta.id')
+            ->where('ticket_detalles.producto_id', $this->id)
+            ->where('tickets_venta.status', 'pendiente')
+            ->where('tickets_venta.expires_at', '>', now('America/Mexico_City'))
+            ->sum('ticket_detalles.cantidad') ?? 0;
     }
 
     /**
-     * Calcula el stock disponible vendible para la Terminal POS
+     * Stock disponible vendible en tiempo real
      */
     public function getStockDisponibleAttribute()
     {
-        $actual = $this->stock_actual ?? 0;
-        return max(0, $actual - $this->stock_reservado);
+        $fisico = $this->stock_actual ?? 0;
+        return max(0, $fisico - $this->stock_reservado);
     }
 }

@@ -1,1226 +1,884 @@
 @extends('layouts.admin')
 
+{{--
+    MÓDULO DE CITAS · MediTrack
+    Tablero del día (columnas por médico o por consultorio, línea de «ahora», clic en un espacio libre
+    para agendar), vista de mes, calendario chico, pase de la cita que se voltea para editar
+    (citas/modal.blade.php) y próximas citas. Guarda por AJAX: CitaController responde JSON.
+--}}
+
 @section('content')
 @php
-    // ---------- Mes que se está viendo (con límites para evitar valores inválidos en la URL) ----------
-    $currentYear  = max(2000, min(2100, (int) request('anio', date('Y'))));
-    $currentMonth = max(1, min(12, (int) request('mes', date('m'))));
-
-    $inicioMes    = \Carbon\Carbon::createFromDate($currentYear, $currentMonth, 1)->startOfDay();
-    $mesAnterior  = $inicioMes->copy()->subMonth();
-    $mesSiguiente = $inicioMes->copy()->addMonth();
-
-    $daysInMonth = $inicioMes->daysInMonth;
-    $offset      = $inicioMes->dayOfWeekIso - 1;                       // la cuadrícula empieza en lunes
-    $finales     = (7 - (($offset + $daysInMonth) % 7)) % 7;           // celdas para completar la última semana
-    $diasMesAnterior = $mesAnterior->daysInMonth;
-
-    $hoyStr       = date('Y-m-d');
-    $esMesActual  = $currentYear == date('Y') && $currentMonth == date('n');
-    $mesPrefijo   = sprintf('%04d-%02d', $currentYear, $currentMonth);
-
-    // Dirección de la animación al cambiar de mes
-    $ordinalActual = $currentYear * 12 + $currentMonth;
-    $ordinalHoy    = (int) date('Y') * 12 + (int) date('m');
-    $dirHoy        = $ordinalHoy >= $ordinalActual ? 'siguiente' : 'anterior';
-
-    $urlAnterior  = request()->fullUrlWithQuery(['mes' => $mesAnterior->month,  'anio' => $mesAnterior->year]);
-    $urlSiguiente = request()->fullUrlWithQuery(['mes' => $mesSiguiente->month, 'anio' => $mesSiguiente->year]);
-    $urlHoy       = request()->fullUrlWithQuery(['mes' => (int) date('m'), 'anio' => (int) date('Y')]);
-
-    $citas = collect($citas ?? []);
-    $citasMes = $citas->filter(fn ($c) => \Carbon\Carbon::parse($c->fecha)->format('Y-m') === $mesPrefijo);
-
-    // Catálogos para el modal
-    $listaPacientes    = collect($pacientes ?? []);
-    $listaPersonal     = collect($personal ?? $doctores ?? $medicos ?? []);
-    $listaConsultorios = collect($consultorios ?? []);
-
-    $nombreDe = fn ($m) => data_get($m, 'nombre_completo') ?: trim(
-        data_get($m, 'nombre', '') . ' ' . (data_get($m, 'apellidos') ?? data_get($m, 'apellido_paterno') ?? '')
-    );
-
-    $opPacientes    = $listaPacientes->map(fn ($m) => ['id' => data_get($m, 'id'), 'nombre' => $nombreDe($m)])
-                        ->sortBy('nombre', SORT_NATURAL | SORT_FLAG_CASE)->values();
-    $opPersonal     = $listaPersonal->map(fn ($m) => ['id' => data_get($m, 'id'), 'nombre' => $nombreDe($m)])
-                        ->sortBy('nombre', SORT_NATURAL | SORT_FLAG_CASE)->values();
-    $opConsultorios = $listaConsultorios->map(fn ($m) => [
-        'id' => data_get($m, 'id'), 'nombre' => data_get($m, 'nombre'),
-        'piso' => data_get($m, 'piso'), 'estado' => data_get($m, 'estado'),
-    ])->values();
-
-    $citasJs = $citas->map(fn ($c) => [
-        'id'             => $c->id,
-        'fecha'          => \Carbon\Carbon::parse($c->fecha)->format('Y-m-d'),
-        'hora'           => \Carbon\Carbon::parse($c->hora)->format('H:i'),
-        'duracion_min'   => (int) ($c->duracion_min ?? 30),
-        'estado'         => $c->estado ?? 'Pendiente',
-        'motivo'         => $c->motivo ?? '',
-        'tipo_consulta'  => $c->tipo_consulta ?? 'Primera Vez',
-        'paciente_id'    => $c->paciente_id,
-        'personal_id'    => $c->personal_id,
-        'consultorio_id' => $c->consultorio_id,
-        'paciente'       => data_get($c, 'paciente.nombre_completo') ?: (data_get($c, 'paciente.nombre') ?: 'Paciente'),
-    ])->values();
-
-    $mesesAbrev = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-
-    $tarjetas = [
-        // [título, clave, icono, color icono, color barra]
-        ['Citas del mes', 'total',      'bi-calendar3',       'bg-teal-50 text-teal-600',       'bg-teal-500'],
-        ['Pendientes',    'Pendiente',  'bi-hourglass-split', 'bg-amber-50 text-amber-600',     'bg-amber-400'],
-        ['Confirmadas',   'Confirmada', 'bi-check2-circle',   'bg-emerald-50 text-emerald-600', 'bg-emerald-500'],
-        ['Canceladas',    'Cancelada',  'bi-x-circle',        'bg-red-50 text-red-500',         'bg-red-500'],
-    ];
+    $datosVista = array_merge($datosCitas ?? ['citas' => [], 'pacientes' => [], 'medicos' => [], 'consultorios' => []], [
+        'url'  => url('citas'),
+        'csrf' => csrf_token(),
+    ]);
 @endphp
 
-<div x-data="moduloCitas()" class="space-y-6 animate-fade-in">
+<div class="ci" x-data="modCitas()" :class="{ 'editando': editando }" @keydown.window="tecla($event)">
 
-    {{-- ===================== ENCABEZADO ===================== --}}
-    <div class="aparece relative overflow-hidden rounded-3xl bg-gradient-to-br from-teal-900 via-teal-800 to-emerald-700 text-white p-6 sm:p-7 shadow-xl shadow-teal-900/20">
-        <div class="absolute -right-16 -top-20 w-64 h-64 rounded-full bg-white/5 flotar-lento"></div>
-        <div class="absolute right-40 -bottom-24 w-56 h-56 rounded-full bg-emerald-400/10 flotar-lento" style="animation-delay:-3s"></div>
-        <svg class="absolute left-0 right-0 bottom-3 w-full h-10 opacity-20 pointer-events-none" viewBox="0 0 800 40" preserveAspectRatio="none" fill="none" aria-hidden="true">
-            <path class="ecg-linea" d="M0 20 H300 L315 20 L325 6 L338 34 L350 2 L364 38 L374 20 H520 L532 13 L544 20 H800" stroke="#6ee7b7" stroke-width="2" stroke-linejoin="round"/>
-        </svg>
+    <!-- BÚSQUEDA Y ALTA -->
+    <header class="ci-top">
+        <label class="ci-cmd">
+            <i class="bi bi-search" aria-hidden="true"></i>
+            <span class="ci-sr">Buscar cita</span>
+            <input type="search" x-ref="buscar" x-model.debounce.150ms="q" autocomplete="off" placeholder="Busca una cita por paciente o motivo">
+            <kbd aria-hidden="true">/</kbd>
+        </label>
+        <button type="button" class="ci-dark" @click="nueva()">Agendar cita <kbd>N</kbd></button>
+    </header>
 
-        <div class="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
-            <div class="min-w-0">
-                <p class="text-[10px] font-black uppercase tracking-[.2em] text-emerald-300">Agenda médica</p>
-                <h1 class="text-2xl sm:text-3xl font-black tracking-tight mt-1">Calendario de citas</h1>
-                <p class="text-xs text-teal-100/80 font-semibold mt-1" x-text="fechaLarga(hoy)"></p>
-
-                <div class="flex flex-wrap gap-2 mt-4">
-                    <span class="inline-flex items-center gap-2 bg-white/10 border border-white/15 rounded-full px-3 py-1.5 text-[11px] font-bold backdrop-blur-sm">
-                        <i class="bi bi-calendar-check text-emerald-300"></i>
-                        <span x-text="citasHoy.length === 1 ? '1 cita hoy' : citasHoy.length + ' citas hoy'"></span>
-                    </span>
-                    <template x-if="siguienteHoy">
-                        <button type="button" @click="verCita(siguienteHoy.id)"
-                                class="inline-flex items-center gap-2 bg-white text-teal-900 rounded-full pl-2 pr-3 py-1.5 text-[11px] font-bold shadow-lg shadow-teal-950/20 hover:-translate-y-0.5 transition-all cursor-pointer">
-                            <span class="relative flex w-2 h-2">
-                                <span class="absolute inline-flex w-full h-full rounded-full bg-amber-400 opacity-75 animate-ping"></span>
-                                <span class="relative inline-flex w-2 h-2 rounded-full bg-amber-500"></span>
-                            </span>
-                            <span>Siguiente: <span class="font-black" x-text="siguienteHoy.paciente"></span></span>
-                            <span class="text-teal-600" x-text="'· ' + etiquetaRelativa(siguienteHoy)"></span>
-                        </button>
-                    </template>
-                    <span x-show="!siguienteHoy" class="inline-flex items-center gap-2 bg-white/10 border border-white/15 rounded-full px-3 py-1.5 text-[11px] font-bold text-teal-100">
-                        <i class="bi bi-cup-hot"></i> No quedan citas por hoy
-                    </span>
-                </div>
-            </div>
-
-            <div class="flex flex-col sm:flex-row gap-2.5 lg:w-auto w-full">
-                <label class="relative flex-1 sm:w-64">
-                    <span class="sr-only">Buscar paciente</span>
-                    <i class="bi bi-search absolute left-3.5 top-1/2 -translate-y-1/2 text-teal-100/70 text-xs"></i>
-                    <input x-ref="buscar" x-model.debounce.200ms="busqueda" type="search" placeholder="Buscar paciente o motivo…"
-                           class="w-full bg-white/10 hover:bg-white/15 focus:bg-white focus:text-slate-800 border border-white/20 focus:border-white rounded-2xl pl-9 pr-10 py-2.5 text-xs font-semibold text-white placeholder-teal-100/60 outline-none transition-all">
-                    <kbd class="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-teal-100/60 border border-white/20 rounded px-1.5 py-0.5 hidden sm:block" x-show="!busqueda">/</kbd>
-                </label>
-                <button @click="nuevaCita()" type="button"
-                        class="group inline-flex items-center justify-center gap-2 bg-white text-teal-800 hover:bg-emerald-50 text-xs font-black px-4 py-2.5 rounded-2xl shadow-lg shadow-teal-950/25 transition-all hover:-translate-y-0.5 active:scale-95 cursor-pointer">
-                    <i class="bi bi-plus-lg text-sm transition-transform duration-300 group-hover:rotate-90"></i>
-                    <span>Agendar nueva cita</span>
+    <!-- CABECERA: fecha, navegación, indicadores y vista -->
+    <section class="ci-cab">
+        <div class="ci-g">
+            <b class="t" x-text="vista === 'dia' ? Number(dia.slice(8)) : nombreMes(mesNav)"></b>
+            <span>
+                <em x-text="vista === 'dia' ? diaSemana(dia) : mesNav.slice(0, 4)"></em>
+                <span x-text="vista === 'dia' ? nombreMes(dia.slice(0, 7)).replace(/^./, l => l.toUpperCase()) + ' ' + dia.slice(0, 4) : (contarMes() + (contarMes() === 1 ? ' cita' : ' citas'))"></span>
+            </span>
+        </div>
+        <div class="ci-nav">
+            <button type="button" class="ci-ico" @click="mover(-1)" :aria-label="vista === 'dia' ? 'Día anterior' : 'Mes anterior'"><i class="bi bi-chevron-left"></i></button>
+            <button type="button" class="ci-hoy" @click="irHoy()" :disabled="vista === 'dia' ? dia === hoy : mesNav === hoy.slice(0, 7)">Hoy</button>
+            <button type="button" class="ci-ico" @click="mover(1)" :aria-label="vista === 'dia' ? 'Día siguiente' : 'Mes siguiente'"><i class="bi bi-chevron-right"></i></button>
+        </div>
+        <div class="ci-ind">
+            <template x-for="e in ESTADOS" :key="'i' + e.valor">
+                <button type="button" :class="'e-' + e.slug" @click="filtroEstado = filtroEstado === e.valor ? '' : e.valor" :aria-pressed="(filtroEstado === e.valor).toString()">
+                    <span x-text="e.plural"></span>
+                    <b class="t" x-text="resumen[e.valor] || 0"></b>
                 </button>
-            </div>
-        </div>
-    </div>
-
-    {{-- ===================== RESUMEN (reacciona a los filtros) ===================== --}}
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        @foreach ($tarjetas as $i => [$titulo, $clave, $icono, $colorIcono, $colorBarra])
-            @php $inicial = $clave === 'total' ? $citasMes->count() : $citasMes->where('estado', $clave)->count(); @endphp
-            <div class="tarjeta-stat group relative overflow-hidden bg-white rounded-2xl border border-slate-100 shadow-sm p-4 transition-all hover:shadow-md hover:-translate-y-1 hover:border-slate-200"
-                 style="animation-delay: {{ $i * 70 }}ms">
-                <div class="flex items-center justify-between gap-3">
-                    <div>
-                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{{ $titulo }}</p>
-                        <p class="text-2xl font-black text-slate-800 mt-1 tabular-nums"
-                           x-data="contador()" x-effect="ir(resumen['{{ $clave }}'])" x-text="valor">{{ $inicial }}</p>
-                    </div>
-                    <span class="w-11 h-11 rounded-2xl flex items-center justify-center text-lg shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6 {{ $colorIcono }}">
-                        <i class="bi {{ $icono }}"></i>
-                    </span>
-                </div>
-                <div class="mt-3 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                    <div class="h-full rounded-full {{ $colorBarra }} transition-all duration-700 ease-out"
-                         :style="'width:' + porcentaje('{{ $clave }}') + '%'"></div>
-                </div>
-                <p class="text-[10px] font-bold text-slate-400 mt-1.5"
-                   x-text="'{{ $clave }}' === 'total' ? (filtroDoctor ? 'Del doctor seleccionado' : 'Todos los doctores') : porcentaje('{{ $clave }}') + '% del mes'"></p>
-            </div>
-        @endforeach
-    </div>
-
-    <div class="grid gap-6 items-start" :class="layoutPanel ? 'lg:grid-cols-[1fr_300px]' : 'lg:grid-cols-1'">
-
-        {{-- ===================== CALENDARIO ===================== --}}
-        <div class="aparece bg-white p-4 sm:p-6 rounded-3xl border border-slate-100 shadow-sm min-w-0" style="--d: 260ms">
-
-            {{-- Barra de herramientas --}}
-            <div class="flex items-center justify-between mb-5 flex-wrap gap-3"
-                 x-data="{ openSelector: false, verAno: {{ $currentYear }}, base: @js(request()->url()) }">
-
-                <div class="relative">
-                    <button type="button" @click="openSelector = !openSelector; verAno = {{ $currentYear }};"
-                            class="titulo-mes text-lg font-black text-slate-800 flex items-center gap-2 px-2.5 py-1.5 -ml-2.5 rounded-xl hover:bg-slate-50 transition-all cursor-pointer">
-                        <span>{{ ucfirst($inicioMes->translatedFormat('F')) }}</span>
-                        <span class="text-slate-300 font-bold">{{ $currentYear }}</span>
-                        <i class="bi bi-chevron-down text-[10px] text-slate-400 transition-transform" :class="openSelector && 'rotate-180'"></i>
-                    </button>
-
-                    <div x-show="openSelector" @click.outside="openSelector = false" x-cloak
-                         x-transition:enter="transition ease-out duration-150"
-                         x-transition:enter-start="opacity-0 -translate-y-1 scale-95"
-                         x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                         x-transition:leave="transition ease-in duration-100"
-                         x-transition:leave-start="opacity-100 scale-100"
-                         x-transition:leave-end="opacity-0 scale-95"
-                         class="absolute left-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl shadow-slate-900/10 z-30 p-3 w-64 origin-top-left">
-                        <div class="flex items-center justify-between mb-3">
-                            <button type="button" @click="verAno--" class="w-7 h-7 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500 cursor-pointer" aria-label="Año anterior">
-                                <i class="bi bi-chevron-left text-[10px]"></i>
-                            </button>
-                            <span class="text-xs font-black text-slate-800" x-text="verAno"></span>
-                            <button type="button" @click="verAno++" class="w-7 h-7 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500 cursor-pointer" aria-label="Año siguiente">
-                                <i class="bi bi-chevron-right text-[10px]"></i>
-                            </button>
-                        </div>
-                        <div class="grid grid-cols-3 gap-1.5">
-                            @foreach ($mesesAbrev as $indice => $nombreMes)
-                                <a :href="base + '?mes={{ $indice + 1 }}&anio=' + verAno"
-                                   @click="recordarDireccion((verAno * 12 + {{ $indice + 1 }}) > {{ $ordinalActual }} ? 'siguiente' : 'anterior')"
-                                   class="text-center text-[11px] font-bold py-2 rounded-xl transition-all"
-                                   :class="(verAno == {{ $currentYear }} && {{ $indice + 1 }} == {{ $currentMonth }}) ? 'bg-teal-700 text-white' : 'text-slate-600 hover:bg-slate-100'">
-                                    {{ $nombreMes }}
-                                </a>
-                            @endforeach
-                        </div>
-                        <a href="{{ $urlHoy }}" @click="recordarDireccion(@js($dirHoy))"
-                           class="block text-center w-full mt-3 pt-3 border-t border-slate-100 text-[10px] font-black text-teal-700 hover:text-teal-800 uppercase tracking-wide">
-                            Ir a hoy
-                        </a>
-                    </div>
-                </div>
-
-                <div class="flex items-center gap-2 flex-wrap">
-                    {{-- Vista mes / lista --}}
-                    <div class="relative flex bg-slate-100 rounded-xl p-1 text-[11px] font-bold">
-                        <span class="absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-lg bg-white shadow-sm transition-all duration-300 ease-out"
-                              :style="vista === 'mes' ? 'left:4px' : 'left:calc(50%)'"></span>
-                        <button type="button" @click="cambiarVista('mes')" class="relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-                                :class="vista === 'mes' ? 'text-teal-700' : 'text-slate-500 hover:text-slate-700'">
-                            <i class="bi bi-grid-3x3-gap"></i> Mes
-                        </button>
-                        <button type="button" @click="cambiarVista('lista')" class="relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-                                :class="vista === 'lista' ? 'text-teal-700' : 'text-slate-500 hover:text-slate-700'">
-                            <i class="bi bi-list-ul"></i> Lista
-                        </button>
-                    </div>
-
-                    <button type="button" @click="alternarPanel()"
-                            :class="panelAbierto ? 'bg-teal-50 text-teal-700 border-teal-200' : 'bg-white text-slate-500 border-slate-200 hover:border-teal-300'"
-                            :title="panelAbierto ? 'Ocultar próximas citas' : 'Mostrar próximas citas'"
-                            class="hidden lg:flex items-center gap-2 border rounded-xl px-3 py-2 text-[11px] font-bold transition-all cursor-pointer">
-                        <i class="bi" :class="panelAbierto ? 'bi-layout-sidebar-inset-reverse' : 'bi-layout-sidebar-reverse'"></i>
-                        <span>Próximas</span>
-                        <span class="min-w-[18px] h-[18px] px-1 rounded-full bg-teal-600 text-white text-[9px] font-black flex items-center justify-center" x-text="proximas.length"></span>
-                    </button>
-
-                    <select x-model="filtroDoctor" x-show="personal.length" x-cloak aria-label="Filtrar por doctor"
-                            class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-600 outline-none focus:border-teal-500 cursor-pointer max-w-[180px]">
-                        <option value="">Todos los doctores</option>
-                        <template x-for="p in personal" :key="p.id">
-                            <option :value="p.id" x-text="p.nombre"></option>
-                        </template>
-                    </select>
-
-                    <div class="flex items-center gap-1.5">
-                        <a href="{{ $urlAnterior }}" @click="recordarDireccion('anterior')" title="Mes anterior (←)"
-                           class="w-8 h-8 rounded-xl border border-slate-200 hover:bg-slate-50 hover:-translate-x-0.5 flex items-center justify-center text-slate-500 transition-all">
-                            <i class="bi bi-chevron-left text-xs"></i>
-                        </a>
-                        @if ($esMesActual)
-                            <span class="text-[11px] font-bold text-teal-700 bg-teal-50 px-3 py-1.5 rounded-xl">Hoy</span>
-                        @else
-                            <a href="{{ $urlHoy }}" @click="recordarDireccion(@js($dirHoy))" title="Ir al mes actual (T)"
-                               class="text-[11px] font-bold text-slate-500 hover:text-teal-700 bg-slate-50 hover:bg-teal-50 px-3 py-1.5 rounded-xl transition-all">
-                                Hoy
-                            </a>
-                        @endif
-                        <a href="{{ $urlSiguiente }}" @click="recordarDireccion('siguiente')" title="Mes siguiente (→)"
-                           class="w-8 h-8 rounded-xl border border-slate-200 hover:bg-slate-50 hover:translate-x-0.5 flex items-center justify-center text-slate-500 transition-all">
-                            <i class="bi bi-chevron-right text-xs"></i>
-                        </a>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Aviso de filtros activos --}}
-            <div x-show="hayFiltros" x-cloak x-transition.opacity
-                 class="mb-4 flex items-center gap-2 flex-wrap text-[11px] font-bold bg-amber-50 border border-amber-100 text-amber-800 rounded-2xl px-3.5 py-2">
-                <i class="bi bi-funnel-fill"></i>
-                <span x-text="'Mostrando ' + totalVisibleMes + ' de ' + resumen.totalSinFiltro + ' citas del mes'"></span>
-                <button type="button" @click="limpiarFiltros()" class="ml-auto text-amber-700 hover:text-amber-900 underline underline-offset-2 cursor-pointer">Quitar filtros</button>
-            </div>
-
-            {{-- ---------- VISTA MES ---------- --}}
-            <div x-show="vista === 'mes'" :class="dirAnim === 'siguiente' ? 'grid-slide-derecha' : (dirAnim === 'anterior' ? 'grid-slide-izquierda' : '')">
-                <div class="grid grid-cols-7 gap-1.5 sm:gap-2 text-center">
-                    @foreach (['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] as $idx => $dia)
-                        <span class="text-[10px] font-black uppercase py-2 {{ $idx >= 5 ? 'text-slate-300' : 'text-slate-400' }}">{{ $dia }}</span>
-                    @endforeach
-
-                    {{-- Días del mes anterior --}}
-                    @for ($i = 0; $i < $offset; $i++)
-                        <a href="{{ $urlAnterior }}" @click="recordarDireccion('anterior')"
-                           class="min-h-[64px] sm:min-h-[112px] p-2 rounded-2xl border border-dashed border-slate-100 text-left text-xs font-bold text-slate-300 hover:text-slate-400 hover:bg-slate-50/50 transition-all">
-                            {{ $diasMesAnterior - $offset + 1 + $i }}
-                        </a>
-                    @endfor
-
-                    @for ($dia = 1; $dia <= $daysInMonth; $dia++)
-                        @php
-                            $fechaDia      = sprintf('%s-%02d', $mesPrefijo, $dia);
-                            $esHoy         = $fechaDia === $hoyStr;
-                            $esPasado      = $fechaDia < $hoyStr;
-                            $esFinDeSemana = (($offset + $dia - 1) % 7) >= 5;
-                            $fondo = $esHoy ? 'border-teal-300 ring-1 ring-teal-200 bg-teal-50/40 hoy-pulso'
-                                   : ($esPasado ? 'border-slate-100 bg-white'
-                                   : 'border-slate-100 ' . ($esFinDeSemana ? 'bg-slate-100/50' : 'bg-slate-50/50'));
-                        @endphp
-
-                        <div role="button" tabindex="0"
-                             @click="clicDia($event, '{{ $fechaDia }}', {{ $esPasado ? 'true' : 'false' }})"
-                             @keydown.enter.prevent="clicDia($event, '{{ $fechaDia }}', {{ $esPasado ? 'true' : 'false' }})"
-                             :aria-label="etiquetaDia('{{ $fechaDia }}')"
-                             style="animation-delay: {{ min(($dia - 1) * 12, 300) }}ms"
-                             class="celda-dia min-h-[64px] sm:min-h-[112px] p-1.5 sm:p-2 rounded-2xl border transition-all text-left flex flex-col gap-1.5 group relative overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-teal-500
-                                    {{ $fondo }} {{ $esPasado ? 'cursor-default' : 'cursor-pointer hover:bg-teal-50/50 hover:border-teal-200 hover:shadow-md hover:shadow-teal-900/5 hover:-translate-y-0.5' }}"
-                             :class="coincideBusqueda('{{ $fechaDia }}') && 'ring-2 ring-amber-300 border-amber-200'">
-
-                            <div class="flex items-center justify-between gap-1">
-                                <span class="text-[11px] sm:text-xs font-black w-6 h-6 flex items-center justify-center rounded-full shrink-0 transition-all
-                                             {{ $esHoy ? 'bg-teal-700 text-white shadow-[0_0_0_4px_rgba(15,118,110,0.15)]' : ($esPasado ? 'text-slate-300' : 'text-slate-600 group-hover:text-teal-700 group-hover:bg-teal-100') }}">
-                                    {{ $dia }}
-                                </span>
-                                <span x-show="citasDia('{{ $fechaDia }}').length" x-cloak
-                                      class="hidden sm:inline text-[9px] font-black text-slate-400 group-hover:hidden"
-                                      x-text="citasDia('{{ $fechaDia }}').length"></span>
-                                @unless ($esPasado)
-                                    <span class="hidden sm:flex w-5 h-5 rounded-full bg-teal-600 text-white items-center justify-center opacity-0 scale-50 group-hover:opacity-100 group-hover:scale-100 transition-all duration-200 shadow-sm shadow-teal-600/30">
-                                        <i class="bi bi-plus text-sm leading-none"></i>
-                                    </span>
-                                @endunless
-                            </div>
-
-                            {{-- Escritorio: tarjetitas de cita --}}
-                            <div class="hidden sm:block space-y-1">
-                                <template x-for="(c, i) in citasDia('{{ $fechaDia }}').slice(0, maxVisibles)" :key="c.id">
-                                    <div @click.stop="verCita(c.id)"
-                                         :class="[chipDe(c), bordeDe(c), c.estado === 'Cancelada' && 'line-through opacity-60']"
-                                         :style="'--d:' + (220 + i * 70) + 'ms'"
-                                         class="chip-cita border-l-[3px] text-[9px] font-bold px-1.5 py-1 rounded-lg truncate hover:scale-[1.04] hover:shadow-sm transition-all cursor-pointer"
-                                         :title="c.paciente + ' · ' + c.hora + ' – ' + horaFin(c) + (c.motivo ? ' · ' + c.motivo : '')">
-                                        <span class="opacity-70 tabular-nums" x-text="c.hora"></span>
-                                        <span x-text="c.paciente"></span>
-                                    </div>
-                                </template>
-                                <button type="button"
-                                        x-show="citasDia('{{ $fechaDia }}').length > maxVisibles" x-cloak
-                                        @click.stop="abrirDia('{{ $fechaDia }}')"
-                                        class="text-[9px] font-black text-teal-600 hover:text-teal-800 hover:bg-teal-50 rounded-md px-1.5 py-0.5 cursor-pointer"
-                                        x-text="'+' + (citasDia('{{ $fechaDia }}').length - maxVisibles) + ' más'"></button>
-                            </div>
-
-                            {{-- Móvil: puntos de color --}}
-                            <div class="sm:hidden flex flex-wrap gap-0.5">
-                                <template x-for="c in citasDia('{{ $fechaDia }}').slice(0, 6)" :key="c.id">
-                                    <span class="w-1.5 h-1.5 rounded-full" :class="puntoDe(c)"></span>
-                                </template>
-                            </div>
-
-                            {{-- Barra de ocupación del día --}}
-                            <div x-show="citasDia('{{ $fechaDia }}').length" x-cloak class="mt-auto h-1 rounded-full bg-slate-100 overflow-hidden" aria-hidden="true">
-                                <div class="h-full rounded-full bg-gradient-to-r from-teal-400 to-emerald-400 transition-all duration-500"
-                                     :style="'width:' + ocupacion('{{ $fechaDia }}') + '%'"></div>
-                            </div>
-                        </div>
-                    @endfor
-
-                    {{-- Días del mes siguiente --}}
-                    @for ($i = 1; $i <= $finales; $i++)
-                        <a href="{{ $urlSiguiente }}" @click="recordarDireccion('siguiente')"
-                           class="min-h-[64px] sm:min-h-[112px] p-2 rounded-2xl border border-dashed border-slate-100 text-left text-xs font-bold text-slate-300 hover:text-slate-400 hover:bg-slate-50/50 transition-all">
-                            {{ $i }}
-                        </a>
-                    @endfor
-                </div>
-            </div>
-
-            {{-- ---------- VISTA LISTA ---------- --}}
-            <div x-show="vista === 'lista'" x-cloak class="space-y-5">
-                <template x-for="(g, gi) in agendaMes" :key="g.fecha">
-                    <div class="aparece flex gap-3 sm:gap-4" :style="'--d:' + Math.min(gi * 60, 400) + 'ms'">
-                        <div class="w-14 shrink-0 text-center pt-1">
-                            <p class="text-[10px] font-black uppercase" :class="g.fecha === hoy ? 'text-teal-600' : 'text-slate-400'" x-text="diaSemanaCorto(g.fecha)"></p>
-                            <p class="text-2xl font-black leading-none mt-0.5 w-11 h-11 mx-auto flex items-center justify-center rounded-2xl"
-                               :class="g.fecha === hoy ? 'bg-teal-700 text-white shadow-lg shadow-teal-700/25' : (g.fecha < hoy ? 'text-slate-300' : 'text-slate-800')"
-                               x-text="Number(g.fecha.slice(8))"></p>
-                        </div>
-                        <div class="flex-1 min-w-0 space-y-2 border-l-2 border-slate-100 pl-3 sm:pl-4 pb-1">
-                            <template x-for="c in g.citas" :key="c.id">
-                                <button type="button" @click="verCita(c.id)"
-                                        class="w-full text-left flex items-center gap-3 p-3 rounded-2xl border border-slate-100 bg-white hover:border-teal-200 hover:shadow-md hover:shadow-teal-900/5 hover:translate-x-1 transition-all cursor-pointer"
-                                        :class="c.estado === 'Cancelada' && 'opacity-60'">
-                                    <span class="text-center shrink-0 w-12">
-                                        <span class="block text-xs font-black text-slate-800 tabular-nums" x-text="c.hora"></span>
-                                        <span class="block text-[9px] font-bold text-slate-400 tabular-nums" x-text="horaFin(c)"></span>
-                                    </span>
-                                    <span class="w-1 self-stretch rounded-full" :class="puntoDe(c)"></span>
-                                    <span class="min-w-0 flex-1">
-                                        <span class="block text-xs font-black text-slate-800 truncate" :class="c.estado === 'Cancelada' && 'line-through'" x-text="c.paciente"></span>
-                                        <span class="block text-[10px] font-semibold text-slate-400 truncate"
-                                              x-text="nombreDe('personal', c.personal_id) + ' · ' + nombreDe('consultorios', c.consultorio_id)"></span>
-                                    </span>
-                                    <span class="hidden sm:inline text-[9px] font-black px-2 py-0.5 rounded-full shrink-0" :class="chipDe(c)" x-text="c.estado"></span>
-                                </button>
-                            </template>
-                        </div>
-                    </div>
-                </template>
-
-                <div x-show="agendaMes.length === 0" class="py-14 text-center">
-                    <span class="flotar inline-flex w-16 h-16 rounded-3xl bg-teal-50 text-teal-500 items-center justify-center text-3xl mb-3">
-                        <i class="bi bi-calendar2-heart"></i>
-                    </span>
-                    <p class="text-sm font-black text-slate-600" x-text="hayFiltros ? 'Ninguna cita coincide con los filtros' : 'No hay citas este mes'"></p>
-                    <button type="button" @click="hayFiltros ? limpiarFiltros() : nuevaCita()"
-                            class="mt-3 text-xs font-black text-teal-700 hover:text-teal-900 cursor-pointer"
-                            x-text="hayFiltros ? 'Quitar filtros' : '+ Agendar la primera'"></button>
-                </div>
-            </div>
-
-            {{-- Leyenda / filtro por estado --}}
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-2 mt-6 pt-4 border-t border-slate-100">
-                <span class="text-[10px] font-black text-slate-400 uppercase tracking-wide mr-1">Estados</span>
-                <template x-for="(p, nombre) in paleta" :key="nombre">
-                    <button type="button" @click="alternarEstado(nombre)" :aria-pressed="!estadoOculto(nombre)"
-                            :class="estadoOculto(nombre) ? 'opacity-40 line-through' : ''"
-                            class="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 px-2.5 py-1 rounded-full border border-slate-200 hover:border-teal-300 hover:bg-teal-50/40 transition-all cursor-pointer">
-                        <span class="w-2 h-2 rounded-full" :class="p.dot"></span>
-                        <span x-text="nombre"></span>
-                    </button>
-                </template>
-                <span class="text-[10px] font-semibold text-slate-300 ml-auto hidden md:flex items-center gap-1.5">
-                    Atajos:
-                    <kbd class="atajo">←</kbd><kbd class="atajo">→</kbd> mes
-                    <kbd class="atajo">T</kbd> hoy
-                    <kbd class="atajo">N</kbd> nueva
-                    <kbd class="atajo">V</kbd> vista
-                    <kbd class="atajo">/</kbd> buscar
-                </span>
-            </div>
-        </div>
-
-        {{-- ===================== PRÓXIMAS CITAS ===================== --}}
-        <aside x-show="panelAbierto" x-cloak class="aparece hidden lg:block lg:sticky lg:top-6" style="--d: 360ms"
-               x-transition:enter="transition ease-out duration-200"
-               x-transition:enter-start="opacity-0 translate-x-4"
-               x-transition:enter-end="opacity-100 translate-x-0"
-               x-transition:leave="transition ease-in duration-150"
-               x-transition:leave-start="opacity-100 translate-x-0"
-               x-transition:leave-end="opacity-0 translate-x-4">
-            <div class="bg-white rounded-3xl border border-slate-100 shadow-sm p-5">
-                <div class="flex items-center gap-2 mb-4">
-                    <span class="w-8 h-8 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center"><i class="bi bi-clock-history"></i></span>
-                    <h3 class="text-sm font-black text-slate-800">Próximas citas</h3>
-                    <button type="button" @click="alternarPanel()" title="Ocultar panel"
-                            class="ml-auto w-7 h-7 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 flex items-center justify-center transition-all cursor-pointer">
-                        <i class="bi bi-chevron-double-right text-xs"></i>
-                    </button>
-                </div>
-
-                <div x-show="proximas.length === 0" x-cloak class="py-8 text-center">
-                    <span class="flotar inline-flex w-14 h-14 rounded-2xl bg-teal-50 text-teal-500 items-center justify-center text-2xl mb-3">
-                        <i class="bi bi-calendar2-check"></i>
-                    </span>
-                    <p class="text-xs font-black text-slate-500">Sin citas próximas</p>
-                    <p class="text-[10px] font-medium text-slate-400 mt-0.5">Cuando agendes una, aparecerá aquí.</p>
-                </div>
-
-                {{-- Línea de tiempo --}}
-                <div class="relative space-y-1">
-                    <span x-show="proximas.length > 1" class="absolute left-[18px] top-4 bottom-4 w-px bg-slate-100"></span>
-                    <template x-for="(c, i) in proximas" :key="c.id">
-                        <button type="button" @click="verCita(c.id)"
-                                :style="'--d:' + (i * 70) + 'ms'"
-                                class="aparece relative w-full text-left flex items-center gap-3 p-2 rounded-2xl hover:bg-slate-50 transition-all cursor-pointer group">
-                            <span class="relative z-10 w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black shrink-0 ring-4 ring-white transition-transform group-hover:scale-110"
-                                  :class="chipDe(c)" x-text="iniciales(c.paciente)"></span>
-                            <span class="min-w-0 flex-1">
-                                <span class="block text-xs font-black text-slate-800 truncate" x-text="c.paciente"></span>
-                                <span class="flex items-center gap-1.5 text-[10px] font-bold" :class="pronto(c) ? 'text-amber-600' : 'text-slate-400'">
-                                    <span x-show="pronto(c)" class="latido w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
-                                    <span x-text="etiquetaRelativa(c)"></span>
-                                </span>
-                            </span>
-                            <i class="bi bi-chevron-right text-[10px] text-slate-300 group-hover:text-teal-600 group-hover:translate-x-0.5 transition-all"></i>
-                        </button>
-                    </template>
-                </div>
-            </div>
-        </aside>
-    </div>
-
-    {{-- ===================== MODAL: AGENDA DEL DÍA ===================== --}}
-    <template x-teleport="body">
-        <div x-show="openDia" x-cloak
-             @keydown.escape.window="!confirmar.abierto && (openDia = false)"
-             class="fixed inset-0 z-[99997] bg-slate-950/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
-             x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-             x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
-
-            <div class="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-md max-h-[85vh] flex flex-col overflow-hidden" @click.outside="openDia = false"
-                 x-show="openDia"
-                 x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-10 sm:translate-y-6 sm:scale-95" x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                 x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 translate-y-10 sm:translate-y-0 sm:scale-95">
-                <div class="relative px-6 py-5 bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-800 text-white overflow-hidden shrink-0">
-                    <div class="absolute -right-8 -top-10 w-32 h-32 rounded-full bg-white/5"></div>
-                    <div class="relative flex items-center gap-3">
-                        <div class="min-w-0">
-                            <p class="text-[10px] font-bold uppercase tracking-wide text-emerald-300"
-                               x-text="'Agenda del día · ' + citasDia(diaSeleccionado).length + (citasDia(diaSeleccionado).length === 1 ? ' cita' : ' citas')"></p>
-                            <h3 class="text-base font-black tracking-tight" x-text="fechaLarga(diaSeleccionado)"></h3>
-                        </div>
-                        <button type="button" @click="openDia = false"
-                                class="ml-auto w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white flex items-center justify-center transition-all cursor-pointer" title="Cerrar">
-                            <i class="bi bi-x-lg text-xs"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="p-5 space-y-2 overflow-y-auto">
-                    <template x-for="(c, i) in citasDia(diaSeleccionado)" :key="c.id">
-                        <button type="button" @click="openDia = false; verCita(c.id)"
-                                :class="openDia && 'reveal-on'" :style="'--d:' + i"
-                                class="reveal-item w-full text-left flex items-center gap-3 p-3 rounded-2xl border border-slate-100 hover:bg-slate-50 hover:border-teal-200 hover:translate-x-0.5 transition-all cursor-pointer">
-                            <span class="text-center shrink-0 w-11">
-                                <span class="block text-xs font-black text-slate-800 tabular-nums" x-text="c.hora"></span>
-                                <span class="block text-[9px] font-bold text-slate-400 tabular-nums" x-text="horaFin(c)"></span>
-                            </span>
-                            <span class="w-1 self-stretch rounded-full" :class="puntoDe(c)"></span>
-                            <span class="min-w-0 flex-1">
-                                <span class="block text-xs font-black text-slate-800 truncate" x-text="c.paciente"></span>
-                                <span class="block text-[10px] font-semibold text-slate-400 truncate" x-text="nombreDe('personal', c.personal_id)"></span>
-                            </span>
-                            <span class="text-[9px] font-black px-2 py-0.5 rounded-full" :class="chipDe(c)" x-text="c.estado"></span>
-                        </button>
-                    </template>
-                    <p x-show="citasDia(diaSeleccionado).length === 0" class="text-center text-xs font-bold text-slate-400 py-6">No hay citas este día.</p>
-                </div>
-
-                <div x-show="diaSeleccionado >= hoy" class="px-5 py-4 border-t border-slate-100 flex justify-end shrink-0">
-                    <button type="button" @click="openDia = false; nuevaCita(diaSeleccionado)"
-                            class="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-black rounded-2xl text-xs shadow-lg shadow-teal-600/20 transition-all flex items-center gap-1.5 cursor-pointer">
-                        <i class="bi bi-plus-lg"></i> Nueva cita este día
-                    </button>
-                </div>
-            </div>
-        </div>
-    </template>
-
-    {{-- ===================== MODAL: DETALLE DE CITA ===================== --}}
-    <template x-teleport="body">
-        <div x-show="openDetalle" x-cloak
-             @keydown.escape.window="!confirmar.abierto && (openDetalle = false)"
-             class="fixed inset-0 z-[99998] bg-slate-950/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
-             x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-             x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
-
-            <div class="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto" @click.outside="openDetalle = false"
-                 x-show="openDetalle"
-                 x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-10 sm:translate-y-6 sm:scale-95" x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                 x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 translate-y-10 sm:translate-y-0 sm:scale-95">
-                <template x-if="citaActual">
-                    <div>
-                        <div class="relative px-7 pt-7 pb-5 bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-800 text-white overflow-hidden">
-                            <div class="absolute -right-8 -top-10 w-32 h-32 rounded-full bg-white/5"></div>
-                            <button type="button" @click="openDetalle = false"
-                                    class="absolute right-4 top-4 w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white flex items-center justify-center transition-all cursor-pointer" title="Cerrar">
-                                <i class="bi bi-x-lg text-xs"></i>
-                            </button>
-                            <div class="relative flex items-center gap-4">
-                                <span class="w-14 h-14 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center text-lg font-black text-emerald-300 shrink-0"
-                                      :class="openDetalle && 'icono-pop'" x-text="iniciales(citaActual.paciente)"></span>
-                                <div class="min-w-0">
-                                    <p class="text-[10px] font-bold uppercase tracking-wide text-emerald-300">Paciente</p>
-                                    <h3 class="text-base font-black tracking-tight truncate" x-text="citaActual.paciente"></h3>
-                                    <span class="inline-block mt-1 text-[9px] font-black px-2 py-0.5 rounded-full transition-all" :class="chipDe(citaActual)" x-text="citaActual.estado"></span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="p-7 space-y-4">
-                            <div class="grid grid-cols-2 gap-3">
-                                <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3 col-span-2 reveal-item" :class="openDetalle && 'reveal-on'" style="--d:1">
-                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Fecha y horario</p>
-                                    <p class="text-xs font-black text-slate-800 mt-0.5" x-text="fechaLarga(citaActual.fecha)"></p>
-                                    <p class="text-xs font-bold text-slate-500" x-text="citaActual.hora + ' – ' + horaFin(citaActual) + ' (' + citaActual.duracion_min + ' min)'"></p>
-                                </div>
-                                <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3 reveal-item" :class="openDetalle && 'reveal-on'" style="--d:2">
-                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Doctor</p>
-                                    <p class="text-xs font-black text-slate-800 mt-0.5" x-text="nombreDe('personal', citaActual.personal_id)"></p>
-                                </div>
-                                <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3 reveal-item" :class="openDetalle && 'reveal-on'" style="--d:3">
-                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Consultorio</p>
-                                    <p class="text-xs font-black text-slate-800 mt-0.5" x-text="nombreDe('consultorios', citaActual.consultorio_id)"></p>
-                                </div>
-                                <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3 col-span-2 reveal-item" :class="openDetalle && 'reveal-on'" style="--d:4">
-                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Tipo de consulta</p>
-                                    <p class="text-xs font-black text-slate-800 mt-0.5" x-text="citaActual.tipo_consulta"></p>
-                                </div>
-                                <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3 col-span-2 reveal-item" :class="openDetalle && 'reveal-on'" style="--d:5">
-                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Motivo</p>
-                                    <p class="text-xs font-bold text-slate-700 mt-0.5 leading-relaxed" x-text="citaActual.motivo || 'Sin motivo registrado'"></p>
-                                </div>
-
-                                {{-- Cambio rápido de estado --}}
-                                <div class="col-span-2 reveal-item" :class="openDetalle && 'reveal-on'" style="--d:6">
-                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-2">
-                                        Cambiar estado
-                                        <span x-show="cambiandoEstado" class="w-3 h-3 rounded-full border-2 border-teal-500 border-t-transparent animate-spin"></span>
-                                    </p>
-                                    <div class="flex flex-wrap gap-1.5">
-                                        <template x-for="(p, nombre) in paleta" :key="nombre">
-                                            <button type="button" @click="cambiarEstado(nombre)"
-                                                    :disabled="cambiandoEstado || citaActual.estado === nombre"
-                                                    :class="citaActual.estado === nombre ? p.chip + ' ring-2 ring-offset-1 ' + p.anillo : 'bg-white border border-slate-200 text-slate-500 hover:border-teal-300 hover:text-slate-700 hover:-translate-y-0.5'"
-                                                    class="flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1.5 rounded-full transition-all cursor-pointer disabled:cursor-default">
-                                                <span class="w-1.5 h-1.5 rounded-full" :class="p.dot"></span>
-                                                <span x-text="nombre"></span>
-                                            </button>
-                                        </template>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="flex justify-end gap-2 pt-4 border-t border-slate-100">
-                                <button type="button" @click="eliminarCita(citaActual.id)"
-                                        class="mr-auto px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold rounded-2xl text-xs transition-all flex items-center gap-1.5 cursor-pointer" title="Eliminar cita">
-                                    <i class="bi bi-trash-fill"></i><span class="hidden sm:inline">Eliminar</span>
-                                </button>
-                                <button type="button" @click="openDetalle = false"
-                                        class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-extrabold rounded-2xl text-xs transition-all cursor-pointer">
-                                    Cerrar
-                                </button>
-                                <button type="button" @click="editarCita(citaActual.id)"
-                                        class="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-black rounded-2xl text-xs shadow-lg shadow-teal-600/20 transition-all flex items-center gap-1.5 cursor-pointer">
-                                    <i class="bi bi-pencil-fill"></i> Editar
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </template>
-            </div>
-        </div>
-    </template>
-
-    {{-- ===================== CONFIRMAR ELIMINACIÓN ===================== --}}
-    <template x-teleport="body">
-        <div x-show="confirmar.abierto" x-cloak
-             @keydown.escape.window="!confirmar.cargando && (confirmar.abierto = false)"
-             @click.stop="if ($event.target === $el && !confirmar.cargando) confirmar.abierto = false"
-             class="fixed inset-0 z-[100000] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
-             x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-             x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
-
-            <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-7 text-center"
-                 x-show="confirmar.abierto"
-                 x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-6 scale-95" x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                 x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95">
-                <span class="w-14 h-14 mx-auto rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center text-2xl mb-4" :class="confirmar.abierto && 'icono-pop'">
-                    <i class="bi bi-trash3-fill"></i>
-                </span>
-                <h3 class="text-base font-black text-slate-800">¿Eliminar esta cita?</h3>
-                <p class="text-xs font-medium text-slate-500 mt-2 leading-relaxed">
-                    Se eliminará la cita de <strong class="text-slate-700" x-text="confirmar.paciente"></strong>
-                    <span x-show="confirmar.fecha" x-text="'del ' + confirmar.fecha"></span>.
-                    Esta acción no se puede deshacer.
-                </p>
-                <p class="text-[10px] font-semibold text-slate-400 mt-2">¿Solo no asistirá? Mejor cámbiala a <button type="button" @click="confirmar.abierto = false; cambiarEstado('Cancelada')" class="font-black text-rose-500 hover:underline cursor-pointer">Cancelada</button> y conserva el historial.</p>
-
-                <div class="flex gap-2.5 mt-6">
-                    <button type="button" @click="confirmar.abierto = false" :disabled="confirmar.cargando"
-                            class="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-extrabold rounded-2xl text-xs transition-all cursor-pointer disabled:opacity-50">
-                        Cancelar
-                    </button>
-                    <button type="button" @click="confirmarEliminar()" :disabled="confirmar.cargando"
-                            class="flex-1 px-4 py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-black rounded-2xl text-xs shadow-lg shadow-rose-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
-                        <span x-show="confirmar.cargando" class="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
-                        <i x-show="!confirmar.cargando" class="bi bi-trash-fill"></i>
-                        <span x-text="confirmar.cargando ? 'Eliminando...' : 'Sí, eliminar'"></span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </template>
-
-    {{-- ===================== NOTIFICACIONES ===================== --}}
-    <template x-teleport="body">
-        <div class="fixed top-5 right-5 z-[100001] flex flex-col gap-2.5 w-[calc(100vw-2.5rem)] max-w-sm pointer-events-none" aria-live="polite">
-            <template x-for="t in toasts" :key="t.id">
-                <div x-show="t.visible"
-                     x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-x-8" x-transition:enter-end="opacity-100 translate-x-0"
-                     x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 translate-x-0" x-transition:leave-end="opacity-0 translate-x-8"
-                     class="pointer-events-auto relative overflow-hidden bg-white rounded-2xl shadow-2xl shadow-slate-900/15 border border-slate-100 flex items-start gap-3 p-4 pr-10">
-                    <span class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-base icono-pop" :class="estilosToast[t.tipo].icono">
-                        <i class="bi" :class="estilosToast[t.tipo].bi"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <p class="text-xs font-black text-slate-800" x-text="estilosToast[t.tipo].titulo"></p>
-                        <p class="text-xs font-medium text-slate-500 mt-0.5 leading-relaxed" x-text="t.mensaje"></p>
-                    </div>
-                    <button type="button" @click="cerrarToast(t.id)"
-                            class="absolute right-3 top-3 w-6 h-6 rounded-lg text-slate-300 hover:text-slate-500 hover:bg-slate-50 flex items-center justify-center transition-all cursor-pointer" title="Cerrar">
-                        <i class="bi bi-x-lg text-[10px]"></i>
-                    </button>
-                    <span class="absolute left-0 bottom-0 h-1" :class="estilosToast[t.tipo].barra" :style="`animation: barraToast ${t.ms}ms linear forwards`"></span>
-                </div>
             </template>
         </div>
-    </template>
+        <div class="ci-ctrl">
+            <div class="ci-seg-mini" role="group" aria-label="Vista">
+                <button type="button" :aria-pressed="(vista === 'dia').toString()" @click="cambiarVista('dia')">Día</button>
+                <button type="button" :aria-pressed="(vista === 'mes').toString()" @click="cambiarVista('mes')">Mes</button>
+            </div>
+            <div class="ci-seg-mini" role="group" aria-label="Columnas" x-show="vista === 'dia'">
+                <button type="button" :aria-pressed="(agrupar === 'medico').toString()" @click="agrupar = 'medico'">Por médico</button>
+                <button type="button" :aria-pressed="(agrupar === 'consultorio').toString()" @click="agrupar = 'consultorio'">Por consultorio</button>
+            </div>
+            <div class="ci-filtro" @click.outside="popMed = false" @keydown.escape.stop="popMed = false">
+                <button type="button" class="ci-pick ci-pick-s" :class="{ 'abierto': popMed }" @click="popMed = !popMed" :aria-expanded="popMed.toString()" aria-label="Filtrar por médico">
+                    <span x-text="filtroMed ? nombreMedico(filtroMed) : 'Todos los médicos'"></span>
+                    <i class="bi bi-chevron-down"></i>
+                </button>
+                <div class="ci-pop ci-pop-flot" x-show="popMed" x-cloak>
+                    <button type="button" class="ci-op" :class="{ 'on': !filtroMed }" @click="filtroMed = ''; popMed = false"><b>Todos los médicos</b></button>
+                    <template x-for="m in doctores" :key="'om' + m.id">
+                        <button type="button" class="ci-op" :class="{ 'on': filtroMed === String(m.id) }" @click="filtroMed = String(m.id); popMed = false">
+                            <b x-text="m.nombre"></b><small x-text="m.especialidad || 'Médico'"></small>
+                        </button>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </section>
 
-    {{-- Modal crear / editar (usa: openCitaModal, modoEdicion, guardando, form, guardar(), pacientes, personal, consultorios) --}}
-    @include('citas.modal')
+    <section class="ci-escenario">
+        <div class="ci-centro">
+            <!-- TABLERO DEL DÍA -->
+            <div class="ci-tablero" x-show="vista === 'dia'">
+                <div class="ci-tb-scroll" x-ref="tablero">
+                    <div class="ci-tb-grid" :style="'grid-template-columns: 58px repeat(' + columnas.length + ', minmax(158px, 1fr))'">
+                        <div class="ci-tb-esq"></div>
+                        <template x-for="col in columnas" :key="'h' + col.clave + col.id">
+                            <div class="ci-tb-th">
+                                <b x-text="col.titulo"></b>
+                                <small x-text="col.sub"></small>
+                                <span class="t" x-text="bloques(col).filter(b => b.c.estado !== 'Cancelada').length"></span>
+                            </div>
+                        </template>
 
+                        <div class="ci-tb-horas" :style="'height:' + altoTablero + 'px'">
+                            <template x-for="h in horas" :key="'hr' + h">
+                                <span class="t" :style="'top:' + ((h - rango.ini) * 60 * PX) + 'px'" x-text="String(h).padStart(2, '0') + ':00'"></span>
+                            </template>
+                            <b class="ci-ahora-et t" x-show="esHoyDia && minAhora >= rango.ini * 60 && minAhora <= rango.fin * 60" :style="'top:' + ((minAhora - rango.ini * 60) * PX) + 'px'" x-text="horaAhora"></b>
+                        </div>
+
+                        <template x-for="col in columnas" :key="'c' + col.clave + col.id">
+                            <div class="ci-tb-col" :style="'height:' + altoTablero + 'px; background-size: 100% ' + (60 * PX) + 'px, 100% ' + (30 * PX) + 'px'"
+                                 :class="{ 'pasado': dia < hoy }"
+                                 @mousemove="fantasma = $event.target === $event.currentTarget ? { col: col.clave + col.id, min: minutoDe($event) } : null" @mouseleave="fantasma = null"
+                                 @click.self="clicEspacio(col, $event)">
+                                <div class="ci-fantasma t" x-show="fantasma && fantasma.col === col.clave + col.id && dia >= hoy && libreEn(col, fantasma.min)"
+                                     :style="fantasma ? 'top:' + ((fantasma.min - rango.ini * 60) * PX) + 'px; height:' + (30 * PX) + 'px' : ''"
+                                     x-text="fantasma ? '+ ' + aHora(fantasma.min) : ''"></div>
+                                <template x-for="b in bloques(col)" :key="'b' + b.c.id">
+                                    <button type="button" class="ci-bloque" :class="'e-' + slug(b.c.estado) + (sel && sel.id === b.c.id ? ' sel' : '') + (b.alto < 30 ? ' bajo' : '')"
+                                            :style="'top:' + b.top + 'px; height:' + b.alto + 'px; left: calc(' + b.izq + '% + 4px); width: calc(' + b.ancho + '% - 8px)'"
+                                            @click="seleccionar(b.c)" :title="b.c.hora + '–' + horaFin(b.c) + ' · ' + b.c.paciente + ' · ' + b.c.estado">
+                                        <span class="ci-b-h t"><span x-text="b.c.hora"></span><i x-show="b.c.alergia" class="bi bi-exclamation-triangle-fill" title="Tiene alergias"></i></span>
+                                        <b x-text="b.c.paciente"></b>
+                                        <small x-show="b.alto >= 54" x-text="b.c.motivo"></small>
+                                    </button>
+                                </template>
+                                <div class="ci-ahora" x-show="esHoyDia && minAhora >= rango.ini * 60 && minAhora <= rango.fin * 60" :style="'top:' + ((minAhora - rango.ini * 60) * PX) + 'px'"></div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                <footer class="ci-tb-pie">
+                    <span x-text="delDia.length ? delDia.filter(c => c.estado !== 'Cancelada').length + ' citas este día' : 'Sin citas este día'"></span>
+                    <span class="ci-pista">Toca un espacio libre para agendar · <kbd>←</kbd><kbd>→</kbd> cambian de día</span>
+                </footer>
+            </div>
+
+            <!-- MES -->
+            <div class="ci-mes" x-show="vista === 'mes'" x-cloak>
+                <div class="ci-mes-sem">
+                    <template x-for="d in ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']" :key="'s' + d"><span x-text="d"></span></template>
+                </div>
+                <div class="ci-mes-grid">
+                    <template x-for="cel in celdasMes(mesNav)" :key="'m' + cel.fecha">
+                        <button type="button" class="ci-mes-cel" :class="{ 'fuera': !cel.dentro, 'hoy': cel.fecha === hoy, 'sel': cel.fecha === dia, 'pasado': cel.fecha < hoy }"
+                                @click="irDia(cel.fecha, true)">
+                            <span class="ci-mes-n t" x-text="Number(cel.fecha.slice(8))"></span>
+                            <template x-for="c in porFecha(cel.fecha).slice(0, 3)" :key="'mc' + c.id">
+                                <span class="ci-mes-chip" :class="'e-' + slug(c.estado)"><i class="t" x-text="c.hora"></i><span x-text="c.paciente"></span></span>
+                            </template>
+                            <small x-show="porFecha(cel.fecha).length > 3" x-text="'+' + (porFecha(cel.fecha).length - 3) + ' más'"></small>
+                        </button>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <aside class="ci-lado">
+            {{-- Pase de la cita (frente) y su formulario (reverso) --}}
+            @include('citas.modal')
+
+            <!-- Calendario chico -->
+            <div class="ci-mini">
+                <div class="ci-mini-h">
+                    <button type="button" class="ci-ico ci-ico-s" @click="mesNav = sumarMes(mesNav, -1)" aria-label="Mes anterior"><i class="bi bi-chevron-left"></i></button>
+                    <b x-text="nombreMes(mesNav) + ' ' + mesNav.slice(0, 4)"></b>
+                    <button type="button" class="ci-ico ci-ico-s" @click="mesNav = sumarMes(mesNav, 1)" aria-label="Mes siguiente"><i class="bi bi-chevron-right"></i></button>
+                </div>
+                <div class="ci-mini-g">
+                    <template x-for="d in ['L', 'M', 'M', 'J', 'V', 'S', 'D']"><span class="ci-mini-s" x-text="d"></span></template>
+                    <template x-for="cel in celdasMes(mesNav)" :key="'n' + cel.fecha">
+                        <button type="button" class="t" :class="{ 'fuera': !cel.dentro, 'hoy': cel.fecha === hoy, 'sel': cel.fecha === dia }"
+                                :data-n="Math.min(3, Math.ceil(porFecha(cel.fecha).filter(c => c.estado !== 'Cancelada').length / 2))"
+                                @click="irDia(cel.fecha, true)" :aria-label="fechaLarga(cel.fecha) + ', ' + porFecha(cel.fecha).length + ' citas'">
+                            <span x-text="Number(cel.fecha.slice(8))"></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+
+
+            <!-- Próximas o coincidencias de la búsqueda -->
+            <div class="ci-prox">
+                <h3 x-text="q.trim() ? 'Coincidencias' : 'Próximas citas'"></h3>
+                <template x-for="c in listaLateral" :key="'p' + c.id">
+                    <button type="button" :class="{ 'sel': sel && sel.id === c.id }" @click="seleccionar(c, true)">
+                        <span class="ci-prox-h t" :class="'e-' + slug(c.estado)"><b x-text="c.hora"></b><small x-text="fechaCorta(c.fecha)"></small></span>
+                        <span class="ci-prox-n"><b x-text="c.paciente"></b><small x-text="cuando(c)"></small></span>
+                    </button>
+                </template>
+                <p class="ci-vacio" x-show="!listaLateral.length" x-text="q.trim() ? 'Ninguna cita coincide.' : 'No hay citas próximas.'"></p>
+            </div>
+        </aside>
+    </section>
 </div>
 
+<script type="application/json" id="ci-datos">{!! json_encode($datosVista, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) !!}</script>
+
+@verbatim
 <style>
-    @keyframes fadeIn   { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-    @keyframes fadeUp   { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-    @keyframes celdaIn  { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; } }
-    @keyframes popIn    { 0% { opacity: 0; transform: scale(.8); } 60% { opacity: 1; transform: scale(1.05); } 100% { opacity: 1; transform: none; } }
-    @keyframes iconoPop { 0% { transform: scale(0) rotate(-25deg); } 70% { transform: scale(1.15) rotate(6deg); } 100% { transform: scale(1) rotate(0); } }
-    @keyframes slideDerecha   { from { opacity: 0; transform: translateX(40px); }  to { opacity: 1; transform: none; } }
-    @keyframes slideIzquierda { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: none; } }
-    @keyframes pulsoHoy { 0%, 100% { box-shadow: 0 0 0 0 rgba(20, 184, 166, .35); } 50% { box-shadow: 0 0 0 6px rgba(20, 184, 166, 0); } }
-    @keyframes ripple   { to { transform: scale(4); opacity: 0; } }
-    @keyframes latido   { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .6; } }
-    @keyframes flotar   { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-    @keyframes flotarLento { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(-14px, 10px); } }
-    @keyframes ecg      { from { stroke-dashoffset: 1000; } to { stroke-dashoffset: 0; } }
-    @keyframes barraToast { from { width: 100%; } to { width: 0; } }
+.ci {
+    --tinta: #0b1e1c; --texto: #2c3d3a; --media: #56625f; --linea: #dbe4e1; --linea2: #edf2f1; --niebla: #eef3f1; --papel: #fff;
+    --cred: #0b5a54; --cred2: #073f3b; --foil: #a6efe2; --teal: #0e7c72; --velo: #e2efec;
+    --rosa: #c8102e; --rosav: #fdecef; --ambar: #9a5800; --ambarv: #fdf3e1; --verde: #08734f; --verdev: #e5f4ee;
+    --e: cubic-bezier(.2, .8, .2, 1); --flip: cubic-bezier(.3, .7, .1, 1);
+    --disp: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif; --ui: 'Geist', ui-sans-serif, system-ui, sans-serif; --mono: 'Geist Mono', ui-monospace, monospace;
+    container-type: inline-size; font: 450 14px/1.45 var(--ui); color: var(--texto);
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px;
+}
+.ci * { box-sizing: border-box; }
+.ci :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.ci button { cursor: pointer; }
+.ci button:disabled { cursor: default; }
+.ci .t { font-variant-numeric: tabular-nums; }
+.ci-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ci kbd { font: 600 11px var(--mono); border: 1px solid var(--linea); border-radius: 6px; padding: 1px 6px; color: var(--media); background: transparent; }
+[x-cloak] { display: none !important; }
 
-    .animate-fade-in { animation: fadeIn .35s cubic-bezier(.16, 1, .3, 1) backwards; }
-    .aparece         { animation: fadeUp .55s cubic-bezier(.16, 1, .3, 1) backwards; animation-delay: var(--d, 0ms); }
-    .tarjeta-stat    { animation: fadeUp .55s cubic-bezier(.16, 1, .3, 1) backwards; }
-    .celda-dia       { animation: celdaIn .45s cubic-bezier(.16, 1, .3, 1) backwards; }
-    .chip-cita       { animation: popIn .4s cubic-bezier(.34, 1.56, .64, 1) backwards; animation-delay: var(--d, 0ms); }
-    .icono-pop       { animation: iconoPop .55s cubic-bezier(.34, 1.56, .64, 1) backwards; }
-    .grid-slide-derecha   { animation: slideDerecha .45s cubic-bezier(.16, 1, .3, 1); }
-    .grid-slide-izquierda { animation: slideIzquierda .45s cubic-bezier(.16, 1, .3, 1); }
-    .hoy-pulso   { animation: celdaIn .45s cubic-bezier(.16, 1, .3, 1) backwards, pulsoHoy 2.6s ease-in-out 1s infinite; }
-    .latido      { animation: latido 1.4s ease-in-out infinite; }
-    .flotar      { animation: flotar 3s ease-in-out infinite; }
-    .flotar-lento { animation: flotarLento 9s ease-in-out infinite; }
-    .ecg-linea   { stroke-dasharray: 160 840; animation: ecg 4s linear infinite; }
+/* Estados de la cita (color fijo por significado) */
+.ci .e-pendiente { --c: var(--ambar); --cv: var(--ambarv); }
+.ci .e-confirmada { --c: var(--verde); --cv: var(--verdev); }
+.ci .e-en-curso { --c: var(--cred); --cv: var(--velo); }
+.ci .e-finalizada { --c: var(--media); --cv: var(--niebla); }
+.ci .e-cancelada { --c: var(--rosa); --cv: var(--rosav); }
+.ci .e-vacio { --c: var(--media); --cv: var(--niebla); }
 
-    .ripple-onda { position: absolute; border-radius: 9999px; background: rgba(13, 148, 136, .22); transform: scale(0); animation: ripple .6s ease-out forwards; pointer-events: none; }
+/* ---------- Búsqueda ---------- */
+.ci-top { display: flex; align-items: center; gap: 12px; }
+.ci-cmd { flex: 1; min-width: 0; max-width: 760px; height: 50px; border-radius: 14px; background: var(--papel); border: 1px solid var(--linea); box-shadow: 0 12px 30px -22px rgba(11, 30, 28, .45); display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; }
+.ci-cmd > .bi { color: var(--cred); }
+.ci-cmd input { flex: 1; min-width: 0; border: 0; outline: 0 !important; box-shadow: none !important; background: none; font: 450 15px var(--ui); color: var(--tinta); }
+.ci-cmd input::placeholder { color: var(--media); }
+.ci-dark { height: 44px; border-radius: 12px; background: var(--tinta); color: #fff; font: 600 14px var(--ui); display: flex; align-items: center; gap: 10px; padding: 0 12px 0 16px; white-space: nowrap; }
+.ci-dark kbd { border-color: rgba(255, 255, 255, .25); color: #cfe; }
+@container (max-width: 639px) { .ci-cmd > kbd, .ci-dark kbd { display: none; } .ci-dark { padding: 0 14px; } }
 
-    .reveal-item { opacity: 0; }
-    .reveal-on   { animation: fadeUp .45s cubic-bezier(.16, 1, .3, 1) both; animation-delay: calc(var(--d, 0) * 70ms); }
+/* ---------- Cabecera ---------- */
+.ci-cab { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 24px; }
+.ci-g { display: flex; align-items: flex-end; gap: 12px; min-width: 0; }
+.ci-g > b { font: 800 84px/.8 var(--disp); font-stretch: 78%; letter-spacing: -.04em; color: var(--tinta); text-transform: capitalize; white-space: nowrap; }
+.ci-g > span { display: flex; flex-direction: column; padding-bottom: 2px; font-size: 15px; font-weight: 500; color: var(--texto); line-height: 1.2; }
+.ci-g em { text-transform: capitalize; }
+.ci-g em { font-style: normal; font: 700 20px/1.1 var(--disp); color: var(--tinta); }
+.ci-nav { display: flex; align-items: center; gap: 6px; padding-bottom: 2px; }
+.ci-ico { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; border: 1px solid var(--linea); background: var(--papel); color: var(--texto); transition: background .15s; }
+.ci-ico:hover { background: var(--niebla); color: var(--tinta); }
+.ci-ico-s { width: 30px; height: 30px; border-radius: 8px; }
+.ci-hoy { height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--linea); background: var(--papel); font: 600 14px var(--ui); color: var(--tinta); }
+.ci-hoy:disabled { color: var(--cred); background: var(--velo); border-color: var(--velo); }
+.ci-ind { flex: 1; min-width: 300px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0 14px; }
+.ci-ind button { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; padding: 8px 0 6px; text-align: left; background: none; border-top: 2px solid var(--linea); font-size: 13px; font-weight: 500; color: var(--texto); white-space: nowrap; }
+.ci-ind button span { overflow: hidden; text-overflow: ellipsis; }
+.ci-ind button b { font: 750 22px/1 var(--disp); color: var(--c); }
+.ci-ind button[aria-pressed=true] { border-top-color: var(--c); }
+.ci-ind button[aria-pressed=true] span { color: var(--tinta); font-weight: 650; }
+.ci-ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; }
+.ci-seg-mini { display: inline-flex; padding: 3px; border-radius: 11px; background: var(--papel); border: 1px solid var(--linea); }
+.ci-seg-mini button { height: 32px; padding: 0 12px; border-radius: 8px; font: 600 13px var(--ui); color: var(--media); background: none; }
+.ci-seg-mini button[aria-pressed=true] { background: var(--tinta); color: #fff; }
+.ci-filtro { position: relative; min-width: 220px; }
+.ci-pick { width: 100%; height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 12px; border: 1px solid var(--linea); border-radius: 10px; background: var(--papel); font: 500 14px var(--ui); color: var(--tinta); text-align: left; transition: border-color .15s, box-shadow .15s; }
+.ci-pick span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-pick.t span { font-family: var(--mono); }
+.ci-pick .bi { flex: none; font-size: 13px; color: var(--cred); transition: transform .2s var(--e); }
+.ci-pick.vacio span { color: var(--media); }
+.ci-pick:hover { border-color: #b9cbc6; }
+.ci-pick.abierto { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(14, 124, 114, .15); }
+.ci-pick.abierto .bi-chevron-down { transform: rotate(180deg); }
+.ci-pick-s { font-weight: 600; font-size: 13px; }
+.ci-campo.mal .ci-pick { border-color: var(--rosa); }
+.ci-pop { margin-top: 2px; padding: 4px; max-height: 260px; overflow-y: auto; background: var(--papel); border: 1px solid var(--linea); border-radius: 12px; box-shadow: 0 16px 32px -22px rgba(11, 30, 28, .55); scrollbar-width: thin; }
+.ci-pop-flot { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30; margin: 0; }
+.ci-pop-rej { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.ci-op { width: 100%; display: flex; flex-direction: column; align-items: flex-start; padding: 7px 10px; border-radius: 8px; text-align: left; background: none; min-width: 0; }
+.ci-op:hover:not(:disabled) { background: var(--niebla); }
+.ci-op.on { background: var(--velo); box-shadow: inset 3px 0 0 var(--cred); }
+.ci-op:disabled { opacity: .45; cursor: not-allowed; }
+.ci-op b { max-width: 100%; font-size: 13.5px; font-weight: 600; color: var(--tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-op small { font-size: 12px; color: var(--media); }
+.ci-pop-vacio { padding: 8px 10px; font-size: 13px; color: var(--media); }
+.ci-pop-cal, .ci-pop-hora { max-height: none; padding: 10px; }
+.ci-pop-cal .ci-mini-g button { height: 32px; }
+.ci-pop-cal .ci-mini-g button:disabled { color: #b7c2bf; cursor: not-allowed; background: none; }
+.ci-pop-t { font-size: 12px; font-weight: 600; color: var(--media); margin: 2px 2px 6px; }
+.ci-horas { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin-bottom: 10px; }
+.ci-mins { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.ci-horas button, .ci-mins button { height: 36px; border-radius: 9px; border: 1px solid var(--linea); background: var(--papel); font: 500 14px var(--mono); color: var(--tinta); }
+.ci-horas button:hover, .ci-mins button:hover:not(:disabled) { border-color: var(--teal); }
+.ci-horas button.lleno { color: #a3b0ad; background: repeating-linear-gradient(135deg, #f4f7f6 0 4px, #fff 4px 8px); }
+.ci-horas button.on, .ci-mins button.on { background: var(--cred); border-color: var(--cred); color: #fff; }
+.ci-mins button:disabled { opacity: .4; cursor: not-allowed; }
+.ci-exacta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.ci-exacta input { width: 58px; height: 48px; border: 1px solid var(--linea); border-radius: 10px; text-align: center; font: 600 24px var(--mono); color: var(--tinta); background: var(--papel); outline: 0; transition: border-color .15s, box-shadow .15s; }
+.ci-exacta input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(14, 124, 114, .15); }
+.ci-exacta input::placeholder { color: #b7c2bf; font-size: 18px; }
+.ci-exacta b { font: 600 24px var(--mono); color: var(--media); }
+.ci-exacta span { flex-basis: 100%; font-size: 12px; color: var(--media); }
+.ci-pop-nota { margin-top: 8px; font-size: 12px; color: var(--media); }
+.ci-err { margin-top: -6px; font-size: 12px; font-weight: 500; color: var(--rosa); }
+.ci-sel { height: 40px; border: 1px solid var(--linea); border-radius: 11px; padding: 0 32px 0 12px; font: 600 13px var(--ui); color: var(--tinta); background-color: var(--papel); max-width: 260px; }
+@container (max-width: 759px) { .ci-g > b { font-size: 64px; } .ci-ind { min-width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 12px; } }
 
-    .atajo { font: 800 9px/1 ui-monospace, monospace; color: #94a3b8; border: 1px solid #e2e8f0; border-bottom-width: 2px; border-radius: 5px; padding: 3px 5px; background: #fff; }
+/* ---------- Escenario ---------- */
+.ci-escenario { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+@container (min-width: 1100px) { .ci-escenario { grid-template-columns: minmax(0, 1fr) 340px; } }
+.ci-centro { min-width: 0; transition: opacity .35s, filter .35s; }
 
-    @media (prefers-reduced-motion: reduce) {
-        .animate-fade-in, .aparece, .tarjeta-stat, .celda-dia, .chip-cita, .icono-pop, .hoy-pulso,
-        .grid-slide-derecha, .grid-slide-izquierda, .latido, .flotar, .flotar-lento, .ecg-linea, .reveal-on, .ripple-onda {
-            animation: none !important;
-        }
-        .reveal-item { opacity: 1 !important; }
-    }
+/* Tablero del día */
+.ci-tablero { background: var(--papel); border: 1px solid var(--linea); border-radius: 18px; overflow: hidden; box-shadow: 0 18px 40px -32px rgba(11, 30, 28, .5); }
+.ci-tb-scroll { max-height: 640px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.ci-tb-grid { display: grid; grid-template-rows: auto 1fr; min-width: 100%; }
+.ci-tb-esq, .ci-tb-th { position: sticky; top: 0; z-index: 6; background: #f8fbfa; border-bottom: 1px solid var(--linea); }
+.ci-tb-esq { left: 0; z-index: 8; border-right: 1px solid var(--linea2); }
+.ci-tb-th { position: sticky; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; padding: 10px 12px; border-left: 1px solid var(--linea2); min-width: 0; }
+.ci-tb-th b { font: 700 15px/1.15 var(--disp); font-stretch: 88%; color: var(--tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-tb-th small { grid-column: 1; font-size: 12px; color: var(--media); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-tb-th span { grid-column: 2; grid-row: 1 / 3; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 8px; display: grid; place-items: center; background: var(--velo); color: var(--cred); font: 600 12px var(--mono); }
+.ci-tb-horas { position: sticky; left: 0; z-index: 5; background: #fbfdfc; border-right: 1px solid var(--linea2); }
+.ci-tb-horas span { position: absolute; right: 8px; transform: translateY(-50%); font: 500 12px var(--mono); color: var(--media); }
+.ci-tb-horas span:first-child { transform: none; top: 4px !important; }
+.ci-ahora-et { position: absolute; right: 4px; transform: translateY(-50%); z-index: 2; padding: 1px 5px; border-radius: 5px; background: var(--teal); color: #fff; font: 600 11.5px var(--mono); }
+.ci-tb-col { position: relative; border-left: 1px solid var(--linea2); cursor: copy; background-image: linear-gradient(var(--linea) 1px, transparent 1px), linear-gradient(var(--linea2) 1px, transparent 1px); }
+.ci-tb-col.pasado { cursor: default; background-color: #fafcfb; }
+.ci-fantasma { position: absolute; left: 4px; right: 4px; z-index: 1; pointer-events: none; border: 1.5px dashed var(--teal); border-radius: 8px; background: rgba(14, 124, 114, .07); color: var(--cred); font: 600 12px var(--mono); padding: 3px 8px; }
+.ci-ahora { position: absolute; left: 0; right: 0; z-index: 4; height: 2px; background: var(--teal); pointer-events: none; }
 
-    [x-cloak] { display: none !important; }
+.ci-bloque { position: absolute; z-index: 2; display: flex; flex-direction: column; gap: 0; padding: 3px 8px 3px 10px; overflow: hidden; text-align: left; border-radius: 8px; background: var(--cv); color: var(--tinta); box-shadow: inset 3px 0 0 var(--c), 0 1px 0 rgba(11, 30, 28, .04); transition: box-shadow .15s, transform .15s; }
+.ci-bloque:hover { transform: translateY(-1px); box-shadow: inset 3px 0 0 var(--c), 0 8px 16px -10px rgba(11, 30, 28, .5); z-index: 3; }
+.ci-bloque.sel { box-shadow: inset 3px 0 0 var(--c), 0 0 0 2px var(--teal), 0 10px 20px -12px rgba(11, 30, 28, .6); z-index: 3; }
+.ci-b-h { display: flex; align-items: center; gap: 6px; font: 600 12px/1.2 var(--mono); color: var(--c); }
+.ci-b-h i { font-size: 11px; color: var(--rosa); }
+.ci-bloque b { font-size: 13px; font-weight: 650; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-bloque small { font-size: 12px; color: var(--media); line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ci-bloque.bajo { flex-direction: row; align-items: center; gap: 6px; padding-top: 0; padding-bottom: 0; }
+.ci-bloque.e-en-curso { background: linear-gradient(135deg, #0d6a63, var(--cred2)); color: #fff; box-shadow: inset 3px 0 0 var(--foil); }
+.ci-bloque.e-en-curso .ci-b-h { color: var(--foil); }
+.ci-bloque.e-en-curso small { color: #cdeee7; }
+.ci-bloque.e-en-curso.sel { box-shadow: inset 3px 0 0 var(--foil), 0 0 0 2px var(--teal); }
+.ci-bloque.e-cancelada { background: repeating-linear-gradient(135deg, var(--rosav) 0 6px, #fff 6px 12px); opacity: .75; }
+.ci-bloque.e-cancelada b { text-decoration: line-through; color: var(--media); }
+.ci-bloque.e-finalizada b { color: var(--texto); }
+.ci-tb-pie { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--linea2); font-size: 12.5px; color: var(--media); }
+.ci-tb-pie kbd { margin: 0 1px; }
+@container (max-width: 639px) { .ci-pista { display: none; } }
+
+/* Mes */
+.ci-mes { background: var(--papel); border: 1px solid var(--linea); border-radius: 18px; overflow: hidden; }
+.ci-mes-sem, .ci-mes-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.ci-mes-sem span { padding: 10px 10px 8px; font-size: 12px; font-weight: 600; color: var(--media); border-bottom: 1px solid var(--linea); }
+.ci-mes-cel { min-height: 112px; display: flex; flex-direction: column; gap: 3px; padding: 8px; text-align: left; background: var(--papel); border-right: 1px solid var(--linea2); border-bottom: 1px solid var(--linea2); min-width: 0; transition: background .15s; }
+.ci-mes-cel:nth-child(7n) { border-right: 0; }
+.ci-mes-cel:hover { background: #f7faf9; }
+.ci-mes-cel.fuera { background: #fafcfb; }
+.ci-mes-cel.fuera .ci-mes-n { color: #a3b0ad; }
+.ci-mes-n { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font: 600 13px var(--mono); color: var(--tinta); }
+.ci-mes-cel.hoy .ci-mes-n { background: var(--cred); color: #fff; }
+.ci-mes-cel.sel { box-shadow: inset 0 0 0 2px var(--teal); }
+.ci-mes-chip { display: flex; gap: 5px; align-items: center; min-width: 0; padding: 2px 6px; border-radius: 6px; background: var(--cv); font-size: 12px; font-weight: 600; color: var(--tinta); }
+.ci-mes-chip i { font-style: normal; font: 600 11px var(--mono); color: var(--c); }
+.ci-mes-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-mes-chip.e-cancelada span { text-decoration: line-through; color: var(--media); }
+.ci-mes-cel small { font-size: 12px; font-weight: 600; color: var(--cred); padding-left: 4px; }
+@container (max-width: 759px) { .ci-mes-cel { min-height: 64px; padding: 4px; } .ci-mes-chip span { display: none; } }
+
+/* ---------- Lado ---------- */
+.ci-lado { display: grid; gap: 14px; align-content: start; }
+@container (min-width: 700px) and (max-width: 1099px) { .ci-lado { grid-template-columns: 1fr 1fr; } .ci-pase, .ci-acc { grid-column: 1; } .ci-mini { grid-column: 2; grid-row: 1; } .ci-prox { grid-column: 2; grid-row: 2 / 4; } .ci-pase { grid-row: 1; } .ci-acc { grid-row: 2; } }
+
+.ci-mini { background: var(--papel); border: 1px solid var(--linea); border-radius: 16px; padding: 12px; }
+.ci-mini-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.ci-mini-h b { font: 700 16px var(--disp); color: var(--tinta); text-transform: capitalize; }
+.ci-mini-g { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.ci-mini-s { text-align: center; font-size: 12px; font-weight: 600; color: var(--media); padding: 2px 0 4px; }
+.ci-mini-g button { position: relative; height: 34px; border-radius: 9px; font: 500 13px var(--mono); color: var(--tinta); background: none; }
+.ci-mini-g button:hover { background: var(--niebla); }
+.ci-mini-g button.fuera { color: #a3b0ad; }
+.ci-mini-g button.hoy { font-weight: 700; color: var(--cred); }
+.ci-mini-g button.sel { background: var(--cred); color: #fff; }
+.ci-mini-g button:after { content: ""; position: absolute; left: 50%; bottom: 4px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: transparent; }
+.ci-mini-g button[data-n="1"]:after { background: #9fd3c8; }
+.ci-mini-g button[data-n="2"]:after { background: var(--teal); }
+.ci-mini-g button[data-n="3"]:after { background: var(--cred2); width: 7px; margin-left: -3.5px; }
+.ci-mini-g button.sel:after { background: var(--foil) !important; }
+
+/* Pase (frente y reverso) */
+.ci-pase { perspective: 1400px; }
+.ci-pase-in { position: relative; height: 410px; transform-style: preserve-3d; transition: transform .85s var(--flip), height .5s var(--e); }
+.ci-pase.volteado .ci-pase-in { transform: rotateY(180deg); height: 700px; }
+.ci-cara { position: absolute; inset: 0; border-radius: 22px; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.ci-frente { color: #eafaf6; background: linear-gradient(155deg, #0d6a63, var(--cred) 45%, var(--cred2)); box-shadow: 0 24px 44px -26px rgba(7, 63, 59, .9), inset 0 0 0 1px rgba(166, 239, 226, .18); }
+.ci-gl, .ci-gl svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.ci-fr { position: relative; height: 100%; display: flex; flex-direction: column; padding: 18px 22px 0; }
+.ci-fr header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ci-k { font: 500 12px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--foil); }
+.ci-k b { font-weight: 600; color: #fff; }
+.ci-tipo { padding: 2px 9px; border-radius: 999px; border: 1px solid rgba(166, 239, 226, .4); font-size: 12px; font-weight: 600; color: #dff7f1; }
+.ci-hora { margin-top: 14px; display: flex; align-items: baseline; gap: 8px; font: 600 40px/1 var(--mono); letter-spacing: -.02em; color: #fff; }
+.ci-hora small { font: 500 17px var(--mono); color: var(--foil); }
+.ci-fecha { margin-top: 6px; font-size: 13.5px; color: #cdeee7; }
+.ci-fecha:first-letter { text-transform: uppercase; }
+.ci-fr h2 { margin-top: 14px; font: 780 27px/1.02 var(--disp); font-stretch: 78%; color: #fff; text-transform: uppercase; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ci-alg { margin-top: 8px; align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--rosav); color: var(--rosa); font-size: 12.5px; font-weight: 650; }
+.ci-fr dl { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ci-fr dt { font-size: 12px; color: #a9d8cf; }
+.ci-fr dd { font-size: 14px; font-weight: 600; color: #fff; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ci-motivo { margin-top: 10px; font-size: 13.5px; color: #dff7f1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ci-franja { margin: auto -22px 0; display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 10px 22px; font-size: 13.5px; font-weight: 600; color: #fff; background: rgba(4, 36, 33, .55); border-top: 1px solid rgba(166, 239, 226, .2); }
+.ci-franja i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 3px rgba(255, 255, 255, .85); }
+.ci-frente.e-pendiente .ci-franja { background: rgba(154, 88, 0, .72); }
+.ci-frente.e-confirmada .ci-franja { background: rgba(8, 115, 79, .6); }
+.ci-frente.e-cancelada .ci-franja { background: rgba(200, 16, 46, .7); }
+.ci-frente.e-finalizada .ci-franja { background: rgba(44, 61, 58, .7); }
+.ci-frente.e-en-curso .ci-franja i { background: var(--foil); }
+.ci-fr-vacio h2 { text-transform: none; font-size: 30px; margin-top: 24px; }
+.ci-fr-vacio p { margin-top: 10px; font-size: 14px; color: #cdeee7; }
+
+.ci-reverso { transform: rotateY(180deg); background: #fbfdfc; border: 1px solid var(--linea); box-shadow: 0 24px 44px -30px rgba(11, 30, 28, .55); display: flex; flex-direction: column; }
+.ci-rv-k { padding: 16px 18px 8px; font: 500 12px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--cred); }
+.ci-rv-cuerpo { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 18px 14px; display: flex; flex-direction: column; gap: 12px; scrollbar-width: thin; }
+.ci-rv-cuerpo > * { flex-shrink: 0; }
+.ci-campo { position: relative; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.ci-campo > span { font-size: 13px; font-weight: 600; color: var(--tinta); }
+.ci-ayuda { font-size: 12px; font-weight: 500; color: var(--media); }
+.ci-campo input, .ci-campo select { width: 100%; height: 40px; border: 1px solid var(--linea); border-radius: 10px; padding: 0 10px; font: 500 14px var(--ui); color: var(--tinta); background-color: var(--papel); outline: 0; transition: border-color .15s, box-shadow .15s; }
+.ci-campo input:focus, .ci-campo select:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(14, 124, 114, .15); }
+.ci-campo.mal input, .ci-campo.mal select { border-color: var(--rosa); }
+.ci-campo > small { font-size: 12px; font-weight: 500; color: var(--rosa); }
+.ci-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ci-combo { position: relative; }
+.ci-combo input.elegido::placeholder { color: var(--tinta); font-weight: 600; }
+.ci-combo-lista { position: static; margin-top: 4px; max-height: 240px; overflow-y: auto; padding: 4px; background: var(--papel); border: 1px solid var(--linea); border-radius: 12px; box-shadow: 0 20px 40px -20px rgba(11, 30, 28, .5); }
+.ci-combo-lista button { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; padding: 7px 9px; border-radius: 8px; text-align: left; background: none; }
+.ci-combo-lista button.on { background: var(--velo); }
+.ci-combo-lista b { font-size: 13px; font-weight: 600; color: var(--tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-combo-lista small { grid-column: 1; font: 500 11.5px var(--mono); color: var(--media); }
+.ci-combo-lista em { grid-column: 2; grid-row: 1 / 3; align-self: center; font-style: normal; font-size: 11.5px; font-weight: 650; color: var(--rosa); background: var(--rosav); border-radius: 999px; padding: 1px 8px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ci-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ci-chip { height: 34px; padding: 0 11px; border-radius: 9px; border: 1px solid var(--linea); background: var(--papel); font: 600 13px var(--ui); color: var(--texto); }
+.ci-chip.t { font-family: var(--mono); font-weight: 500; }
+.ci-chip.on { border-color: var(--cred); background: var(--velo); color: var(--cred); }
+.ci-seg { display: grid; gap: 5px; }
+.ci-seg-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ci-seg-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.ci-seg button { height: 36px; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 0 4px; border-radius: 9px; border: 1px solid var(--linea); background: var(--papel); font: 600 12.5px var(--ui); color: var(--texto); white-space: nowrap; overflow: hidden; }
+.ci-seg button i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.ci-seg button[aria-pressed=true] { border-color: var(--c, var(--cred)); background: var(--cv, var(--velo)); color: var(--c, var(--cred)); }
+.ci-rv-pie { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--linea2); background: var(--papel); }
+.ci-msg { flex: 1; min-width: 0; font-size: 12px; color: var(--media); line-height: 1.3; }
+.ci-msg.mal { color: var(--rosa); font-weight: 600; }
+
+/* Botones */
+.ci-btn { height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; border-radius: 11px; border: 1px solid var(--linea); background: var(--papel); font: 600 14px var(--ui); color: var(--tinta); white-space: nowrap; transition: background .15s, border-color .15s; }
+.ci-btn:hover { background: #f7faf9; }
+.ci-prim { background: var(--cred); border-color: var(--cred); color: #fff; }
+.ci-prim:hover { background: var(--cred2); }
+.ci-prim:disabled { opacity: .6; }
+.ci-prim kbd { border-color: rgba(255, 255, 255, .3); color: #cfe; }
+.ci-borrar { color: var(--rosa); border-color: #f3c6cf; width: 40px; padding: 0; }
+.ci-borrar:hover { background: var(--rosav); }
+.ci-ancho { width: 100%; }
+.ci-acc-in { display: grid; gap: 8px; }
+.ci-acc-fila { display: flex; gap: 8px; }
+.ci-acc-fila .ci-btn:not(.ci-borrar) { flex: 1; }
+
+/* Próximas */
+.ci-prox { background: var(--papel); border: 1px solid var(--linea); border-radius: 16px; padding: 12px 8px 8px; }
+.ci-prox h3 { padding: 0 8px 6px; font: 700 16px var(--disp); color: var(--tinta); }
+.ci-prox button { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 10px; text-align: left; background: none; }
+.ci-prox button:hover, .ci-prox button.sel { background: var(--niebla); }
+.ci-prox-h { flex: none; width: 58px; display: flex; flex-direction: column; align-items: center; padding: 4px 0; border-radius: 8px; background: var(--cv); }
+.ci-prox-h b { font: 600 14px var(--mono); color: var(--c); }
+.ci-prox-h small { font-size: 11.5px; color: var(--media); }
+.ci-prox-n { min-width: 0; display: flex; flex-direction: column; }
+.ci-prox-n b { font-size: 13.5px; font-weight: 600; color: var(--tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-prox-n small { font-size: 12px; color: var(--media); }
+.ci-vacio { padding: 6px 8px 8px; font-size: 13px; color: var(--media); }
+
+/* Edición: lo demás se atenúa */
+.ci.editando .ci-centro, .ci.editando .ci-prox, .ci.editando .ci-mini, .ci.editando .ci-cab { opacity: .35; filter: saturate(.6); pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    .ci-pase-in { transition: none; }
+    .ci-pase.volteado .ci-pase-in { transform: none; }
+    .ci-pase.volteado .ci-frente { visibility: hidden; }
+    .ci-reverso { transform: none; visibility: hidden; }
+    .ci-pase.volteado .ci-reverso { visibility: visible; }
+    .ci-bloque { transition: none; }
+}
 </style>
 
 <script>
-    const URL_CITAS = @js(url('citas'));
-    const CSRF      = @js(csrf_token());
-    const NAV       = { anterior: @js($urlAnterior), siguiente: @js($urlSiguiente), hoy: @js($urlHoy), dirHoy: @js($dirHoy), esMesActual: @js($esMesActual) };
-    const MES       = @js($mesPrefijo);
+function modCitas() {
+    const D = JSON.parse(document.getElementById('ci-datos').textContent);
+    const URL = D.url, CSRF = D.csrf;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const avisar = (m, t = 'success') => { if (window.notificar) window.notificar(m, t); };
+    const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const aMin = h => { const [a, b] = String(h || '0:0').split(':').map(Number); return a * 60 + (b || 0); };
+    const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const ESTADOS = [
+        { valor: 'Pendiente',  slug: 'pendiente',  corto: 'Pend.',   plural: 'Pendientes',  franja: 'Pendiente de confirmar' },
+        { valor: 'Confirmada', slug: 'confirmada', corto: 'Conf.',   plural: 'Confirmadas', franja: 'Confirmada por el paciente' },
+        { valor: 'En curso',   slug: 'en-curso',   corto: 'Curso',   plural: 'En consulta', franja: 'En consulta ahora' },
+        { valor: 'Finalizada', slug: 'finalizada', corto: 'Fin.',    plural: 'Finalizadas', franja: 'Consulta finalizada' },
+        { valor: 'Cancelada',  slug: 'cancelada',  corto: 'Canc.',   plural: 'Canceladas',  franja: 'Cita cancelada' }
+    ];
 
-    const sinAcentos = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-    const aMinutos   = h => { const [a, b] = String(h).split(':').map(Number); return a * 60 + b; };
-    const movimientoReducido = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return {
+        C: D.citas || [], PAC: D.pacientes || [], MED: D.medicos || [], CON: D.consultorios || [], ESTADOS,
+        PX: 1.4,                                  // píxeles por minuto en el tablero
+        hoy: iso(new Date()), dia: iso(new Date()), mesNav: iso(new Date()).slice(0, 7),
+        vista: 'dia', agrupar: 'medico', filtroMed: '', filtroEstado: '', q: '',
+        ahora: Date.now(), fantasma: null,
+        sel: null, editando: false, guardando: false,
+        form: {}, errores: {}, mensajeForm: '', bPac: { q: '', abierto: false, i: 0 },
+        pop: '', mesForm: iso(new Date()).slice(0, 7), popMed: false, exH: '', exM: '',
 
-    // Contador animado. El estado interno vive fuera del objeto reactivo para que x-effect no se dispare en bucle.
-    function contador() {
-        let actual = 0, raf = null, primera = true;
-        return {
-            valor: 0,
-            ir(meta) {
-                meta = Number(meta) || 0;
-                cancelAnimationFrame(raf);
-                if (movimientoReducido() || meta === actual) { actual = meta; this.valor = meta; return; }
-                const desde = actual, dur = primera ? 800 : 450, retraso = primera ? 300 : 0;
-                primera = false;
-                setTimeout(() => {
-                    const t0 = performance.now();
-                    const paso = t => {
-                        const p = Math.min(1, (t - t0) / dur);
-                        actual = Math.round(desde + (meta - desde) * (1 - Math.pow(1 - p, 3)));
-                        this.valor = actual;
-                        if (p < 1) raf = requestAnimationFrame(paso);
-                    };
-                    raf = requestAnimationFrame(paso);
-                }, retraso);
+        init() {
+            // Fecha y vista desde la URL (?fecha=AAAA-MM-DD&vista=mes, o el formato anterior ?mes=&anio=)
+            const u = new URLSearchParams(location.search);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(u.get('fecha') || '')) this.dia = u.get('fecha');
+            else if (u.get('mes') && u.get('anio')) { const m = `${u.get('anio')}-${String(u.get('mes')).padStart(2, '0')}`; if (m !== this.hoy.slice(0, 7)) this.dia = m + '-01'; this.vista = 'mes'; }
+            if (u.get('vista') === 'mes') this.vista = 'mes';
+            try { const a = localStorage.getItem('citas_agrupar'); if (a) this.agrupar = a; } catch (e) {}
+            this.mesNav = this.dia.slice(0, 7);
+            this.sel = this.delDia.find(c => this.minFin(c) >= this.minAhora && c.estado !== 'Cancelada') || this.delDia[0] || null;
+            this.form = this.formNuevo();
+
+            this.$watch('dia', v => { this.mesNav = v.slice(0, 7); this.urlSync(); this.$nextTick(() => this.enfocarTablero()); });
+            this.$watch('vista', () => this.urlSync());
+            this.$watch('agrupar', v => { try { localStorage.setItem('citas_agrupar', v); } catch (e) {} });
+            // Al elegir médico, fecha o duración en una cita nueva: consultorio habitual y primer horario libre
+            const autollenar = () => {
+                if (!this.editando || this.form.id) return;
+                if (this.form.personal_id && !this.form.consultorio_id) this.form.consultorio_id = this.consultorioHabitual(this.form.personal_id);
+                if ((!this.form.hora || this.choqueForm) && this.libres.length) this.form.hora = this.libres[0];
+            };
+            this.$watch('form.personal_id', autollenar);
+            this.$watch('form.fecha', autollenar);
+            this.$watch('form.consultorio_id', autollenar);
+            this.$watch('form.duracion_min', autollenar);
+            setInterval(() => { this.ahora = Date.now(); const h = iso(new Date()); if (h !== this.hoy) this.hoy = h; }, 30000);
+            this.$nextTick(() => this.enfocarTablero());
+        },
+
+        /* ---------- Utilidades ---------- */
+        slug(estado) { return (ESTADOS.find(e => e.valor === estado) || ESTADOS[0]).slug; },
+        aHora(min) { return String(Math.floor(min / 60) % 24).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0'); },
+        horaFin(c) { return this.aHora(aMin(c.hora) + Number(c.duracion_min || 30)); },
+        minFin(c) { return c.fecha === this.hoy ? aMin(c.hora) + Number(c.duracion_min || 30) : (c.fecha < this.hoy ? -1 : 99999); },
+        get minAhora() { const d = new Date(this.ahora); return d.getHours() * 60 + d.getMinutes(); },
+        get horaAhora() { return this.aHora(this.minAhora); },
+        get esHoyDia() { return this.dia === this.hoy; },
+        nombreMes(ym) { return MESES[Number(ym.slice(5, 7)) - 1]; },
+        diaSemana(f) { return new Date(f + 'T00:00:00').toLocaleDateString('es-MX', { weekday: 'long' }); },
+        fechaLarga(f) { return new Date(f + 'T00:00:00').toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' }); },
+        fechaCorta(f) {
+            if (f === this.hoy) return 'Hoy';
+            const m = new Date(this.hoy + 'T00:00:00'); m.setDate(m.getDate() + 1);
+            if (f === iso(m)) return 'Mañana';
+            return new Date(f + 'T00:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }).replace('.', '');
+        },
+        sumarMes(ym, n) { const d = new Date(ym + '-01T00:00:00'); d.setMonth(d.getMonth() + n); return iso(d).slice(0, 7); },
+        nombreMedico(id) { const m = this.MED.find(x => String(x.id) === String(id)); return m ? m.nombre : '—'; },
+        nombreConsultorio(id) { const c = this.CON.find(x => String(x.id) === String(id)); return c ? c.nombre + (c.piso ? ' · Piso ' + c.piso : '') : '—'; },
+        nombrePaciente(id) { const p = this.PAC.find(x => String(x.id) === String(id)); return p ? p.nombre : ''; },
+        franja(c) {
+            if (c.estado === 'En curso') return 'En consulta ahora · ' + this.nombreMedico(c.personal_id);
+            if (['Pendiente', 'Confirmada'].includes(c.estado) && c.fecha === this.hoy) {
+                const m = aMin(c.hora) - this.minAhora;
+                if (m > 0 && m <= 90) return (c.estado === 'Pendiente' ? 'Sin confirmar · ' : '') + 'empieza en ' + m + ' min';
+                if (m <= 0 && m > -Number(c.duracion_min)) return 'Debería estar en consulta';
             }
-        };
-    }
+            return (ESTADOS.find(e => e.valor === c.estado) || ESTADOS[0]).franja;
+        },
+        cuando(c) {
+            if (c.estado === 'En curso') return 'En consulta · ' + this.nombreMedico(c.personal_id);
+            if (c.fecha === this.hoy) { const m = aMin(c.hora) - this.minAhora; if (m > 0 && m < 60) return 'En ' + m + ' min · ' + this.nombreMedico(c.personal_id); }
+            return this.nombreMedico(c.personal_id);
+        },
+        siguientePaso(c) {
+            return { 'Pendiente': { valor: 'Confirmada', accion: 'Confirmar cita' }, 'Confirmada': { valor: 'En curso', accion: 'Iniciar consulta' }, 'En curso': { valor: 'Finalizada', accion: 'Finalizar consulta' } }[c.estado] || null;
+        },
+        guilloche(seed) {
+            let h = 2166136261; for (const ch of String(seed)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } h >>>= 0;
+            const w = 340, al = 410, n = 20 + h % 10, cx = w * .8, cy = al * .22; let d = '';
+            for (let k = 0; k < 12; k++) {
+                const A = 50 + k * 8, B = 6 + (k % 4) * 2, ph = k * .22 + (h % 100) / 50;
+                for (let i = 0; i <= 240; i++) { const t = i / 240 * 2 * Math.PI, r = A + B * Math.cos(n * t + ph); d += (i ? 'L' : 'M') + (cx + r * Math.cos(t)).toFixed(1) + ',' + (cy + r * Math.sin(t)).toFixed(1); }
+                d += 'Z';
+            }
+            for (let k = 0; k < 7; k++) { const y0 = 190 + k * 32; for (let x = 0; x <= w; x += 6) d += (x ? 'L' : 'M') + x + ',' + (y0 + 6 * Math.sin(x / 27 + k * .9 + h % 5) + 2.5 * Math.sin(x / 8 + k)).toFixed(1); }
+            return `<svg viewBox="0 0 ${w} ${al}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path d="${d}" fill="none" stroke="#a6efe2" stroke-width=".6" opacity=".2"/></svg>`;
+        },
 
-    function avisoCitas(icon, title, ms = 3500) {
-        window.dispatchEvent(new CustomEvent('toast-cita', { detail: { icon, title, ms } }));
-    }
+        get doctores() { return this.MED.filter(m => m.esMedico !== false); },
+        aMinutos(h) { return aMin(h); },
+        citasDeMedico(id, f) { return this.C.filter(c => String(c.personal_id) === String(id) && c.fecha === f && c.estado !== 'Cancelada').length; },
+        abrirPop(k) {
+            this.pop = this.pop === k ? '' : k;
+            if (k === 'fecha') this.mesForm = (this.form.fecha || this.hoy).slice(0, 7);
+            if (k === 'hora') { this.exH = this.form.hora ? this.form.hora.slice(0, 2) : ''; this.exM = this.form.hora ? this.form.hora.slice(3, 5) : ''; this.$nextTick(() => this.$refs.horaH && this.$refs.horaH.focus()); }
+        },
+        horaConEspacio(h) {
+            return [0, 15, 30, 45].some(m => {
+                const t = h * 60 + m;
+                if (this.form.fecha === this.hoy && t < this.minAhora + 5) return false;
+                return !this.conflicto(Object.assign({}, this.form, { hora: this.aHora(t) }));
+            });
+        },
+        elegirHora(h, m) { this.form.hora = this.aHora(h * 60 + m); this.exH = this.form.hora.slice(0, 2); this.exM = this.form.hora.slice(3, 5); this.errores.hora = ''; },
+        // Hora exacta: cualquier minuto de 00:00 a 23:59 (los campos se editan libremente y se aplican al ser válidos)
+        aplicarExacta() {
+            this.exH = this.exH.replace(/\D/g, ''); this.exM = this.exM.replace(/\D/g, '');
+            if (this.exH === '') return;
+            const h = Math.min(23, parseInt(this.exH, 10)), m = this.exM === '' ? 0 : Math.min(59, parseInt(this.exM, 10));
+            this.form.hora = this.aHora(h * 60 + m); this.errores.hora = '';
+        },
+        pasoParte(parte, d) {
+            const [h, m] = (this.form.hora || '09:00').split(':').map(Number);
+            this.form.hora = parte === 'h' ? this.aHora(((h + d + 24) % 24) * 60 + m) : this.aHora(h * 60 + (m + d + 60) % 60);
+            this.exH = this.form.hora.slice(0, 2); this.exM = this.form.hora.slice(3, 5); this.errores.hora = '';
+        },
 
-    function toastYRecargar(icon, title) {
-        try { sessionStorage.setItem('toast_citas', JSON.stringify({ icon, title })); } catch (e) {}
-        location.reload();
-    }
+        /* ---------- Filtros y datos derivados ---------- */
+        get visibles() {
+            const q = norm(this.q.trim());
+            return this.C.filter(c =>
+                (!this.filtroMed || String(c.personal_id) === this.filtroMed) &&
+                (!this.filtroEstado || c.estado === this.filtroEstado) &&
+                (!q || norm(c.paciente + ' ' + c.motivo).includes(q)));
+        },
+        porFecha(f) { return this.visibles.filter(c => c.fecha === f).sort((a, b) => a.hora.localeCompare(b.hora)); },
+        get delDia() { return this.porFecha(this.dia); },
+        get resumen() {
+            const q = norm(this.q.trim()), r = {};
+            this.C.filter(c => (this.vista === 'dia' ? c.fecha === this.dia : c.fecha.startsWith(this.mesNav)) &&
+                (!this.filtroMed || String(c.personal_id) === this.filtroMed) && (!q || norm(c.paciente + ' ' + c.motivo).includes(q)))
+                .forEach(c => { r[c.estado] = (r[c.estado] || 0) + 1; });
+            return r;
+        },
+        contarMes() { return this.visibles.filter(c => c.fecha.startsWith(this.mesNav) && c.estado !== 'Cancelada').length; },
+        get listaLateral() {
+            if (this.q.trim()) return [...this.visibles].sort((a, b) => Math.abs(new Date(a.fecha) - new Date(this.hoy)) - Math.abs(new Date(b.fecha) - new Date(this.hoy)) || a.hora.localeCompare(b.hora)).slice(0, 8);
+            return this.visibles.filter(c => ['Pendiente', 'Confirmada', 'En curso'].includes(c.estado) && (c.fecha > this.hoy || (c.fecha === this.hoy && this.minFin(c) >= this.minAhora)))
+                .sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora)).slice(0, 5);
+        },
 
-    function moduloCitas() {
-        return {
-            // ----- Datos -----
-            citas: @json($citasJs),
-            pacientes: @json($opPacientes),
-            personal: @json($opPersonal),
-            consultorios: @json($opConsultorios),
-            hoy: @js($hoyStr),
+        /* ---------- Tablero ---------- */
+        get columnas() {
+            const delDia = this.delDia, porMed = this.agrupar === 'medico';
+            const clave = porMed ? 'personal_id' : 'consultorio_id';
+            let base = porMed ? this.doctores.map(m => ({ id: m.id, titulo: m.nombre, sub: m.especialidad || 'Médico' }))
+                              : this.CON.map(c => ({ id: c.id, titulo: c.nombre, sub: (c.piso ? 'Piso ' + c.piso : 'Sin piso') + (c.estado === 'Mantenimiento' ? ' · mantenimiento' : ''), mant: c.estado === 'Mantenimiento' }));
+            if (porMed && this.filtroMed) base = base.filter(m => String(m.id) === this.filtroMed);
+            const usados = new Set(delDia.map(c => String(c[clave])));
+            // Citas de un médico o consultorio que ya no está en la lista
+            usados.forEach(id => { if (!base.some(b => String(b.id) === id)) base.push({ id: Number(id), titulo: '—', sub: 'No disponible' }); });
+            const con = base.filter(b => usados.has(String(b.id)));
+            const extra = base.filter(b => !usados.has(String(b.id)) && !b.mant).slice(0, Math.max(0, (porMed ? 3 : 4) - con.length));
+            return [...con, ...extra].map(b => Object.assign(b, { clave }));
+        },
+        get rango() {
+            let ini = 8, fin = 20;
+            this.delDia.forEach(c => { ini = Math.min(ini, Math.floor(aMin(c.hora) / 60)); fin = Math.max(fin, Math.ceil((aMin(c.hora) + Number(c.duracion_min)) / 60)); });
+            if (this.esHoyDia) { ini = Math.min(ini, Math.floor(this.minAhora / 60)); fin = Math.max(fin, Math.ceil(this.minAhora / 60)); }
+            return { ini: Math.max(0, Math.min(ini, 7)), fin: Math.min(24, fin) };
+        },
+        get horas() { const h = []; for (let i = this.rango.ini; i < this.rango.fin; i++) h.push(i); return h; },
+        get altoTablero() { return (this.rango.fin - this.rango.ini) * 60 * this.PX; },
+        bloques(col) {
+            const lista = this.delDia.filter(c => String(c[col.clave]) === String(col.id))
+                .map(c => ({ c, ini: aMin(c.hora), fin: aMin(c.hora) + Number(c.duracion_min || 30) }));
+            // Carriles para citas que se traslapan (por ejemplo, canceladas en el mismo horario)
+            const grupos = []; let g = null;
+            lista.forEach(b => { if (!g || b.ini >= g.fin) { g = { fin: b.fin, items: [] }; grupos.push(g); } g.items.push(b); g.fin = Math.max(g.fin, b.fin); });
+            grupos.forEach(gr => {
+                const carriles = [];
+                gr.items.forEach(b => { let k = carriles.findIndex(f => f <= b.ini); if (k < 0) { k = carriles.length; carriles.push(0); } carriles[k] = b.fin; b.k = k; });
+                gr.items.forEach(b => { b.n = carriles.length; });
+            });
+            return lista.map(b => ({
+                c: b.c, top: (b.ini - this.rango.ini * 60) * this.PX, alto: Math.max(18, (b.fin - b.ini) * this.PX - 2),
+                izq: b.k / b.n * 100, ancho: 100 / b.n
+            }));
+        },
+        minutoDe(e) {
+            const m = this.rango.ini * 60 + e.offsetY / this.PX;
+            return Math.max(this.rango.ini * 60, Math.min(this.rango.fin * 60 - 30, Math.floor(m / 15) * 15));
+        },
+        libreEn(col, min) {
+            return !this.delDia.some(c => String(c[col.clave]) === String(col.id) && c.estado !== 'Cancelada' && aMin(c.hora) < min + 30 && min < aMin(c.hora) + Number(c.duracion_min));
+        },
+        clicEspacio(col, e) {
+            if (this.dia < this.hoy) { avisar('No se pueden agendar citas en días pasados.', 'info'); return; }
+            const min = this.minutoDe(e);
+            if (this.esHoyDia && min + 15 < this.minAhora) { avisar('Esa hora ya pasó.', 'info'); return; }
+            const datos = { fecha: this.dia, hora: this.aHora(min) };
+            datos[col.clave] = String(col.id);
+            this.nueva(datos);
+        },
+        enfocarTablero() {
+            const el = this.$refs.tablero; if (!el || this.vista !== 'dia') return;
+            const objetivo = this.esHoyDia ? this.minAhora : (this.delDia[0] ? aMin(this.delDia[0].hora) : 8 * 60);
+            el.scrollTo({ top: Math.max(0, (objetivo - this.rango.ini * 60) * this.PX - 90), behavior: reduce ? 'auto' : 'smooth' });
+        },
 
-            paleta: {
-                'Pendiente':  { chip: 'bg-amber-50 text-amber-700',     dot: 'bg-amber-400',   borde: 'border-amber-400',   anillo: 'ring-amber-300' },
-                'Confirmada': { chip: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500', borde: 'border-emerald-500', anillo: 'ring-emerald-300' },
-                'En curso':   { chip: 'bg-sky-50 text-sky-700',         dot: 'bg-sky-500',     borde: 'border-sky-500',     anillo: 'ring-sky-300' },
-                'Finalizada': { chip: 'bg-slate-100 text-slate-600',    dot: 'bg-slate-400',   borde: 'border-slate-400',   anillo: 'ring-slate-300' },
-                'Cancelada':  { chip: 'bg-red-50 text-red-600',         dot: 'bg-red-500',     borde: 'border-red-500',     anillo: 'ring-red-300' }
-            },
+        /* ---------- Mes ---------- */
+        celdasMes(ym) {
+            const primero = new Date(ym + '-01T00:00:00'), offset = (primero.getDay() + 6) % 7;
+            const inicio = new Date(primero); inicio.setDate(1 - offset);
+            const dias = new Date(primero.getFullYear(), primero.getMonth() + 1, 0).getDate();
+            const total = Math.ceil((offset + dias) / 7) * 7, out = [];
+            for (let i = 0; i < total; i++) { const d = new Date(inicio); d.setDate(inicio.getDate() + i); const f = iso(d); out.push({ fecha: f, dentro: f.startsWith(ym) }); }
+            return out;
+        },
 
-            // ----- Estado de la vista -----
-            vista: 'mes',
-            dirAnim: '',
-            ahora: Date.now(),
-            filtroDoctor: '',
-            estadosOcultos: [],
-            busqueda: '',
-            mapa: {},            // { 'YYYY-MM-DD': [citas ordenadas] } — se recalcula solo cuando cambian los filtros
-            maxDia: 1,
+        /* ---------- Navegación ---------- */
+        irDia(f, aDia) { if (this.editando) return; this.dia = f; if (aDia) this.vista = 'dia'; const d = this.delDia; if (!this.sel || this.sel.fecha !== f) this.sel = d.find(c => this.minFin(c) >= this.minAhora && c.estado !== 'Cancelada') || d[0] || this.sel; },
+        mover(n) {
+            if (this.vista === 'mes') { this.mesNav = this.sumarMes(this.mesNav, n); return; }
+            const d = new Date(this.dia + 'T00:00:00'); d.setDate(d.getDate() + n); this.irDia(iso(d));
+        },
+        irHoy() { if (this.vista === 'mes') this.mesNav = this.hoy.slice(0, 7); else this.irDia(this.hoy); },
+        cambiarVista(v) { this.vista = v; if (v === 'mes') this.mesNav = this.dia.slice(0, 7); else this.$nextTick(() => this.enfocarTablero()); },
+        urlSync() { try { history.replaceState(null, '', location.pathname + '?fecha=' + this.dia + (this.vista === 'mes' ? '&vista=mes' : '')); } catch (e) {} },
+        seleccionar(c, irA) { if (this.editando) return; this.sel = c; if (irA && c.fecha !== this.dia) { this.dia = c.fecha; this.vista = 'dia'; } },
 
-            // ----- Modales -----
-            openCitaModal: false,
-            modoEdicion: false,
-            guardando: false,
-            openDetalle: false,
-            citaActual: null,
-            cambiandoEstado: false,
-            openDia: false,
-            diaSeleccionado: '',
-            form: {},
+        /* ---------- Formulario (el pase se voltea) ---------- */
+        formNuevo(d = {}) {
+            return Object.assign({ id: null, paciente_id: '', personal_id: this.filtroMed || '', consultorio_id: '', fecha: this.dia < this.hoy ? this.hoy : this.dia, hora: '', duracion_min: 30, tipo_consulta: 'Primera Vez', estado: 'Pendiente', motivo: '' }, d);
+        },
+        nueva(datos = {}) {
+            if (this.editando) return;
+            this.form = this.formNuevo(datos);
+            if (this.form.personal_id && !this.form.consultorio_id) this.form.consultorio_id = this.consultorioHabitual(this.form.personal_id);
+            if (!this.form.hora && this.libres.length) this.form.hora = this.libres[0];
+            this.abrirForm();
+        },
+        editar(c) {
+            if (this.editando || !c) return;
+            this.form = { id: c.id, paciente_id: String(c.paciente_id), personal_id: String(c.personal_id), consultorio_id: String(c.consultorio_id || ''), fecha: c.fecha, hora: c.hora, duracion_min: Number(c.duracion_min), tipo_consulta: c.tipo_consulta, estado: c.estado, motivo: c.motivo };
+            this.abrirForm();
+        },
+        abrirForm() {
+            this.errores = {}; this.mensajeForm = 'Ctrl+Enter guarda'; this.bPac = { q: '', abierto: false, i: 0 }; this.pop = '';
+            this.editando = true;
+            this.$nextTick(() => { const p = this.$root.querySelector('.ci-pase'); if (p) p.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' }); });
+            setTimeout(() => { const el = this.form.paciente_id ? this.$root.querySelector('.ci-reverso .ci-pick') : this.$refs.campoPaciente; el && el.focus({ preventScroll: true }); }, reduce ? 0 : 450);
+        },
+        cancelar() {
+            this.editando = false; this.guardando = false;
+            this.$nextTick(() => { const b = this.$root.querySelector('.ci-acc .ci-btn'); if (b) b.focus({ preventScroll: true }); else if (document.activeElement) document.activeElement.blur(); });
+        },
+        get pacientesFiltrados() {
+            const q = norm(this.bPac.q.trim());
+            const l = q ? this.PAC.filter(p => norm(p.nombre + ' ' + (p.curp || '')).includes(q)) : this.PAC;
+            return l.slice(0, 8);
+        },
+        elegirPaciente(p) { this.form.paciente_id = String(p.id); this.bPac = { q: '', abierto: false, i: 0 }; this.errores.paciente_id = ''; },
+        consultorioHabitual(medId) {
+            const previas = this.C.filter(c => String(c.personal_id) === String(medId) && c.consultorio_id).sort((a, b) => (b.fecha + b.hora).localeCompare(a.fecha + a.hora));
+            return previas[0] ? String(previas[0].consultorio_id) : '';
+        },
+        conflicto(f) {
+            if (!f.fecha || !f.hora || f.estado === 'Cancelada') return null;
+            const ini = aMin(f.hora), fin = ini + Number(f.duracion_min || 30);
+            const c = this.C.find(x => x.fecha === f.fecha && String(x.id) !== String(f.id) && x.estado !== 'Cancelada' &&
+                ((f.personal_id && String(x.personal_id) === String(f.personal_id)) || (f.consultorio_id && String(x.consultorio_id) === String(f.consultorio_id))) &&
+                aMin(x.hora) < fin && ini < aMin(x.hora) + Number(x.duracion_min || 30));
+            if (!c) return null;
+            const quien = String(c.personal_id) === String(f.personal_id) ? 'El médico' : 'El consultorio';
+            return `${quien} ya tiene cita de ${c.hora} a ${this.horaFin(c)} (${c.paciente}).`;
+        },
+        get choqueForm() { return this.editando ? this.conflicto(this.form) : null; },
+        get libres() {
+            const f = this.form; if (!f.fecha || !f.personal_id) return [];
+            const out = [], dur = Number(f.duracion_min || 30);
+            for (let m = 8 * 60; m + dur <= 20 * 60; m += 30) {
+                if (f.fecha === this.hoy && m < this.minAhora + 5) continue;
+                if (!this.conflicto(Object.assign({}, f, { hora: this.aHora(m) }))) out.push(this.aHora(m));
+                if (out.length >= 10) break;
+            }
+            return out;
+        },
+        async guardar() {
+            if (this.guardando) return;
+            const f = this.form; f.motivo = String(f.motivo || '').trim();
+            const e = {};
+            if (!f.paciente_id) e.paciente_id = 'Elige al paciente.';
+            if (!f.personal_id) e.personal_id = 'Elige al médico.';
+            if (!f.consultorio_id) e.consultorio_id = 'Elige el consultorio.';
+            if (!f.fecha) e.fecha = 'Indica la fecha.';
+            if (!f.hora) e.hora = 'Indica la hora.';
+            if (!f.motivo) e.motivo = 'Escribe el motivo de la consulta.';
+            if (!f.id && f.fecha && f.hora && new Date(f.fecha + 'T' + f.hora).getTime() < Date.now() - 5 * 60000) e.hora = 'Esa fecha y hora ya pasaron.';
+            this.errores = e;
+            if (Object.keys(e).length) { this.mensajeForm = 'Revisa los datos marcados.'; return; }
+            if (this.choqueForm) return;
 
-            // ----- Panel de próximas citas -----
-            panelAbierto: true,
-            layoutPanel: true,
-            get maxVisibles() { return this.panelAbierto ? 2 : 3; },
-            alternarPanel() {
-                const abrir = !this.panelAbierto;
-                this.panelAbierto = abrir;
-                if (abrir) this.layoutPanel = true;
-                else setTimeout(() => { if (!this.panelAbierto) this.layoutPanel = false; }, 180);
-                try { localStorage.setItem('citas_panel_abierto', abrir ? '1' : '0'); } catch (e) {}
-            },
-
-            confirmar: { abierto: false, cargando: false, id: null, paciente: '', fecha: '' },
-
-            // ----- Notificaciones -----
-            toasts: [],
-            toastId: 0,
-            estilosToast: {
-                success: { titulo: 'Listo',    bi: 'bi-check-lg',       icono: 'bg-emerald-50 text-emerald-600', barra: 'bg-emerald-400' },
-                warning: { titulo: 'Atención', bi: 'bi-exclamation-lg', icono: 'bg-amber-50 text-amber-600',     barra: 'bg-amber-400' },
-                error:   { titulo: 'Error',    bi: 'bi-x-lg',           icono: 'bg-rose-50 text-rose-600',       barra: 'bg-rose-400' },
-                info:    { titulo: 'Aviso',    bi: 'bi-info-lg',        icono: 'bg-sky-50 text-sky-600',         barra: 'bg-sky-400' }
-            },
-            agregarToast(d) {
-                const id = ++this.toastId;
-                const ms = d.ms || 3500;
-                this.toasts.push({ id, tipo: this.estilosToast[d.icon] ? d.icon : 'info', mensaje: d.title, ms, visible: false });
-                setTimeout(() => { const t = this.toasts.find(x => x.id === id); if (t) t.visible = true; }, 30);
-                setTimeout(() => this.cerrarToast(id), ms + 30);
-            },
-            cerrarToast(id) {
-                const t = this.toasts.find(x => x.id === id);
-                if (!t) return;
-                t.visible = false;
-                setTimeout(() => { this.toasts = this.toasts.filter(x => x.id !== id); }, 300);
-            },
-
-            init() {
-                this.form = this.formNuevo();
-
-                try {
-                    const p = localStorage.getItem('citas_panel_abierto');
-                    if (p !== null) this.panelAbierto = p === '1';
-                    const v = localStorage.getItem('citas_vista');
-                    this.vista = v || (window.matchMedia('(max-width: 639px)').matches ? 'lista' : 'mes');
-                } catch (e) {}
-                this.layoutPanel = this.panelAbierto;
-
-                this.recalcular();
-                this.$watch('filtroDoctor', () => this.recalcular());
-                this.$watch('estadosOcultos', () => this.recalcular());
-                this.$watch('busqueda', () => this.recalcular());
-
-                setInterval(() => { this.ahora = Date.now(); }, 30000);
-
-                try {
-                    const dir = sessionStorage.getItem('citas_dir');
-                    if (dir) { sessionStorage.removeItem('citas_dir'); this.dirAnim = dir; }
-                } catch (e) {}
-
-                window.addEventListener('toast-cita', e => this.agregarToast(e.detail));
-                window.addEventListener('keydown', e => this.atajo(e));
-
-                try {
-                    const pendiente = sessionStorage.getItem('toast_citas');
-                    if (pendiente) {
-                        sessionStorage.removeItem('toast_citas');
-                        const t = JSON.parse(pendiente);
-                        this.$nextTick(() => avisoCitas(t.icon, t.title));
-                    }
-                } catch (e) {}
-            },
-
-            // ----- Atajos de teclado -----
-            get hayModal() { return this.openCitaModal || this.openDetalle || this.openDia || this.confirmar.abierto; },
-            atajo(e) {
-                if (e.ctrlKey || e.metaKey || e.altKey || this.hayModal) return;
-                const el = e.target;
-                if (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable) {
-                    if (e.key === 'Escape' && el === this.$refs.buscar) { this.busqueda = ''; el.blur(); }
-                    return;
-                }
-                const ir = (url, dir) => { this.recordarDireccion(dir); location.href = url; };
-                switch (e.key) {
-                    case 'ArrowLeft':  ir(NAV.anterior, 'anterior'); break;
-                    case 'ArrowRight': ir(NAV.siguiente, 'siguiente'); break;
-                    case 't': case 'T': if (!NAV.esMesActual) ir(NAV.hoy, NAV.dirHoy); break;
-                    case 'n': case 'N': e.preventDefault(); this.nuevaCita(); break;
-                    case 'v': case 'V': this.cambiarVista(this.vista === 'mes' ? 'lista' : 'mes'); break;
-                    case '/': e.preventDefault(); this.$refs.buscar.focus(); break;
-                }
-            },
-
-            cambiarVista(v) {
-                this.vista = v;
-                try { localStorage.setItem('citas_vista', v); } catch (e) {}
-            },
-
-            // ----- Filtros -----
-            get citasFiltradas() {
-                const q = sinAcentos(this.busqueda.trim());
-                return this.citas.filter(c =>
-                    !this.estadosOcultos.includes(c.estado) &&
-                    (this.filtroDoctor === '' || String(c.personal_id) === String(this.filtroDoctor)) &&
-                    (!q || sinAcentos(c.paciente + ' ' + c.motivo).includes(q))
-                );
-            },
-            recalcular() {
-                const m = {};
-                for (const c of this.citasFiltradas) (m[c.fecha] = m[c.fecha] || []).push(c);
-                let max = 1;
-                for (const f in m) {
-                    m[f].sort((a, b) => a.hora.localeCompare(b.hora));
-                    if (f.startsWith(MES)) max = Math.max(max, m[f].length);
-                }
-                this.mapa = m;
-                this.maxDia = max;
-            },
-            citasDia(fecha) { return this.mapa[fecha] || []; },
-            ocupacion(fecha) { return Math.max(12, Math.round(this.citasDia(fecha).length / this.maxDia * 100)); },
-            coincideBusqueda(fecha) { return this.busqueda.trim() !== '' && this.citasDia(fecha).length > 0; },
-
-            get hayFiltros() { return this.filtroDoctor !== '' || this.estadosOcultos.length > 0 || this.busqueda.trim() !== ''; },
-            get totalVisibleMes() {
-                return Object.keys(this.mapa).filter(f => f.startsWith(MES)).reduce((n, f) => n + this.mapa[f].length, 0);
-            },
-            limpiarFiltros() { this.filtroDoctor = ''; this.estadosOcultos = []; this.busqueda = ''; },
-
-            alternarEstado(nombre) {
-                this.estadosOcultos = this.estadoOculto(nombre)
-                    ? this.estadosOcultos.filter(e => e !== nombre)
-                    : [...this.estadosOcultos, nombre];
-            },
-            estadoOculto(nombre) { return this.estadosOcultos.includes(nombre); },
-
-            // Resumen del mes (respeta doctor y búsqueda, no los estados ocultos)
-            get resumen() {
-                const q = sinAcentos(this.busqueda.trim());
-                const delMes = this.citas.filter(c => c.fecha.startsWith(MES));
-                const lista = delMes.filter(c =>
-                    (this.filtroDoctor === '' || String(c.personal_id) === String(this.filtroDoctor)) &&
-                    (!q || sinAcentos(c.paciente + ' ' + c.motivo).includes(q)));
-                const r = { total: lista.length, totalSinFiltro: delMes.length };
-                for (const e of Object.keys(this.paleta)) r[e] = lista.filter(c => c.estado === e).length;
-                return r;
-            },
-            porcentaje(clave) {
-                if (clave === 'total') return this.resumen.totalSinFiltro ? Math.round(this.resumen.total / this.resumen.totalSinFiltro * 100) : 0;
-                return this.resumen.total ? Math.round((this.resumen[clave] || 0) / this.resumen.total * 100) : 0;
-            },
-
-            get agendaMes() {
-                return Object.keys(this.mapa).filter(f => f.startsWith(MES)).sort()
-                    .map(f => ({ fecha: f, citas: this.mapa[f] }));
-            },
-
-            // ----- Hoy -----
-            get citasHoy() {
-                return this.citas.filter(c => c.fecha === this.hoy && c.estado !== 'Cancelada' &&
-                    (this.filtroDoctor === '' || String(c.personal_id) === String(this.filtroDoctor)));
-            },
-            get siguienteHoy() {
-                return this.citasHoy
-                    .filter(c => ['Pendiente', 'Confirmada', 'En curso'].includes(c.estado) && this.minutosPara(c) > -Number(c.duracion_min || 30))
-                    .sort((a, b) => a.hora.localeCompare(b.hora))[0] || null;
-            },
-
-            // ----- Formato -----
-            chipDe(c)  { return (this.paleta[c.estado] || this.paleta['Pendiente']).chip; },
-            puntoDe(c) { return (this.paleta[c.estado] || this.paleta['Pendiente']).dot; },
-            bordeDe(c) { return (this.paleta[c.estado] || this.paleta['Pendiente']).borde; },
-
-            minutosPara(c) { return Math.round((new Date(c.fecha + 'T' + c.hora).getTime() - this.ahora) / 60000); },
-            pronto(c) { const m = this.minutosPara(c); return c.estado !== 'En curso' && m <= 60 && m > -30; },
-            etiquetaRelativa(c) {
-                if (c.estado === 'En curso') return 'En curso ahora';
-                const m = this.minutosPara(c);
-                if (m <= 0 && m > -30) return 'Ahora · ' + c.hora;
-                if (m > 0 && m < 60) return 'En ' + m + ' min · ' + c.hora;
-                if (c.fecha === this.hoy && m >= 60) return 'Hoy · ' + c.hora;
-                return this.fechaCorta(c.fecha) + ' · ' + c.hora;
-            },
-
-            iniciales(nombre) { return (nombre || '?').trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase(); },
-            nombreDe(lista, id) {
-                const item = this[lista].find(x => String(x.id) === String(id));
-                return item ? item.nombre : '—';
-            },
-            horaFin(c) {
-                const total = aMinutos(c.hora) + Number(c.duracion_min || 30);
-                return String(Math.floor(total / 60) % 24).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
-            },
-            fechaCorta(f) {
-                if (f === this.hoy) return 'Hoy';
-                return new Date(f + 'T00:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' });
-            },
-            fechaLarga(f) {
-                if (!f) return '';
-                const txt = new Date(f + 'T00:00:00').toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-                return txt.charAt(0).toUpperCase() + txt.slice(1);
-            },
-            diaSemanaCorto(f) { return new Date(f + 'T00:00:00').toLocaleDateString('es-MX', { weekday: 'short' }).replace('.', ''); },
-            etiquetaDia(f) {
-                const n = this.citasDia(f).length;
-                return this.fechaLarga(f) + (n ? ', ' + n + (n === 1 ? ' cita' : ' citas') : ', sin citas');
-            },
-
-            // ----- Efectos -----
-            recordarDireccion(dir) { try { sessionStorage.setItem('citas_dir', dir); } catch (e) {} },
-            ripple(e) {
-                const el = e.currentTarget;
-                if (!el || movimientoReducido() || (!e.clientX && !e.clientY)) return;
-                const r = el.getBoundingClientRect(), d = Math.max(r.width, r.height);
-                const onda = document.createElement('span');
-                onda.className = 'ripple-onda';
-                onda.style.width = onda.style.height = d + 'px';
-                onda.style.left = (e.clientX - r.left - d / 2) + 'px';
-                onda.style.top  = (e.clientY - r.top - d / 2) + 'px';
-                el.appendChild(onda);
-                setTimeout(() => onda.remove(), 650);
-            },
-
-            // ----- Clic en un día -----
-            clicDia(e, fecha, pasado) {
-                const n = this.citasDia(fecha).length;
-                const movil = window.matchMedia('(max-width: 639px)').matches;
-                if (!pasado) this.ripple(e);
-                if ((movil || pasado) && n) return this.abrirDia(fecha);
-                if (pasado) return avisoCitas('info', 'No se pueden agendar citas en días pasados.');
-                this.nuevaCita(fecha);
-            },
-
-            get proximas() {
-                const desde = this.ahora - 30 * 60000;
-                return this.citasFiltradas
-                    .filter(c => ['Pendiente', 'Confirmada', 'En curso'].includes(c.estado) && new Date(c.fecha + 'T' + c.hora).getTime() >= desde)
-                    .sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora))
-                    .slice(0, 6);
-            },
-
-            // ----- Modales -----
-            abrirDia(fecha) { this.diaSeleccionado = fecha; this.openDia = true; },
-            verCita(id) {
-                const c = this.citas.find(x => x.id === id);
-                if (!c) return;
-                this.citaActual = { ...c };
-                this.openDetalle = true;
-            },
-            formNuevo(fecha = null) {
-                return {
-                    id: null, motivo: '', paciente_id: '', personal_id: '', consultorio_id: '',
-                    fecha: fecha || this.hoy, hora: '09:00', duracion_min: '30',
-                    tipo_consulta: 'Primera Vez', estado: 'Pendiente'
-                };
-            },
-            nuevaCita(fecha = null) {
-                this.modoEdicion = false;
-                this.form = this.formNuevo(fecha);
-                this.openDia = false;
-                this.openCitaModal = true;
-            },
-            editarCita(id) {
-                const c = this.citas.find(x => x.id === id);
-                if (!c) return;
-                this.modoEdicion = true;
-                this.form = {
-                    id: c.id, motivo: c.motivo, paciente_id: c.paciente_id, personal_id: c.personal_id,
-                    consultorio_id: c.consultorio_id, fecha: c.fecha, hora: c.hora,
-                    duracion_min: String(c.duracion_min), tipo_consulta: c.tipo_consulta, estado: c.estado
-                };
-                this.openDetalle = false;
-                this.openDia = false;
-                this.openCitaModal = true;
-            },
-
-            // ----- Choques de horario (mismo doctor o mismo consultorio) -----
-            buscarConflicto(f) {
-                if (f.estado === 'Cancelada') return null;
-                const ini = aMinutos(f.hora), fin = ini + Number(f.duracion_min || 30);
-                const choque = this.citas.find(c =>
-                    c.fecha === f.fecha && String(c.id) !== String(f.id) && c.estado !== 'Cancelada' &&
-                    (String(c.personal_id) === String(f.personal_id) || String(c.consultorio_id) === String(f.consultorio_id)) &&
-                    aMinutos(c.hora) < fin && ini < aMinutos(c.hora) + Number(c.duracion_min || 30));
-                if (!choque) return null;
-                const quien = String(choque.personal_id) === String(f.personal_id)
-                    ? nombreSeguro(this.nombreDe('personal', f.personal_id), 'El doctor')
-                    : 'El consultorio ' + this.nombreDe('consultorios', f.consultorio_id);
-                return `${quien} ya tiene una cita con ${choque.paciente} de ${choque.hora} a ${this.horaFin(choque)}.`;
-            },
-
-            payloadDe(f) {
-                return {
-                    paciente_id: f.paciente_id, personal_id: f.personal_id, consultorio_id: f.consultorio_id,
-                    fecha: f.fecha, hora: f.hora, duracion_min: f.duracion_min, tipo_consulta: f.tipo_consulta,
-                    estado: f.estado, motivo: f.motivo
-                };
-            },
-
-            async enviar(url, metodo, payload) {
-                const r = await fetch(url, {
-                    method: metodo,
+            this.guardando = true; this.mensajeForm = 'Guardando…';
+            try {
+                const r = await fetch(f.id ? `${URL}/${f.id}` : URL, {
+                    method: f.id ? 'PUT' : 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF },
-                    body: payload ? JSON.stringify(payload) : undefined
+                    body: JSON.stringify({ paciente_id: f.paciente_id, personal_id: f.personal_id, consultorio_id: f.consultorio_id, fecha: f.fecha, hora: f.hora, duracion_min: Number(f.duracion_min), tipo_consulta: f.tipo_consulta, estado: f.id ? f.estado : 'Pendiente', motivo: f.motivo })
                 });
-                const res = await r.json().catch(() => ({}));
-                let mensaje = res.message;
-                if (!r.ok && res.errors) mensaje = res.errors[Object.keys(res.errors)[0]][0];
-                return { ok: r.ok, res, mensaje };
-            },
-
-            // ----- Guardar (crear o actualizar) -----
-            async guardar() {
-                if (this.guardando) return;
-                const f = this.form;
-                if (!f.paciente_id || !f.personal_id || !f.consultorio_id) return avisoCitas('warning', 'Selecciona el paciente, el médico y el consultorio.');
-                if (!f.fecha || !f.hora) return avisoCitas('warning', 'Indica la fecha y la hora de la cita.');
-                if (!String(f.motivo || '').trim()) return avisoCitas('warning', 'Escribe el motivo de la consulta.');
-                if (!this.modoEdicion && new Date(f.fecha + 'T' + f.hora).getTime() < Date.now() - 5 * 60000) {
-                    return avisoCitas('warning', 'La fecha y hora de la cita ya pasaron.');
+                const d = await r.json().catch(() => ({}));
+                if (r.status === 422) {
+                    Object.entries(d.errors || {}).forEach(([k, v]) => { this.errores[k] = v[0]; });
+                    this.mensajeForm = d.message || 'Revisa los datos.'; this.guardando = false; return;
                 }
-                const choque = this.buscarConflicto(f);
-                if (choque) return avisoCitas('warning', choque, 6000);
-
-                this.guardando = true;
-                const editando = this.modoEdicion && f.id;
-                try {
-                    const { ok, res, mensaje } = await this.enviar(editando ? `${URL_CITAS}/${f.id}` : URL_CITAS, editando ? 'PUT' : 'POST', this.payloadDe(f));
-                    if (!ok) {
-                        avisoCitas('warning', mensaje || 'No se pudo guardar la cita.', 5000);
-                        this.guardando = false;
-                        return;
-                    }
-                    this.openCitaModal = false;
-                    toastYRecargar('success', res.message || (editando ? 'Cita actualizada' : 'Cita agendada'));
-                } catch (e) {
-                    console.error('Error de red:', e);
-                    avisoCitas('error', 'No se pudo comunicar con el servidor');
-                    this.guardando = false;
-                }
-            },
-
-            // ----- Cambio rápido de estado (sin recargar la página) -----
-            async cambiarEstado(estado) {
-                const c = this.citaActual && this.citas.find(x => x.id === this.citaActual.id);
-                if (!c || this.cambiandoEstado || c.estado === estado) return;
-                this.cambiandoEstado = true;
-                try {
-                    const { ok, mensaje } = await this.enviar(`${URL_CITAS}/${c.id}`, 'PUT', this.payloadDe({ ...c, duracion_min: String(c.duracion_min), estado }));
-                    if (!ok) { avisoCitas('warning', mensaje || 'No se pudo cambiar el estado.', 5000); return; }
-                    c.estado = estado;
-                    this.citaActual.estado = estado;
-                    this.recalcular();
-                    avisoCitas('success', `La cita de ${c.paciente} ahora está "${estado}".`);
-                } catch (e) {
-                    avisoCitas('error', 'No se pudo comunicar con el servidor');
-                } finally {
-                    this.cambiandoEstado = false;
-                }
-            },
-
-            // ----- Eliminar -----
-            eliminarCita(id) {
-                const c = this.citas.find(x => x.id === id);
-                this.confirmar = {
-                    abierto: true, cargando: false, id,
-                    paciente: c ? c.paciente : 'este paciente',
-                    fecha: c ? this.fechaLarga(c.fecha).toLowerCase() + ' a las ' + c.hora : ''
-                };
-            },
-            async confirmarEliminar() {
-                if (this.confirmar.cargando) return;
-                this.confirmar.cargando = true;
-                try {
-                    const { ok, res, mensaje } = await this.enviar(`${URL_CITAS}/${this.confirmar.id}`, 'DELETE');
-                    if (!ok) {
-                        this.confirmar.abierto = false;
-                        this.confirmar.cargando = false;
-                        avisoCitas('error', mensaje || 'No se pudo eliminar la cita.', 6000);
-                        return;
-                    }
-                    this.confirmar.abierto = false;
-                    this.openDetalle = this.openCitaModal = this.openDia = false;
-                    toastYRecargar('success', res.message || 'Cita eliminada');
-                } catch (e) {
-                    this.confirmar.abierto = false;
-                    this.confirmar.cargando = false;
-                    avisoCitas('error', 'No se pudo comunicar con el servidor');
-                }
+                if (!r.ok) throw new Error(r.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (d.message || 'No se pudo guardar la cita.'));
+                if (d.cita) {
+                    const i = this.C.findIndex(x => x.id === d.cita.id);
+                    if (i >= 0) this.C.splice(i, 1, d.cita); else this.C.push(d.cita);
+                    this.sel = this.C.find(x => x.id === d.cita.id);
+                    this.cancelar();
+                    this.dia = d.cita.fecha; this.vista = 'dia';
+                    avisar(d.message || 'Cita guardada.');
+                } else { avisar(d.message || 'Cita guardada.'); location.reload(); }
+            } catch (err) {
+                this.guardando = false; this.mensajeForm = err.message; avisar(err.message, 'error');
             }
-        };
-    }
+        },
+        async cambiarEstado(c, estado) {
+            if (!c || this.guardando || c.estado === estado) return;
+            const antes = c.estado; c.estado = estado; this.guardando = true;
+            try {
+                const r = await fetch(`${URL}/${c.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF },
+                    body: JSON.stringify({ paciente_id: c.paciente_id, personal_id: c.personal_id, consultorio_id: c.consultorio_id, fecha: c.fecha, hora: c.hora, duracion_min: c.duracion_min, tipo_consulta: c.tipo_consulta, estado, motivo: c.motivo || 'Sin motivo' })
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(r.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (d.message || 'No se pudo cambiar el estado.'));
+                avisar(`Cita de ${c.paciente}: ${estado.toLowerCase()}.`);
+            } catch (err) { c.estado = antes; avisar(err.message, 'error'); }
+            this.guardando = false;
+        },
+        eliminar(c) {
+            if (!c) return;
+            const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+            Swal.fire({
+                title: '¿Eliminar esta cita?',
+                html: `<p style="font-size:14px">Se eliminará la cita de <b>${esc(c.paciente)}</b> del ${esc(this.fechaLarga(c.fecha))} a las ${esc(c.hora)}. Si solo no asistirá, es mejor cancelarla y conservar el historial.</p>`,
+                icon: 'warning', iconColor: '#c8102e', showCancelButton: true, showDenyButton: c.estado !== 'Cancelada', reverseButtons: true, focusCancel: true,
+                confirmButtonText: 'Eliminar', denyButtonText: 'Mejor cancelarla', cancelButtonText: 'Volver',
+                confirmButtonColor: '#c8102e', denyButtonColor: '#0b5a54', cancelButtonColor: '#56625f',
+                showLoaderOnConfirm: true,
+                preConfirm: async () => {
+                    try {
+                        const r = await fetch(`${URL}/${c.id}`, { method: 'DELETE', headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF } });
+                        const d = await r.json().catch(() => ({}));
+                        if (!r.ok) throw new Error(r.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (d.message || 'No se pudo eliminar la cita.'));
+                        return d;
+                    } catch (err) { Swal.showValidationMessage(err.message); }
+                },
+                allowOutsideClick: () => !Swal.isLoading()
+            }).then(res => {
+                if (res.isDenied) { this.cambiarEstado(c, 'Cancelada'); return; }
+                if (!res.isConfirmed) return;
+                this.C.splice(this.C.findIndex(x => x.id === c.id), 1);
+                this.sel = this.delDia[0] || null;
+                avisar((res.value && res.value.message) || 'Cita eliminada.');
+            });
+        },
 
-    function nombreSeguro(nombre, respaldo) { return nombre && nombre !== '—' ? nombre : respaldo; }
+        /* ---------- Teclado ---------- */
+        tecla(e) {
+            if (this.editando) {
+                if (e.key === 'Escape') { e.preventDefault(); if (this.pop) this.pop = ''; else if (this.bPac.abierto) this.bPac.abierto = false; else this.cancelar(); }
+                else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.guardar(); }
+                return;
+            }
+            const enCampo = /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.target.isContentEditable;
+            if (enCampo) { if (e.key === 'Escape' && e.target === this.$refs.buscar) { this.q = ''; e.target.blur(); } return; }
+            if (e.ctrlKey || e.metaKey || e.altKey || document.querySelector('.swal2-popup:not(.swal2-toast)') || document.querySelector('.ly-paleta:not([style*="none"])')) return;
+            const k = e.key.toLowerCase();
+            if (e.key === 'ArrowLeft') { e.preventDefault(); this.mover(-1); }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); this.mover(1); }
+            else if (k === 't') this.irHoy();
+            else if (k === 'n') { e.preventDefault(); this.nueva(); }
+            else if (k === 'v') this.cambiarVista(this.vista === 'dia' ? 'mes' : 'dia');
+            else if (k === 'e' && this.sel) { e.preventDefault(); this.editar(this.sel); }
+            else if (e.key === '/') { e.preventDefault(); this.$refs.buscar.focus(); }
+        }
+    };
+}
 </script>
+@endverbatim
 @endsection

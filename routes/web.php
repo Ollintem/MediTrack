@@ -95,6 +95,7 @@ Route::middleware(['auth'])->group(function () {
         // Catálogo principal de medicamentos
         Route::get('/inventario', [InventarioController::class, 'index'])->name('inventario.index');
         Route::post('/inventario', [InventarioController::class, 'store'])->name('inventario.store');
+        Route::get('/inventario/{id}', [InventarioController::class, 'show'])->name('inventario.show');
         Route::put('/inventario/{id}', [InventarioController::class, 'update'])->name('inventario.update');
         Route::delete('/inventario/{id}', [InventarioController::class, 'destroy'])->name('inventario.destroy');
 
@@ -117,21 +118,24 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/pos/procesar-venta', [PosController::class, 'procesarVenta'])->name('pos.procesar-venta');
         Route::post('/pos/generar-ticket', [PosController::class, 'generarTicket'])->name('pos.generar-ticket');
         
-        // Rutas para ver/imprimir tickets de venta (parámetro opcional)
+        // NUEVA RUTA: Procesar la entrega física desde el POS
+        Route::post('/pos/marcar-entregado/{id}', [PosController::class, 'marcarEntregado'])->name('pos.marcar-entregado');
+
+        // Rutas para ver/imprimir tickets de venta
         Route::get('/pos/ticket/{venta?}', [PosController::class, 'generarTicket'])->name('pos.generar-ticket-get');
         Route::get('/pos/ticket/{venta}/imprimir', [PosController::class, 'ticket'])->name('pos.ticket');
     });
 
     // --- MÓDULO CAJA CENTRAL ---
-Route::middleware(['permiso:Caja Central'])->group(function () {
-    Route::get('/caja', [CajaController::class, 'index'])->name('caja.index');
-    Route::get('/caja/ticket/{codigo}', [CajaController::class, 'buscarPorCodigo'])->name('caja.buscar-ticket'); // NUEVA
-    Route::post('/caja/procesar-pago/{id}', [CajaController::class, 'procesarPago'])->name('caja.procesar-pago');
-    Route::post('/caja/aperturar', [CajaController::class, 'aperturar'])->name('caja.aperturar');
-    Route::post('/caja/cerrar', [CajaController::class, 'cerrar'])->name('caja.cerrar');
-    Route::post('/caja/movimiento', [CajaController::class, 'movimiento'])->name('caja.movimiento');
-    Route::get('/caja/corte/{id}', [CajaController::class, 'cortePdf'])->name('caja.corte-pdf');
-});
+    Route::middleware(['permiso:Caja Central'])->group(function () {
+        Route::get('/caja', [CajaController::class, 'index'])->name('caja.index');
+        Route::get('/caja/ticket/{codigo}', [CajaController::class, 'buscarPorCodigo'])->name('caja.buscar-ticket');
+        Route::post('/caja/procesar-pago/{id}', [CajaController::class, 'procesarPago'])->name('caja.procesar-pago');
+        Route::post('/caja/aperturar', [CajaController::class, 'aperturar'])->name('caja.aperturar');
+        Route::post('/caja/cerrar', [CajaController::class, 'cerrar'])->name('caja.cerrar');
+        Route::post('/caja/movimiento', [CajaController::class, 'movimiento'])->name('caja.movimiento');
+        Route::get('/caja/corte/{id}', [CajaController::class, 'cortePdf'])->name('caja.corte-pdf');
+    });
 
     // --- MÓDULO DESPACHO DE FARMACIA ---
     Route::middleware(['permiso:Inventario'])->group(function () {

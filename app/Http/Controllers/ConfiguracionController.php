@@ -6,6 +6,7 @@ use App\Models\Configuracion;
 use App\Models\Clinica;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
@@ -27,7 +28,7 @@ class ConfiguracionController extends Controller
     }
 
     /**
-     * Actualiza la configuración general de la clínica y del sistema.
+     * Actualiza la configuración general de la clínica y del sistema (Solo Administradores).
      */
     public function update(Request $request)
     {
@@ -37,12 +38,12 @@ class ConfiguracionController extends Controller
             'rut_empresa'      => 'nullable|string|max:255',
             'direccion'        => 'nullable|string|max:255',
             'telefono'         => 'nullable|digits:10',
-            'email'            => 'nullable|email|max:255',
+            'email_clinica'    => 'nullable|email|max:255',
             'duracion_cita'    => 'nullable|integer',
             'aviso_privacidad' => 'nullable|string',
         ], [
-            'telefono.digits' => 'El teléfono principal debe contener exactamente 10 dígitos numéricos.',
-            'email.email'     => 'El formato del correo electrónico no es válido.',
+            'telefono.digits'    => 'El teléfono principal debe contener exactamente 10 dígitos numéricos.',
+            'email_clinica.email' => 'El formato del correo electrónico de la clínica no es válido.',
         ]);
 
         // ==========================================
@@ -50,12 +51,16 @@ class ConfiguracionController extends Controller
         // ==========================================
         $clinica = Clinica::first() ?? new Clinica();
 
-        if ($request->hasAny(['nombre', 'rut_empresa', 'direccion', 'telefono'])) {
+        if ($request->hasAny(['nombre', 'rut_empresa', 'direccion', 'telefono', 'email_clinica'])) {
             $clinica->nombre      = $request->input('nombre', $clinica->nombre);
             $clinica->rut_empresa = $request->input('rut_empresa', $clinica->rut_empresa);
             $clinica->direccion   = $request->input('direccion', $clinica->direccion);
             $clinica->telefono    = $request->input('telefono', $clinica->telefono);
             
+            if ($request->has('email_clinica')) {
+                $clinica->email   = $request->input('email_clinica');
+            }
+
             if ($request->has('confirmacion_auto_citas_submitted')) {
                 $clinica->confirmacion_auto_citas = $request->has('confirmacion_auto_citas') ? 1 : 0;
             }
@@ -73,7 +78,8 @@ class ConfiguracionController extends Controller
             '_token', 
             '_method', 
             'confirmacion_auto_citas_submitted', 
-            'recordatorio_pago_email_submitted'
+            'recordatorio_pago_email_submitted',
+            'email_clinica'
         ]);
 
         foreach ($datos as $clave => $valor) {
@@ -87,26 +93,25 @@ class ConfiguracionController extends Controller
     }
 
     /**
-     * Actualiza el correo electrónico y/o contraseña de la cuenta del Administrador.
+     * Actualiza el correo electrónico y/o contraseña de cualquier usuario en sesión.
      */
     public function actualizarCuenta(Request $request)
     {
         // Reobtenemos la instancia directamente de la BD usando la ID autenticada
         /** @var \App\Models\User $user */
-        $user = User::findOrFail(auth()->id());
+        $user = User::findOrFail(Auth::id());
 
         // 1. Validaciones
         $request->validate([
-            'email'            => 'required|email|max:255|unique:users,email,' . $user->id,
+            'email'            => 'required|string|max:255|unique:users,email,' . $user->id,
             'current_password' => 'required|string',
-            'new_password'     => 'nullable|string|min:8|confirmed',
+            'password'         => 'nullable|string|min:8|confirmed',
         ], [
-            'email.required'            => 'El correo electrónico es obligatorio.',
-            'email.email'               => 'El formato del correo electrónico no es válido.',
+            'email.required'            => 'El correo electrónico o usuario de acceso es obligatorio.',
             'email.unique'              => 'El correo electrónico ingresado ya pertenece a otro usuario.',
-            'current_password.required' => 'Debes ingresar tu contraseña actual para confirmar la acción.',
-            'new_password.min'          => 'La nueva contraseña debe tener al menos 8 caracteres.',
-            'new_password.confirmed'    => 'La confirmación de la nueva contraseña no coincide.',
+            'current_password.required' => 'Debes ingresar tu contraseña actual para autorizar los cambios.',
+            'password.min'              => 'La nueva contraseña debe tener al menos 8 caracteres.',
+            'password.confirmed'        => 'La confirmación de la nueva contraseña no coincide.',
         ]);
 
         // 2. Verificar la contraseña actual
@@ -118,15 +123,15 @@ class ConfiguracionController extends Controller
 
         $cambios = false;
 
-        // 3. Cambiar correo si es diferente al guardado
+        // 3. Cambiar correo/usuario si es diferente al guardado
         if (trim($request->email) !== $user->email) {
             $user->email = trim($request->email);
             $cambios = true;
         }
 
         // 4. Cambiar contraseña solo si se escribió una nueva
-        if ($request->filled('new_password')) {
-            $user->password = Hash::make($request->new_password);
+        if ($request->filled('password')) {
+            $user->password = Hash::make($request->password);
             $cambios = true;
         }
 
@@ -137,6 +142,6 @@ class ConfiguracionController extends Controller
         // 5. Guardar explícitamente en la base de datos
         $user->save();
 
-        return back()->with('success', 'Credenciales actualizadas correctamente en la base de datos.');
+        return back()->with('success', 'Tus credenciales de acceso se actualizaron correctamente.');
     }
 }

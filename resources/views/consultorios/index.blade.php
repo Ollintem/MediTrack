@@ -1,1206 +1,796 @@
 @extends('layouts.admin')
 
+{{--
+    MÓDULO DE CONSULTORIOS · MediTrack
+    Cifra con filtros por estado, plano 3D por piso (arrastrar para acomodar, clic para ver),
+    placa del consultorio que se voltea para editar (consultorios/modal.blade.php) y lista.
+    Guarda por AJAX: ConsultorioController responde JSON.
+--}}
+
 @section('content')
 @php
-    $listaConsultorios = collect($consultorios ?? []);
-
-    // Estados reales de la BD: enum('Disponible', 'Ocupado', 'Mantenimiento')
-    $estadosCfg = [
-        'disponible'    => ['texto' => 'Disponible',    'badge' => 'bg-emerald-50 text-emerald-600 border border-emerald-200'],
-        'ocupado'       => ['texto' => 'Ocupado',       'badge' => 'bg-rose-50 text-rose-600 border border-rose-200'],
-        'mantenimiento' => ['texto' => 'Mantenimiento', 'badge' => 'bg-amber-50 text-amber-600 border border-amber-200'],
-        'desconocido'   => ['texto' => 'Sin definir',   'badge' => 'bg-slate-100 text-slate-500 border border-slate-200'],
+    $datosConsultorios = [
+        'url'          => url('consultorios'),
+        'csrf'         => csrf_token(),
+        'consultorios' => $consultoriosJs ?? collect(),
     ];
-    $slugEstado = function ($c) {
-        $v = mb_strtolower(trim((string) $c->estado));
-        return in_array($v, ['disponible', 'ocupado', 'mantenimiento'], true) ? $v : 'desconocido';
-    };
-    $contar = fn ($slug) => $listaConsultorios->filter(fn ($c) => $slugEstado($c) === $slug)->count();
-
-    $totalConsultorios = $listaConsultorios->count();
-    $totalDisponibles = $contar('disponible');
-    $totalOcupados = $contar('ocupado');
-    $totalMantenimiento = $contar('mantenimiento');
-    $pisosDisponibles = $listaConsultorios->pluck('piso')
-        ->filter(fn ($p) => $p !== null && $p !== '')->unique()->sort()->values();
-
-    // Posición inicial (si aún no tienen pos_x / pos_y guardadas): cuadrícula automática dentro de cada piso.
-    $maxPorPiso = $listaConsultorios->groupBy(fn ($c) => (string) ($c->piso ?? ''))->map->count()->max() ?? 1;
-    $columnasPlano = max(2, min(5, (int) ceil(sqrt(max($maxPorPiso, 1)))));
-    $contadorPiso = [];
-    $datosPlano = $listaConsultorios->values()->map(function ($c) use (&$contadorPiso, $columnasPlano, $slugEstado) {
-        $piso = (string) ($c->piso ?? '');
-        $i = $contadorPiso[$piso] = ($contadorPiso[$piso] ?? -1) + 1;
-
-        return [
-            'id'         => $c->id,
-            'clinica_id' => $c->clinica_id,
-            'nombre'     => $c->nombre,
-            'piso'       => $piso,
-            'estado'     => $slugEstado($c),
-            'creado'     => $c->created_at ? \Illuminate\Support\Carbon::parse($c->created_at)->format('d/m/Y') : null,
-            'guardado'   => $c->pos_x !== null && $c->pos_y !== null,
-            'x'          => $c->pos_x ?? ($i % $columnasPlano) * 120 + 20,
-            'y'          => $c->pos_y ?? intdiv($i, $columnasPlano) * 120 + 20,
-        ];
-    });
 @endphp
 
-<div class="py-6 space-y-6" x-data="moduloConsultorios()">
+<div class="co" x-data="modConsultorios()" :class="{ 'editando': editando }" @keydown.window="tecla($event)">
 
-    <!-- BANNER INSTITUCIONAL -->
-    <div class="aparece relative bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-800 rounded-3xl p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 overflow-hidden">
-        <div class="flotar absolute -right-10 -top-14 w-44 h-44 rounded-full bg-white/5"></div>
-        <div class="flotar absolute right-16 bottom-[-3rem] w-24 h-24 rounded-full bg-white/5" style="animation-delay:-1.5s"></div>
+    <!-- BÚSQUEDA Y ALTA -->
+    <header class="co-top">
+        <label class="co-cmd">
+            <i class="bi bi-search" aria-hidden="true"></i>
+            <span class="co-sr">Buscar consultorio</span>
+            <input type="search" x-ref="buscar" x-model="q" autocomplete="off" placeholder="Busca un consultorio por nombre o piso">
+            <kbd aria-hidden="true">/</kbd>
+        </label>
+        <button type="button" class="co-dark" @click="nuevo()">Nuevo consultorio <kbd>N</kbd></button>
+    </header>
 
-        <div class="space-y-2 z-10">
-            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-[11px] font-bold tracking-wide uppercase text-emerald-300 border border-white/10">
-                <i class="bi bi-hospital-fill"></i> Infraestructura médica
-            </div>
-            <h1 class="text-3xl font-black tracking-tight text-white">Directorio de consultorios</h1>
-            <p class="text-xs text-slate-200 font-medium max-w-xl leading-relaxed">
-                Administra las salas, consultorios físicos y pisos disponibles para la asignación estructurada de citas en el sistema.
-            </p>
+    <!-- CIFRA E INDICADORES (también filtran) -->
+    <section class="co-cifra" aria-label="Resumen">
+        <div class="co-n">
+            <b class="t" x-text="P.length">0</b>
+            <span>consultorios<br>en <span class="t" x-text="pisos.length"></span> <span x-text="pisos.length === 1 ? 'piso' : 'pisos'"></span></span>
         </div>
-        <button type="button" @click="abrirModalCrear()" class="group z-10 bg-white text-teal-900 hover:bg-emerald-50 px-6 py-3 rounded-2xl text-xs font-black shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 active:scale-95 flex items-center gap-2 cursor-pointer">
-            <i class="bi bi-plus-lg text-sm text-teal-700 transition-transform duration-300 group-hover:rotate-90"></i> Registrar consultorio
-        </button>
-    </div>
-
-    <!-- RESUMEN -->
-    @php
-        $tarjetas = [
-            ['Total',         'total',         'bi-building',   'bg-teal-50 text-teal-600',       'bg-teal-500'],
-            ['Disponibles',   'disponible',    'bi-door-open',  'bg-emerald-50 text-emerald-600', 'bg-emerald-500'],
-            ['Ocupados',      'ocupado',       'bi-activity',   'bg-rose-50 text-rose-500',       'bg-rose-400'],
-            ['Mantenimiento', 'mantenimiento', 'bi-tools',      'bg-amber-50 text-amber-600',     'bg-amber-400'],
-        ];
-    @endphp
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        @foreach ($tarjetas as $i => [$titulo, $clave, $icono, $colorIcono, $colorPunto])
-            <div class="tarjeta-stat group bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center justify-between gap-3 transition-all hover:shadow-md hover:-translate-y-1 hover:border-slate-200"
-                 style="animation-delay: {{ $i * 70 }}ms">
-                <div>
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
-                        <span class="w-1.5 h-1.5 rounded-full {{ $colorPunto }}"></span> {{ $titulo }}
-                    </p>
-                    <p class="text-2xl font-black text-slate-800 mt-1 tabular-nums" x-text="resumenMostrado.{{ $clave }}">0</p>
-                </div>
-                <span class="w-11 h-11 rounded-2xl flex items-center justify-center text-lg shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6 {{ $colorIcono }}">
-                    <i class="bi {{ $icono }}"></i>
-                </span>
-            </div>
-        @endforeach
-    </div>
-
-    @if ($listaConsultorios->isNotEmpty())
-    <!-- PLANO 3D EDITABLE (un plano por piso) -->
-    <div class="aparece bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden" style="--d: 220ms">
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-4 border-b border-slate-100 bg-slate-50/60">
-            <div class="flex items-center gap-2">
-                <i class="bi bi-bounding-box-circles text-teal-600"></i>
-                <p class="text-sm font-black text-slate-800">Plano del consultorio</p>
-            </div>
-            <span class="text-[10px] font-semibold text-slate-400 flex items-center gap-1">
-                <i class="bi bi-arrows-move"></i> Arrastra para acomodar · haz clic para ver la información
-            </span>
-            <div class="ml-auto flex flex-wrap items-center gap-3 text-[10px] font-bold text-slate-500">
-                <span class="flex items-center gap-1.5 text-emerald-600" title="El estado de los consultorios se actualiza solo">
-                    <span class="relative flex w-2 h-2">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span> En vivo
-                </span>
-                <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm" style="background:linear-gradient(135deg,#dfb187,#c98f5b)"></span> Disponible</span>
-                <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm" style="background:linear-gradient(135deg,#f0c2b4,#e08f7c)"></span> Ocupado</span>
-                <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm border border-amber-400" style="background:repeating-linear-gradient(45deg,#e2e8f0 0 3px,#f1f5f9 3px 6px)"></span> Mantenimiento</span>
-                <span class="text-slate-400" x-text="planoVisible.length + (planoVisible.length === 1 ? ' espacio' : ' espacios') + ' en este piso'"></span>
-            </div>
+        <div class="co-ind">
+            <template x-for="op in opciones" :key="'i' + op.slug">
+                <button type="button" :class="'e-' + op.slug" @click="filtrar(op.slug)" :aria-pressed="(filtro === op.slug).toString()">
+                    <span x-text="op.plural"></span>
+                    <b class="t" x-text="contar(op.slug)"></b>
+                    <i :style="'--p:' + (P.length ? contar(op.slug) / P.length * 100 : 0) + '%'"></i>
+                </button>
+            </template>
         </div>
+        <p class="co-vivo" title="El estado se actualiza solo cada 15 segundos">
+            <i></i>En vivo · <span class="t" x-text="actualizado || '—'"></span>
+        </p>
+    </section>
 
-        <div class="flex flex-col md:flex-row">
-
-            <!-- Selector de piso: el piso más alto queda arriba, como en el edificio -->
-            <div class="md:w-44 shrink-0 p-4 border-b md:border-b-0 md:border-r border-slate-100 bg-slate-50/60">
-                <p class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <i class="bi bi-building"></i> Edificio
-                </p>
-                <div class="flex md:flex-col-reverse gap-2 overflow-x-auto md:overflow-visible pb-1 md:pb-0">
-                    <template x-for="p in pisosPlano" :key="p">
-                        <button type="button" @click="cambiarPiso(p)"
-                                :class="pisoActivo === p
-                                    ? 'bg-teal-600 text-white border-teal-600 shadow-md shadow-teal-600/20'
-                                    : 'bg-white text-slate-500 border-slate-200 hover:border-teal-300 hover:text-teal-700'"
-                                class="flex items-center justify-between gap-3 border-2 rounded-2xl px-4 py-2.5 text-xs font-black transition-all active:scale-95 cursor-pointer whitespace-nowrap">
-                            <span class="flex items-center gap-2">
-                                <i class="bi bi-layers-fill"></i>
-                                <span x-text="etiquetaPiso(p)"></span>
-                                <span x-show="ocupadosEnPiso(p) > 0" x-cloak class="latido w-1.5 h-1.5 rounded-full"
-                                      :class="pisoActivo === p ? 'bg-white' : 'bg-rose-400'"
-                                      :title="ocupadosEnPiso(p) + (ocupadosEnPiso(p) === 1 ? ' consultorio en consulta' : ' consultorios en consulta')"></span>
-                            </span>
-                            <span class="text-[10px] font-bold opacity-70" x-text="contarPiso(p)"></span>
+    <!-- PLANO + PLACA -->
+    <section class="co-escenario">
+        <div class="co-plano">
+            <!-- Elevador: el piso más alto queda arriba -->
+            <nav class="co-elev" aria-label="Pisos">
+                <p>Pisos</p>
+                <div class="co-elev-bt">
+                    <template x-for="p in pisos" :key="'e' + p">
+                        <button type="button" @click="cambiarPiso(p)" :aria-pressed="(piso === p).toString()"
+                                :title="etiquetaPiso(p) + ' · ' + contarPiso(p) + ' consultorios'">
+                            <b :class="{ 'largo': String(p).length > 3 }" x-text="p === '' ? '—' : p"></b>
+                            <small class="t" x-text="contarPiso(p)"></small>
+                            <i x-show="enConsultaPiso(p) > 0" :title="enConsultaPiso(p) + ' en consulta'"></i>
                         </button>
                     </template>
-
-                    <!-- Agregar un piso nuevo, vacío, para luego ubicar consultorios en él -->
-                    <button type="button" @click="abrirNuevoPiso()"
-                            class="flex items-center justify-center gap-2 border-2 border-dashed border-slate-300 rounded-2xl px-4 py-2.5 text-xs font-black text-slate-400 hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50/50 transition-all active:scale-95 cursor-pointer whitespace-nowrap">
-                        <i class="bi bi-plus-lg"></i>
-                        <span>Nuevo piso</span>
-                    </button>
                 </div>
-            </div>
+                <button type="button" class="co-elev-mas" @click="abrirPisoNuevo()" x-show="!pisoNuevo.abierto" aria-label="Agregar piso">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+                <form class="co-elev-nuevo" x-show="pisoNuevo.abierto" x-cloak @submit.prevent="agregarPiso()" @keydown.escape.stop="pisoNuevo.abierto = false">
+                    <input type="text" x-ref="pisoNuevo" x-model="pisoNuevo.valor" maxlength="20" placeholder="Piso" aria-label="Nombre del piso nuevo">
+                    <button type="submit" aria-label="Agregar piso"><i class="bi bi-check-lg"></i></button>
+                    <small x-show="pisoNuevo.error" x-text="pisoNuevo.error"></small>
+                </form>
+            </nav>
 
-            <!-- Plano del piso seleccionado -->
-            <div class="flex-1 min-w-0 overflow-x-auto bg-gradient-to-br from-slate-100 to-white">
-                <div class="relative mx-auto select-none" :class="animando ? 'anim-piso' : ''" style="width:940px; height:740px;">
-
-                    <!-- Rótulo del piso -->
-                    <div class="absolute left-6 top-4 pointer-events-none">
-                        <p class="text-4xl font-black text-slate-200 leading-none" x-text="etiquetaPiso(pisoActivo)"></p>
-                        <p class="text-[10px] font-bold text-slate-300 uppercase tracking-wider mt-1">Plano de planta</p>
+            <div class="co-lienzo" x-ref="lienzo" :style="'height:' + Math.round(640 * escala) + 'px'">
+                <div class="co-escena" :class="{ 'cambio': animarPiso }" :style="'transform:scale(' + escala + ')'">
+                    <div class="co-rotulo">
+                        <p x-text="etiquetaPiso(piso)"></p>
+                        <span class="t" x-text="'Planta · ' + planoVisible.length + (planoVisible.length === 1 ? ' consultorio' : ' consultorios')"></span>
                     </div>
 
-                    <!-- Piso vacío recién creado: invita a registrar el primer consultorio -->
-                    <div x-show="planoVisible.length === 0" x-cloak x-transition
-                         class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div class="text-center max-w-xs pointer-events-auto">
-                            <div class="w-14 h-14 mx-auto rounded-2xl bg-teal-50 text-teal-500 flex items-center justify-center mb-3">
-                                <i class="bi bi-building-add text-xl"></i>
-                            </div>
-                            <p class="text-xs font-black text-slate-500">Este piso todavía no tiene consultorios</p>
-                            <p class="text-[11px] text-slate-400 font-medium mt-1 mb-3">Registra el primero para que aparezca aquí en el plano.</p>
-                            <button type="button" @click="abrirModalCrear()"
-                                    class="inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-xl text-[11px] font-black shadow-lg shadow-teal-600/20 transition-all hover:-translate-y-0.5 cursor-pointer">
-                                <i class="bi bi-plus-lg"></i> Agregar consultorio aquí
-                            </button>
-                        </div>
+                    <div class="co-vacio-piso" x-show="!planoVisible.length" x-cloak>
+                        <p><b>Este piso aún no tiene consultorios</b>Registra el primero y aparecerá aquí.</p>
+                        <button type="button" class="co-btn co-prim" @click="nuevo()">Agregar consultorio aquí</button>
                     </div>
 
-                    <!-- Piso isométrico: 720 x 540 px de superficie -->
-                    <div class="plano-piso absolute" :style="`left:110px; top:100px; width:720px; height:540px; --tinte:${tinte};`">
-
-                        <!-- Muros exteriores del edificio (lados del fondo) -->
-                        <div class="muro-ext-t"></div>
-                        <div class="muro-ext-i"></div>
-                        <div class="remate-ext-t"></div>
-                        <div class="remate-ext-i"></div>
-
-                        <!-- Casilla de destino mientras se arrastra -->
-                        <div class="absolute rounded-sm pointer-events-none" :style="estiloDestino()"></div>
+                    <div class="co-losa">
+                        <div class="co-muro-t"></div><div class="co-muro-i"></div>
+                        <div class="co-remate-t"></div><div class="co-remate-i"></div>
+                        <div class="co-destino" :style="estiloDestino()"></div>
 
                         <template x-for="(c, i) in planoVisible" :key="c.id">
-                            <div class="sala"
-                                 :data-id="c.id"
-                                 :class="['e-' + c.estado, arrastre && arrastre.id === c.id && arrastre.movio ? 'cursor-grabbing' : 'cursor-grab']"
+                            <div class="co-sala" :data-id="c.id"
+                                 :class="'e-' + c.estado + (sel && sel.id === c.id ? ' sel' : '') + (pasaFiltro(c) ? '' : ' tenue') + (arrastre && arrastre.id === c.id && arrastre.movio ? ' alzada' : '')"
                                  :style="estiloSala(c, i)"
-                                 :title="c.nombre + ' · ' + estadosInfo[c.estado].texto + (c.estado === 'ocupado' && c.ocupadoPor ? ' · En consulta con ' + c.ocupadoPor : '')"
-                                 @pointerdown="iniciarArrastre($event, c)"
-                                 @pointermove="mover($event, c)"
-                                 @pointerup="soltar(c)"
-                                 @pointercancel="cancelar(c)">
-                                <div class="piso"></div>
-                                <div class="muro-t"></div>
-                                <div class="muro-i"></div>
-                                <div class="remate-t"></div>
-                                <div class="remate-i"></div>
-                                <!-- Etiqueta contra-rotada para que siempre se lea de frente -->
-                                <div class="etiqueta-sala">
-                                    <div>
-                                        <i class="bi" :class="c.estado === 'ocupado' ? 'bi-activity latido' : 'bi-door-open'"></i>
-                                        <span x-text="c.nombre"></span>
-                                        <small x-text="c.piso ? 'Piso ' + c.piso : ''"></small>
-                                    </div>
-                                </div>
+                                 :title="c.nombre + ' · ' + info(c.estado).texto + (c.ocupadoPor ? ' con ' + c.ocupadoPor : '')"
+                                 @pointerdown="iniciarArrastre($event, c)" @pointermove="mover($event, c)"
+                                 @pointerup="soltar(c)" @pointercancel="cancelarArrastre(c)">
+                                <div class="co-s-piso"></div>
+                                <div class="co-s-muro-t"></div><div class="co-s-muro-i"></div>
+                                <div class="co-s-rem-t"></div><div class="co-s-rem-i"></div>
+                                <div class="co-s-letrero"><div>
+                                    <b x-text="c.nombre"></b>
+                                    <span x-text="info(c.estado).corto"></span>
+                                </div></div>
                             </div>
                         </template>
                     </div>
                 </div>
             </div>
+
+            <footer class="co-plano-pie">
+                <span class="co-ley e-disponible"><i></i>Disponible</span>
+                <span class="co-ley e-ocupado"><i></i>En consulta</span>
+                <span class="co-ley e-mantenimiento"><i></i>Mantenimiento</span>
+                <span class="co-pista">Arrastra para acomodar · toca para ver su placa</span>
+            </footer>
         </div>
 
-        <p class="text-[10px] text-slate-400 font-semibold px-6 py-4 border-t border-slate-100">
-            Cada piso tiene su propio plano. Los cambios de posición se guardan automáticamente al soltar cada consultorio.
-        </p>
-    </div>
-    @endif
+        {{-- Placa del consultorio (frente) y su formulario (reverso) --}}
+        @include('consultorios.modal')
+    </section>
 
-    <!-- TABLA DE CONSULTORIOS -->
-    <div class="aparece bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden" style="--d: 320ms">
-        <div class="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div class="flex items-center gap-3">
-                <h3 class="text-base font-black text-slate-800">Consultorios registrados</h3>
-                <span class="text-xs font-bold px-3 py-1 bg-teal-50 text-teal-700 rounded-full">{{ $totalConsultorios }} en total</span>
-            </div>
-
-            <!-- Filtros -->
-            <div class="flex flex-wrap items-center gap-2">
-                <div class="relative">
-                    <i class="bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 text-[11px]"></i>
-                    <input type="text" x-model="busqueda" placeholder="Buscar por nombre..."
-                           class="bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs font-medium outline-none focus:border-teal-500 focus:bg-white transition-all w-44">
-                </div>
-                <select x-model="filtroPiso" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:border-teal-500 cursor-pointer">
-                    <option value="todos">Todos los pisos</option>
-                    @foreach ($pisosDisponibles as $p)
-                        <option value="{{ $p }}">Piso {{ $p }}</option>
-                    @endforeach
-                </select>
-                <select x-model="filtroEstado" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:border-teal-500 cursor-pointer">
-                    <option value="todos">Todos los estados</option>
-                    <option value="disponible">Disponible</option>
-                    <option value="ocupado">Ocupado</option>
-                    <option value="mantenimiento">Mantenimiento</option>
-                </select>
-            </div>
-        </div>
-
-        <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse">
-                <thead>
-                    <tr class="bg-slate-50/70 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                        <th class="py-4 px-6">ID</th>
-                        <th class="py-4 px-6">Nombre del consultorio</th>
-                        <th class="py-4 px-6">Piso</th>
-                        <th class="py-4 px-6">Estado</th>
-                        <th class="py-4 px-6 text-right">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100 text-xs font-bold text-slate-700">
-                    @forelse($listaConsultorios as $c)
-                        @php $slug = $slugEstado($c); @endphp
-                        <tr x-show="coincide(@js($c->nombre), @js((string) ($c->piso ?? '')), estadoDe({{ $c->id }}))"
-                            x-transition
-                            style="--d: {{ min($loop->index * 45, 500) }}ms"
-                            class="fila-in hover:bg-slate-50/60 transition-colors">
-                            <td class="py-4 px-6 text-slate-400">#{{ $c->id }}</td>
-                            <td class="py-4 px-6">
-                                <div class="flex items-center gap-2 text-slate-900 font-black">
-                                    <span class="w-7 h-7 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center shrink-0">
-                                        <i class="bi bi-door-open text-xs"></i>
-                                    </span>
-                                    {{ $c->nombre }}
-                                </div>
-                            </td>
-                            <td class="py-4 px-6">{{ ($c->piso !== null && $c->piso !== '') ? 'Piso ' . $c->piso : '—' }}</td>
-                            <td class="py-4 px-6">
-                                <span :class="'px-2.5 py-1 rounded-full text-[10px] font-black border ' + estadosInfo[estadoDe({{ $c->id }})].badge"
-                                      x-text="estadosInfo[estadoDe({{ $c->id }})].texto">{{ $estadosCfg[$slug]['texto'] }}</span>
-                            </td>
-                            <td class="py-4 px-6 text-right">
-                                <div class="inline-flex items-center gap-1.5">
-                                    <button type="button" @click="abrirModalEditar({{ $c->id }})"
-                                            class="w-8 h-8 rounded-xl bg-sky-50 text-sky-600 hover:bg-sky-100 hover:scale-110 active:scale-95 transition-all flex items-center justify-center cursor-pointer" title="Editar">
-                                        <i class="bi bi-pencil-fill text-[11px]"></i>
-                                    </button>
-                                    <button type="button" @click="eliminarConsultorio({{ $c->id }})"
-                                            class="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 hover:scale-110 active:scale-95 transition-all flex items-center justify-center cursor-pointer" title="Eliminar">
-                                        <i class="bi bi-trash-fill text-[11px]"></i>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    @empty
-                        <tr>
-                            <td colspan="5" class="py-12 text-center">
-                                <span class="flotar inline-flex w-14 h-14 rounded-2xl bg-teal-50 text-teal-500 items-center justify-center text-2xl mb-3"><i class="bi bi-door-open"></i></span>
-                                <p class="text-xs font-black text-slate-500">Aún no hay consultorios</p>
-                                <p class="text-[11px] font-medium text-slate-400 mt-0.5">Crea el primero con el botón "Registrar consultorio".</p>
-                            </td>
-                        </tr>
-                    @endforelse
-
-                    @if ($listaConsultorios->isNotEmpty())
-                        <tr x-show="visibles === 0" x-cloak>
-                            <td colspan="5" class="py-12 text-center">
-                                <span class="flotar inline-flex w-14 h-14 rounded-2xl bg-slate-100 text-slate-400 items-center justify-center text-2xl mb-3"><i class="bi bi-search"></i></span>
-                                <p class="text-xs font-black text-slate-500">Sin resultados</p>
-                                <p class="text-[11px] font-medium text-slate-400 mt-0.5">Ningún consultorio coincide con los filtros.</p>
-                            </td>
-                        </tr>
-                    @endif
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- MODAL DE INFORMACIÓN DEL CONSULTORIO (clic en el plano) -->
-    <template x-teleport="body">
-        <div x-show="openInfo" x-cloak
-             @keydown.escape.window="openInfo = false"
-             class="fixed inset-0 z-[99998] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
-             x-transition:enter="transition ease-out duration-200"
-             x-transition:enter-start="opacity-0"
-             x-transition:enter-end="opacity-100"
-             x-transition:leave="transition ease-in duration-150"
-             x-transition:leave-start="opacity-100"
-             x-transition:leave-end="opacity-0">
-
-            <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden" @click.outside="openInfo = false"
-                 x-show="openInfo"
-                 x-transition:enter="transition ease-out duration-300"
-                 x-transition:enter-start="opacity-0 translate-y-6 scale-95"
-                 x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                 x-transition:leave="transition ease-in duration-150"
-                 x-transition:leave-start="opacity-100 scale-100"
-                 x-transition:leave-end="opacity-0 scale-95">
-                <div class="relative px-7 pt-7 pb-5 bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-800 text-white overflow-hidden">
-                    <div class="absolute -right-8 -top-10 w-32 h-32 rounded-full bg-white/5"></div>
-                    <button type="button" @click="openInfo = false"
-                            class="absolute right-4 top-4 w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white flex items-center justify-center transition-all cursor-pointer" title="Cerrar">
-                        <i class="bi bi-x-lg text-xs"></i>
-                    </button>
-                    <div class="relative flex items-center gap-4">
-                        <span class="w-14 h-14 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center text-2xl text-emerald-300 shrink-0" :class="openInfo && 'icono-pop'">
-                            <i class="bi bi-door-open-fill"></i>
-                        </span>
-                        <div class="min-w-0">
-                            <p class="text-[10px] font-bold uppercase tracking-wide text-emerald-300">Consultorio</p>
-                            <h3 class="text-base font-black tracking-tight truncate" x-text="infoActual.nombre"></h3>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="p-7 space-y-4">
-                    <div class="grid grid-cols-2 gap-3">
-                        <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3 reveal-item" :class="openInfo && 'reveal-on'" style="--d:1">
-                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Piso</p>
-                            <p class="text-sm font-black text-slate-800 mt-0.5" x-text="infoActual.piso ? 'Piso ' + infoActual.piso : '—'"></p>
-                        </div>
-                        <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3 reveal-item" :class="openInfo && 'reveal-on'" style="--d:2">
-                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Identificador</p>
-                            <p class="text-sm font-black text-slate-800 mt-0.5" x-text="'#' + infoActual.id"></p>
-                        </div>
-                        <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3 reveal-item" :class="openInfo && 'reveal-on'" style="--d:3">
-                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Estado</p>
-                            <span class="inline-flex items-center gap-1.5 mt-1 px-2.5 py-1 rounded-full text-[10px] font-black border"
-                                  :class="estadosInfo[infoActual.estado].badge">
-                                <span class="w-1.5 h-1.5 rounded-full" :class="estadosInfo[infoActual.estado].punto"></span>
-                                <span x-text="estadosInfo[infoActual.estado].texto"></span>
-                            </span>
-                        </div>
-                        <div class="rounded-2xl bg-rose-50/60 border border-rose-100 p-3 col-span-2 reveal-item" :class="openInfo && 'reveal-on'" style="--d:4" x-show="infoActual.estado === 'ocupado' && infoActual.ocupadoPor" x-cloak>
-                            <p class="text-[10px] font-bold text-rose-400 uppercase tracking-wide flex items-center gap-1.5">
-                                <i class="bi bi-activity"></i> En consulta ahora
-                            </p>
-                            <p class="text-sm font-black text-slate-800 mt-0.5" x-text="infoActual.ocupadoPor"></p>
-                        </div>
-                        <div class="rounded-2xl bg-slate-50 border border-slate-100 p-3 reveal-item" x-show="infoActual.creado" :class="openInfo && 'reveal-on'" style="--d:5">
-                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Registrado</p>
-                            <p class="text-sm font-black text-slate-800 mt-0.5" x-text="infoActual.creado"></p>
-                        </div>
-                    </div>
-
-                    <div class="flex justify-end gap-2 pt-4 border-t border-slate-100">
-                        <button type="button" @click="openInfo = false"
-                                class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-extrabold rounded-2xl text-xs transition-all cursor-pointer">
-                            Cerrar
-                        </button>
-                        <button type="button" @click="eliminarDesdeInfo()"
-                                class="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold rounded-2xl text-xs transition-all flex items-center gap-1.5 cursor-pointer">
-                            <i class="bi bi-trash-fill"></i> Eliminar
-                        </button>
-                        <button type="button" @click="editarDesdeInfo()"
-                                class="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-black rounded-2xl text-xs shadow-lg shadow-teal-600/20 transition-all flex items-center gap-1.5 cursor-pointer">
-                            <i class="bi bi-pencil-fill"></i> Editar
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </template>
-
-    <!-- CONFIRMAR ELIMINACIÓN (por encima de los demás modales) -->
-    <template x-teleport="body">
-        <div x-show="confirmar.abierto" x-cloak
-             @keydown.escape.window="confirmar.abierto = false"
-             @click.stop="if ($event.target === $el && !confirmar.cargando) confirmar.abierto = false"
-             class="fixed inset-0 z-[100000] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
-             x-transition:enter="transition ease-out duration-200"
-             x-transition:enter-start="opacity-0"
-             x-transition:enter-end="opacity-100"
-             x-transition:leave="transition ease-in duration-150"
-             x-transition:leave-start="opacity-100"
-             x-transition:leave-end="opacity-0">
-
-            <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-7 text-center"
-                 x-show="confirmar.abierto"
-                 x-transition:enter="transition ease-out duration-300"
-                 x-transition:enter-start="opacity-0 translate-y-6 scale-95"
-                 x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                 x-transition:leave="transition ease-in duration-150"
-                 x-transition:leave-start="opacity-100 scale-100"
-                 x-transition:leave-end="opacity-0 scale-95">
-                <span class="w-14 h-14 mx-auto rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center text-2xl mb-4"
-                      :class="confirmar.abierto && 'icono-pop'">
-                    <i class="bi bi-trash3-fill"></i>
-                </span>
-                <h3 class="text-base font-black text-slate-800">¿Eliminar este consultorio?</h3>
-                <p class="text-xs font-medium text-slate-500 mt-2 leading-relaxed">
-                    Se eliminará <strong class="text-slate-700" x-text="confirmar.nombre"></strong> del sistema.
-                    Esta acción no se puede deshacer.
-                </p>
-
-                <div class="flex gap-2.5 mt-6">
-                    <button type="button" @click="confirmar.abierto = false" :disabled="confirmar.cargando"
-                            class="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-extrabold rounded-2xl text-xs transition-all cursor-pointer disabled:opacity-50">
-                        Cancelar
-                    </button>
-                    <button type="button" @click="confirmarEliminar()" :disabled="confirmar.cargando"
-                            class="flex-1 px-4 py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-black rounded-2xl text-xs shadow-lg shadow-rose-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
-                        <span x-show="confirmar.cargando" class="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
-                        <i x-show="!confirmar.cargando" class="bi bi-trash-fill"></i>
-                        <span x-text="confirmar.cargando ? 'Eliminando...' : 'Sí, eliminar'"></span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </template>
-
-    <!-- AGREGAR PISO NUEVO -->
-    <template x-teleport="body">
-        <div x-show="nuevoPiso.abierto" x-cloak
-             @keydown.escape.window="nuevoPiso.abierto = false"
-             @click.stop="if ($event.target === $el) nuevoPiso.abierto = false"
-             class="fixed inset-0 z-[100000] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4"
-             x-transition:enter="transition ease-out duration-200"
-             x-transition:enter-start="opacity-0"
-             x-transition:enter-end="opacity-100"
-             x-transition:leave="transition ease-in duration-150"
-             x-transition:leave-start="opacity-100"
-             x-transition:leave-end="opacity-0">
-
-            <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-7"
-                 x-show="nuevoPiso.abierto"
-                 x-transition:enter="transition ease-out duration-300"
-                 x-transition:enter-start="opacity-0 translate-y-6 scale-95"
-                 x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                 x-transition:leave="transition ease-in duration-150"
-                 x-transition:leave-start="opacity-100 scale-100"
-                 x-transition:leave-end="opacity-0 scale-95">
-                <div class="text-center">
-                    <span class="w-14 h-14 mx-auto rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center text-2xl mb-4"
-                          :class="nuevoPiso.abierto && 'icono-pop'">
-                        <i class="bi bi-building-add"></i>
-                    </span>
-                    <h3 class="text-base font-black text-slate-800">Agregar un piso nuevo</h3>
-                    <p class="text-xs font-medium text-slate-500 mt-2 leading-relaxed">
-                        Se creará un plano vacío para este piso. Indica su número o nombre (por ejemplo "2" o "PB").
-                    </p>
-                </div>
-
-                <form @submit.prevent="confirmarNuevoPiso()" class="mt-5">
-                    <div class="relative">
-                        <i class="bi bi-layers absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-                        <input type="text" x-ref="inputNuevoPiso" x-model="nuevoPiso.valor" maxlength="20"
-                               @input="nuevoPiso.error = ''"
-                               placeholder="Ej. 2, PB, Ala Norte..."
-                               class="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl pl-11 pr-4 py-3 text-xs font-bold text-slate-800 placeholder:font-medium placeholder:text-slate-300 outline-none transition-all focus:bg-white focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10">
-                    </div>
-                    <p x-show="nuevoPiso.error" x-cloak x-text="nuevoPiso.error" class="text-[11px] font-bold text-rose-500 mt-2"></p>
-
-                    <div class="flex gap-2.5 mt-6">
-                        <button type="button" @click="nuevoPiso.abierto = false"
-                                class="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-extrabold rounded-2xl text-xs transition-all cursor-pointer">
-                            Cancelar
-                        </button>
-                        <button type="submit"
-                                class="flex-1 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-black rounded-2xl text-xs shadow-lg shadow-teal-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer">
-                            <i class="bi bi-plus-lg"></i>
-                            Agregar piso
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </template>
-
-    <!-- NOTIFICACIONES FLOTANTES -->
-    <template x-teleport="body">
-        <div class="fixed top-5 right-5 z-[100001] flex flex-col gap-2.5 w-[calc(100vw-2.5rem)] max-w-sm pointer-events-none">
-            <template x-for="t in toasts" :key="t.id">
-                <div x-show="t.visible"
-                     x-transition:enter="transition ease-out duration-300"
-                     x-transition:enter-start="opacity-0 translate-x-8"
-                     x-transition:enter-end="opacity-100 translate-x-0"
-                     x-transition:leave="transition ease-in duration-200"
-                     x-transition:leave-start="opacity-100 translate-x-0"
-                     x-transition:leave-end="opacity-0 translate-x-8"
-                     class="pointer-events-auto relative overflow-hidden bg-white rounded-2xl shadow-2xl shadow-slate-900/15 border border-slate-100 flex items-start gap-3 p-4 pr-10">
-                    <span class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-base icono-pop" :class="estilosToast[t.tipo].icono">
-                        <i class="bi" :class="estilosToast[t.tipo].bi"></i>
-                    </span>
-                    <div class="min-w-0">
-                        <p class="text-xs font-black text-slate-800" x-text="estilosToast[t.tipo].titulo"></p>
-                        <p class="text-xs font-medium text-slate-500 mt-0.5 leading-relaxed" x-text="t.mensaje"></p>
-                    </div>
-                    <button type="button" @click="cerrarToast(t.id)"
-                            class="absolute right-3 top-3 w-6 h-6 rounded-lg text-slate-300 hover:text-slate-500 hover:bg-slate-50 flex items-center justify-center transition-all cursor-pointer" title="Cerrar">
-                        <i class="bi bi-x-lg text-[10px]"></i>
-                    </button>
-                    <span class="absolute left-0 bottom-0 h-1" :class="estilosToast[t.tipo].barra"
-                          :style="`animation: barraToast ${t.ms}ms linear forwards`"></span>
-                </div>
+    <!-- LISTA -->
+    <section class="co-lista" aria-labelledby="coListaT">
+        <div class="co-lh">
+            <h2 id="coListaT">Consultorios <small class="t" x-text="filtrados.length"></small></h2>
+            <button type="button" @click="filtrar('todos')" :aria-pressed="(filtro === 'todos').toString()">Todos</button>
+            <template x-for="op in opciones" :key="'l' + op.slug">
+                <button type="button" @click="filtrar(op.slug)" :aria-pressed="(filtro === op.slug).toString()" x-text="op.plural"></button>
             </template>
         </div>
-    </template>
-
-    <!-- INCLUIMOS EL MODAL DESDE ARCHIVO APARTE -->
-    @include('consultorios.modal')
-
+        <div class="co-filas">
+            <template x-for="c in filtrados" :key="'r' + c.id">
+                <div class="co-fila" :class="{ 'sel': sel && sel.id === c.id }">
+                    <button type="button" class="co-fila-main" @click="seleccionar(c, true)">
+                        <span class="co-puerta" :class="'e-' + c.estado"><b x-text="iniciales(c.nombre)"></b></span>
+                        <span class="co-fila-n"><b x-text="c.nombre"></b><small x-text="etiquetaPiso(c.piso)"></small></span>
+                        <span class="co-estado" :class="'e-' + c.estado"><i></i><span x-text="info(c.estado).texto"></span></span>
+                        <span class="co-medico" x-text="c.estado === 'ocupado' ? (c.ocupadoPor ? 'Con ' + c.ocupadoPor : 'En uso') : '—'"></span>
+                    </button>
+                    <span class="co-fila-acc">
+                        <button type="button" class="co-ico" @click="editar(c)" :aria-label="'Editar ' + c.nombre"><i class="bi bi-pencil"></i></button>
+                        <button type="button" class="co-ico co-ico-r" @click="eliminar(c)" :aria-label="'Eliminar ' + c.nombre"><i class="bi bi-trash3"></i></button>
+                    </span>
+                </div>
+            </template>
+            <div class="co-sin" x-show="!filtrados.length" x-cloak>
+                <p x-show="P.length"><b>Ningún consultorio coincide</b>Prueba con otro nombre, piso o estado.</p>
+                <p x-show="!P.length"><b>Aún no hay consultorios</b>Usa «Nuevo consultorio» para registrar el primero.</p>
+            </div>
+        </div>
+    </section>
 </div>
 
+<script type="application/json" id="co-datos">{!! json_encode($datosConsultorios, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) !!}</script>
+
+@verbatim
 <style>
-    /* ============ Animaciones ============
-       Los estados finales quedan en "none" y se usa fill-mode "backwards" para que
-       los efectos hover (translate/scale) sigan funcionando después de la entrada. */
-    @keyframes fadeIn   { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-    @keyframes fadeUp   { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-    @keyframes filaIn   { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
-    @keyframes iconoPop { 0% { transform: scale(0) rotate(-25deg); } 70% { transform: scale(1.15) rotate(6deg); } 100% { transform: scale(1) rotate(0); } }
-    @keyframes latido   { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .6; } }
-    @keyframes flotar   { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-    @keyframes barraToast { from { width: 100%; } to { width: 0; } }
+.co {
+    --tinta: #0b1e1c; --texto: #2c3d3a; --media: #56625f; --linea: #dbe4e1; --linea2: #edf2f1; --niebla: #eef3f1; --papel: #fff;
+    --cred: #0b5a54; --cred2: #073f3b; --foil: #a6efe2; --teal: #0e7c72; --velo: #e2efec;
+    --rosa: #c8102e; --rosav: #fdecef; --ambar: #9a5800; --ambarv: #fdf3e1; --verde: #08734f; --verdev: #e5f4ee;
+    --e: cubic-bezier(.2, .8, .2, 1); --flip: cubic-bezier(.3, .7, .1, 1);
+    --disp: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif; --ui: 'Geist', ui-sans-serif, system-ui, sans-serif; --mono: 'Geist Mono', ui-monospace, monospace;
+    container-type: inline-size; font: 450 14px/1.45 var(--ui); color: var(--texto);
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px;
+}
+.co * { box-sizing: border-box; }
+.co :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.co button { cursor: pointer; }
+.co .t { font-variant-numeric: tabular-nums; }
+.co-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.co kbd { font: 600 11px var(--mono); border: 1px solid var(--linea); border-radius: 6px; padding: 1px 6px; color: var(--media); background: transparent; }
+[x-cloak] { display: none !important; }
 
-    /* Consultorios en 3D: caen sobre el piso al aparecer (el rebote al cambiar de estado se hace desde JS) */
-    @keyframes salaCae { from { transform: translateZ(110px); } to { transform: translateZ(0); } }
+/* Estados (color fijo por significado) */
+.co .e-disponible { --c: var(--verde); --cv: var(--verdev); }
+.co .e-ocupado { --c: var(--cred); --cv: var(--velo); }
+.co .e-mantenimiento { --c: var(--ambar); --cv: var(--ambarv); }
+.co .e-desconocido, .co .e-vacio { --c: var(--media); --cv: var(--niebla); }
 
-    .aparece      { animation: fadeUp .55s cubic-bezier(.16, 1, .3, 1) backwards; animation-delay: var(--d, 0ms); }
-    .tarjeta-stat { animation: fadeUp .55s cubic-bezier(.16, 1, .3, 1) backwards; }
-    .fila-in      { animation: filaIn .45s cubic-bezier(.16, 1, .3, 1) backwards; animation-delay: var(--d, 0ms); }
-    .icono-pop    { animation: iconoPop .55s cubic-bezier(.34, 1.56, .64, 1) backwards; }
-    .latido       { animation: latido 1.4s ease-in-out infinite; }
-    .flotar       { animation: flotar 5s ease-in-out infinite; }
+/* ---------- Búsqueda ---------- */
+.co-top { display: flex; align-items: center; gap: 12px; }
+.co-cmd { flex: 1; min-width: 0; max-width: 760px; height: 50px; border-radius: 14px; background: var(--papel); border: 1px solid var(--linea); box-shadow: 0 12px 30px -22px rgba(11, 30, 28, .45); display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; }
+.co-cmd > .bi { color: var(--cred); }
+.co-cmd input { flex: 1; min-width: 0; border: 0; outline: 0 !important; box-shadow: none !important; background: none; font: 450 15px var(--ui); color: var(--tinta); }
+.co-cmd input::placeholder { color: var(--media); }
+.co-dark { height: 44px; border-radius: 12px; background: var(--tinta); color: #fff; font: 600 14px var(--ui); display: flex; align-items: center; gap: 10px; padding: 0 12px 0 16px; white-space: nowrap; }
+.co-dark kbd { border-color: rgba(255, 255, 255, .25); color: #cfe; }
+@container (max-width: 639px) { .co-cmd > kbd, .co-dark kbd { display: none; } .co-dark { padding: 0 14px; } }
 
-    /* Elementos de los modales que aparecen escalonados cada vez que se abren */
-    .reveal-item { opacity: 0; }
-    .reveal-on   { animation: fadeUp .45s cubic-bezier(.16, 1, .3, 1) both; animation-delay: calc(var(--d, 0) * 70ms); }
+/* ---------- Cifra ---------- */
+.co-cifra { display: flex; align-items: flex-end; gap: 28px; flex-wrap: wrap; }
+.co-n { display: flex; align-items: flex-end; gap: 12px; }
+.co-n > b { font: 800 88px/.8 var(--disp); font-stretch: 78%; letter-spacing: -.04em; color: var(--tinta); }
+.co-n > span { font-size: 15px; font-weight: 500; color: var(--texto); line-height: 1.25; padding-bottom: 2px; }
+.co-ind { flex: 1; min-width: 280px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 20px; }
+.co-ind button { display: grid; grid-template-columns: 1fr auto; align-items: end; padding: 6px 0 0; text-align: left; font-weight: 500; color: var(--texto); background: none; border-top: 1px solid var(--linea); }
+.co-ind button span { font-size: 14px; padding-bottom: 4px; }
+.co-ind button b { font: 750 26px/1 var(--disp); color: var(--c); }
+.co-ind button i { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--linea); margin-top: 8px; position: relative; overflow: hidden; }
+.co-ind button i:after { content: ""; position: absolute; inset: 0; width: var(--p); background: var(--c); border-radius: 2px; transition: width .6s var(--e); }
+.co-ind button[aria-pressed=true] { border-top: 2px solid var(--c); }
+.co-ind button[aria-pressed=true] span { color: var(--tinta); font-weight: 650; }
+.co-vivo { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; color: var(--media); padding-bottom: 4px; }
+.co-vivo i { width: 7px; height: 7px; border-radius: 50%; background: var(--verde); box-shadow: 0 0 0 3px var(--verdev); }
+@container (max-width: 759px) { .co-n > b { font-size: 68px; } .co-ind { min-width: 100%; } }
 
-    [x-cloak] { display: none !important; }
+/* ---------- Escenario ---------- */
+.co-escenario { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+@container (min-width: 1040px) { .co-escenario { grid-template-columns: minmax(0, 1fr) 320px; } }
 
-    @media (prefers-reduced-motion: reduce) {
-        .aparece, .tarjeta-stat, .fila-in, .icono-pop, .latido, .flotar, .reveal-on, .anim-piso, .sala {
-            animation: none !important;
-        }
-        .reveal-item { opacity: 1 !important; }
-    }
+.co-plano { position: relative; display: grid; grid-template-columns: 76px minmax(0, 1fr); background: var(--papel); border: 1px solid var(--linea); border-radius: 18px; overflow: hidden; box-shadow: 0 18px 40px -32px rgba(11, 30, 28, .5); transition: opacity .35s, filter .35s; }
+.co-plano-pie { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 12px 18px; border-top: 1px solid var(--linea2); font-size: 12px; font-weight: 500; color: var(--media); }
+.co-ley { display: inline-flex; align-items: center; gap: 7px; }
+.co-ley i { width: 12px; height: 12px; border-radius: 3px; border: 2px solid var(--c); background: var(--papel); }
+.co-ley.e-ocupado i { background: var(--cred); }
+.co-ley.e-mantenimiento i { background: repeating-linear-gradient(45deg, var(--ambarv) 0 3px, #f2d9a8 3px 6px); }
+.co-pista { margin-left: auto; }
+@container (max-width: 639px) { .co-pista { display: none; } }
 
-    /* Transición al cambiar de piso (solo opacidad/posición del contenedor, sin afectar el 3D) */
-    @keyframes cambioPiso {
-        from { opacity: 0; transform: translateY(18px); }
-        to   { opacity: 1; transform: translateY(0); }
-    }
-    .anim-piso { animation: cambioPiso .4s cubic-bezier(0.16, 1, 0.3, 1); }
+/* Elevador de pisos */
+.co-elev { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 0; background: #f8fbfa; border-right: 1px solid var(--linea2); }
+.co-elev > p { font-size: 12px; font-weight: 600; color: var(--media); }
+.co-elev-bt { display: flex; flex-direction: column-reverse; gap: 8px; }
+.co-elev-bt button, .co-elev-mas { position: relative; width: 52px; height: 52px; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; background: var(--papel); border: 1px solid var(--linea); color: var(--tinta); transition: background .15s, border-color .15s, color .15s, transform .15s; }
+.co-elev-bt button:hover { border-color: #b9cbc6; transform: translateY(-1px); }
+.co-elev-bt b { font: 750 20px/1 var(--disp); font-stretch: 85%; max-width: 46px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co-elev-bt b.largo { font-size: 12px; }
+.co-elev-bt small { font: 500 11px var(--mono); color: var(--media); }
+.co-elev-bt i { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--cred); box-shadow: 0 0 0 2px var(--papel); }
+.co-elev-bt button[aria-pressed=true] { background: var(--cred); border-color: var(--cred); color: #fff; box-shadow: 0 10px 18px -10px rgba(7, 63, 59, .8); }
+.co-elev-bt button[aria-pressed=true] small { color: var(--foil); }
+.co-elev-bt button[aria-pressed=true] i { background: var(--foil); box-shadow: 0 0 0 2px var(--cred); }
+.co-elev-mas { border-style: dashed; color: var(--media); background: transparent; }
+.co-elev-mas:hover { color: var(--cred); border-color: var(--cred); }
+.co-elev-nuevo { width: 64px; display: flex; flex-direction: column; gap: 4px; }
+.co-elev-nuevo input { width: 100%; height: 36px; border: 1px solid var(--teal); border-radius: 10px; padding: 0 6px; font: 600 13px var(--ui); text-align: center; color: var(--tinta); outline: 0; }
+.co-elev-nuevo button { height: 30px; border-radius: 9px; background: var(--cred); color: #fff; }
+.co-elev-nuevo small { font-size: 11px; line-height: 1.2; color: var(--rosa); text-align: center; }
 
-    /* ---------- Plano isométrico ---------- */
-    .plano-piso {
-        transform: rotateX(52deg) rotateZ(45deg);
-        transform-style: preserve-3d;
-        background-color: var(--tinte, #eef2f6);
-        background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
-        background-size: 20px 20px;
-        border: 1px solid #cbd5e1;
-        border-radius: 4px;
-        box-shadow: 0 10px 0 rgba(15, 23, 42, 0.08);
-    }
+/* Lienzo escalado: el plano mide 900 x 640 y se ajusta al ancho disponible */
+.co-lienzo { position: relative; overflow: hidden; background-color: #fbfdfc; background-image: radial-gradient(circle, #dfe8e5 1px, transparent 1px); background-size: 22px 22px; }
+.co-escena { position: absolute; left: 0; top: 0; width: 900px; height: 640px; transform-origin: 0 0; user-select: none; }
+.co-escena.cambio { animation: coPiso .45s var(--e); }
+@keyframes coPiso { from { opacity: 0; translate: 0 16px; } }
+.co-rotulo { position: absolute; left: 26px; top: 20px; pointer-events: none; }
+.co-rotulo p { font: 800 56px/.9 var(--disp); font-stretch: 78%; letter-spacing: -.03em; color: #d5e0dc; }
+.co-rotulo span { display: block; margin-top: 8px; font: 500 14px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: #7d8986; }
+.co-vacio-piso { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; font-size: 17px; color: var(--media); }
+.co-vacio-piso b { display: block; font: 750 26px var(--disp); color: var(--tinta); margin-bottom: 4px; }
+.co-vacio-piso .co-btn { height: 48px; font-size: 16px; padding: 0 20px; }
 
-    /* Muros exteriores del edificio (alto 70px) */
-    .muro-ext-t, .muro-ext-i, .remate-ext-t, .remate-ext-i { position: absolute; pointer-events: none; }
-    .muro-ext-t { left: 0; top: 0; width: 100%; height: 70px; background: #ffffff; transform-origin: 0 0; transform: rotateX(90deg); }
-    .muro-ext-i { left: 0; top: 0; width: 70px; height: 100%; background: #e2e8f0; transform-origin: 0 0; transform: rotateY(-90deg); }
-    .remate-ext-t { left: -8px; top: -8px; width: calc(100% + 8px); height: 8px; background: #0f172a; transform: translateZ(70px); }
-    .remate-ext-i { left: -8px; top: -8px; width: 8px; height: calc(100% + 8px); background: #0f172a; transform: translateZ(70px); }
+/* Losa isométrica (720 x 540) */
+.co-losa { position: absolute; left: 90px; top: 64px; width: 720px; height: 540px; transform: rotateX(52deg) rotateZ(45deg); transform-style: preserve-3d; background-color: var(--niebla); background-image: radial-gradient(circle, #c9d6d2 1.2px, transparent 1.2px); background-size: 20px 20px; border: 1px solid #cfdcd8; border-radius: 6px; box-shadow: 0 12px 0 rgba(11, 30, 28, .06); }
+.co-muro-t, .co-muro-i, .co-remate-t, .co-remate-i { position: absolute; pointer-events: none; }
+.co-muro-t { left: 0; top: 0; width: 100%; height: 64px; background: #fff; transform-origin: 0 0; transform: rotateX(90deg); }
+.co-muro-i { left: 0; top: 0; width: 64px; height: 100%; background: #e3ebe8; transform-origin: 0 0; transform: rotateY(-90deg); }
+.co-remate-t { left: -7px; top: -7px; width: calc(100% + 7px); height: 7px; background: var(--tinta); transform: translateZ(64px); }
+.co-remate-i { left: -7px; top: -7px; width: 7px; height: calc(100% + 7px); background: var(--tinta); transform: translateZ(64px); }
+.co-destino { position: absolute; border-radius: 4px; pointer-events: none; }
 
-    /* Consultorio = cuarto con piso y dos muros (vista en corte, como una maqueta) */
-    .sala { position: absolute; transform-style: preserve-3d; touch-action: none; animation: salaCae .6s cubic-bezier(.34, 1.3, .64, 1) backwards; animation-delay: var(--d, 0ms); }
-    .sala:not(.cursor-grabbing):hover { transform: translateZ(10px) !important; }   /* se levanta al pasar el cursor */
-    .sala > * { position: absolute; transform-style: preserve-3d; }
+/* Consultorio (maqueta: piso + dos muros) */
+.co-sala { position: absolute; transform-style: preserve-3d; touch-action: none; cursor: grab; animation: coCae .6s cubic-bezier(.34, 1.3, .64, 1) backwards; animation-delay: var(--d, 0ms); transition: opacity .3s, filter .3s; }
+@keyframes coCae { from { transform: translateZ(110px); } }
+.co-sala > * { position: absolute; transform-style: preserve-3d; }
+.co-sala:not(.alzada):hover { transform: translateZ(10px) !important; }
+.co-sala.alzada { cursor: grabbing; }
+.co-sala.tenue { opacity: .28; filter: saturate(.2); }
+.co-s-piso { inset: 0; background: var(--papel); box-shadow: inset 0 0 0 2px var(--c); border-radius: 2px; }
+.co-sala.e-disponible .co-s-piso { background: linear-gradient(135deg, #eef8f3, #cfeadd); }
+.co-sala.e-ocupado .co-s-piso { background: linear-gradient(135deg, #0d6a63, var(--cred2)); box-shadow: inset 0 0 0 2px var(--cred2); }
+.co-sala.e-mantenimiento .co-s-piso { background: repeating-linear-gradient(45deg, var(--ambarv) 0 8px, #f2d9a8 8px 16px); }
+.co-sala.e-desconocido .co-s-piso { background: var(--niebla); }
+.co-sala.sel .co-s-piso { box-shadow: inset 0 0 0 4px var(--teal); }
+.co-sala.sel .co-s-letrero > div { box-shadow: 0 0 0 3px var(--teal), 0 8px 18px rgba(11, 30, 28, .3); }
+.co-s-muro-t { left: 0; top: 0; width: 100%; height: 50px; background: linear-gradient(#fff, #f3f7f6); box-shadow: inset 0 0 0 1px #cfdcd8; transform-origin: 0 0; transform: rotateX(90deg); }
+.co-s-muro-i { left: 0; top: 0; width: 50px; height: 100%; background: linear-gradient(90deg, #d6e1de, #e6eeeb); box-shadow: inset 0 0 0 1px #c3d1cd; transform-origin: 0 0; transform: rotateY(-90deg); }
+.co-s-rem-t { left: -5px; top: -5px; width: calc(100% + 5px); height: 5px; background: var(--c); transform: translateZ(50px); }
+.co-s-rem-i { left: -5px; top: -5px; width: 5px; height: calc(100% + 5px); background: var(--c); transform: translateZ(50px); }
+.co-s-letrero { inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; transform: translateZ(1px); }
+.co-s-letrero > div { transform: translateZ(30px) rotateZ(-45deg) rotateX(-52deg); display: flex; flex-direction: column; align-items: center; gap: 2px; max-width: 118px; padding: 5px 9px 6px; text-align: center; line-height: 1.1; background: var(--papel); border-radius: 8px; box-shadow: 0 2px 8px rgba(11, 30, 28, .22); }
+.co-s-letrero b { font: 700 16px/1.05 var(--disp); font-stretch: 85%; color: var(--tinta); word-break: break-word; }
+.co-s-letrero span { font: 600 12px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--c); }
+.co-sala.e-ocupado .co-s-letrero > div { background: var(--tinta); }
+.co-sala.e-ocupado .co-s-letrero b { color: #fff; }
+.co-sala.e-ocupado .co-s-letrero span { color: var(--foil); }
 
-    /* Piso según estado */
-    .sala .piso { inset: 0; background: linear-gradient(135deg, #dfb187, #c98f5b); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); }
-    .sala.e-ocupado .piso { background: linear-gradient(135deg, #f0c2b4, #e08f7c); }
-    .sala.e-mantenimiento .piso,
-    .sala.e-desconocido .piso { background: repeating-linear-gradient(45deg, #e2e8f0 0 8px, #f1f5f9 8px 16px); }
+/* ---------- Placa (frente y reverso) ---------- */
+.co-lado { display: grid; gap: 14px; align-content: start; }
+@container (min-width: 640px) and (max-width: 1039px) { .co-lado { grid-template-columns: 320px minmax(0, 1fr); align-items: start; } }
+.co-placa { perspective: 1400px; }
+.co-placa-in { position: relative; height: 360px; transform-style: preserve-3d; transition: transform .85s var(--flip); }
+.co-placa.volteada .co-placa-in { transform: rotateY(180deg); }
+.co-cara { position: absolute; inset: 0; border-radius: 22px; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
 
-    .sala .muro-t { left: 0; top: 0; width: 100%; height: 56px; background: #ffffff; transform-origin: 0 0; transform: rotateX(90deg); }
-    .sala .muro-i { left: 0; top: 0; width: 56px; height: 100%; background: #e2e8f0; transform-origin: 0 0; transform: rotateY(-90deg); }
+.co-frente { color: #eafaf6; background: linear-gradient(155deg, #0d6a63, var(--cred) 45%, var(--cred2)); box-shadow: 0 24px 44px -26px rgba(7, 63, 59, .9), inset 0 0 0 1px rgba(166, 239, 226, .18); }
+.co-gl, .co-gl svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.co-fr { position: relative; height: 100%; display: flex; flex-direction: column; padding: 20px 22px 0; }
+.co-fr header { display: flex; align-items: center; justify-content: space-between; }
+.co-k { font: 500 12px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--foil); }
+.co-k b { font-weight: 600; color: #fff; }
+.co-cruz { width: 30px; height: 30px; fill: rgba(166, 239, 226, .85); }
+.co-fr h2 { margin-top: 18px; font: 780 34px/1 var(--disp); font-stretch: 78%; letter-spacing: -.01em; color: #fff; text-transform: uppercase; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.co-fr dl { margin-top: auto; display: grid; grid-template-columns: repeat(3, auto); justify-content: start; gap: 4px 22px; padding-bottom: 16px; }
+.co-fr dt { font-size: 12px; font-weight: 500; color: #a9d8cf; }
+.co-fr dd { font: 650 15px var(--ui); color: #fff; white-space: nowrap; }
+.co-franja { margin: 0 -22px; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 22px; font-size: 13.5px; font-weight: 600; color: #fff; background: rgba(4, 36, 33, .55); border-top: 1px solid rgba(166, 239, 226, .2); }
+.co-frente.e-disponible .co-franja { background: rgba(8, 115, 79, .55); }
+.co-frente.e-mantenimiento .co-franja { background: repeating-linear-gradient(45deg, rgba(154, 88, 0, .75) 0 10px, rgba(120, 66, 0, .75) 10px 20px); }
+.co-fr-vacio h2 { text-transform: none; font-size: 30px; }
+.co-fr-vacio p { margin-top: 10px; font-size: 14px; color: #cdeee7; }
 
-    /* Remate oscuro de los muros según estado */
-    .sala .remate-t { left: -5px; top: -5px; width: calc(100% + 5px); height: 5px; background: #1e293b; transform: translateZ(56px); }
-    .sala .remate-i { left: -5px; top: -5px; width: 5px; height: calc(100% + 5px); background: #1e293b; transform: translateZ(56px); }
-    .sala.e-ocupado .remate-t, .sala.e-ocupado .remate-i { background: #fb7185; }
-    .sala.e-mantenimiento .remate-t, .sala.e-mantenimiento .remate-i { background: #f59e0b; }
-    .sala.e-desconocido .remate-t, .sala.e-desconocido .remate-i { background: #94a3b8; }
+.co-reverso { transform: rotateY(180deg); background: #fbfdfc; border: 1px solid var(--linea); box-shadow: 0 24px 44px -30px rgba(11, 30, 28, .55); padding: 18px 18px 0; display: flex; flex-direction: column; gap: 12px; }
+.co-rv-k { font: 500 12px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--cred); }
+.co-campo { display: flex; flex-direction: column; gap: 5px; }
+.co-campo > span { font-size: 13px; font-weight: 600; color: var(--tinta); }
+.co-campo input { height: 40px; border: 1px solid var(--linea); border-radius: 10px; padding: 0 12px; font: 500 14px var(--ui); color: var(--tinta); background: var(--papel); outline: 0; transition: border-color .15s, box-shadow .15s; }
+.co-campo input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(14, 124, 114, .15); }
+.co-campo.mal input { border-color: var(--rosa); }
+.co-campo small { font-size: 12px; font-weight: 500; color: var(--rosa); }
+.co-campo small.co-nota { color: var(--media); }
+.co-pisos-op { display: flex; flex-wrap: wrap; gap: 6px; }
+.co-pisos-op input { width: 86px; }
+.co-chip { height: 40px; min-width: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--linea); background: var(--papel); font: 600 13px var(--ui); color: var(--texto); }
+.co-chip.on { border-color: var(--cred); background: var(--velo); color: var(--cred); }
+.co-rv-pie { margin: auto -18px 0; display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--linea2); background: var(--papel); }
+.co-msg { flex: 1; min-width: 0; font-size: 12px; color: var(--media); }
 
-    /* Etiqueta */
-    .sala .etiqueta-sala { inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; transform: translateZ(1px); }
-    .sala .etiqueta-sala > div {
-        /* Se levanta sobre el piso: girada sobre su centro, la mitad de abajo quedaba bajo el suelo y se cortaba */
-        transform: translateZ(30px) rotateZ(-45deg) rotateX(-52deg);
-        display: flex; flex-direction: column; align-items: center; gap: 1px;
-        max-width: 92px; text-align: center; line-height: 1.15;
-        background: rgba(255, 255, 255, 0.92);
-        border-radius: 8px; padding: 4px 7px;
-        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.25);
-    }
-    .sala .etiqueta-sala i { font-size: 14px; color: #7c2d12; }
-    .sala.e-ocupado .etiqueta-sala i { color: #e11d48; }
-    .sala .etiqueta-sala span { font-size: 11px; font-weight: 900; color: #431407; word-break: break-word; }
-    .sala .etiqueta-sala small { font-size: 9px; font-weight: 700; color: #92400e; opacity: .85; }
-    .sala.e-mantenimiento .etiqueta-sala i, .sala.e-desconocido .etiqueta-sala i { color: #94a3b8; }
-    .sala.e-mantenimiento .etiqueta-sala span, .sala.e-desconocido .etiqueta-sala span { color: #64748b; }
-    .sala.e-mantenimiento .etiqueta-sala small, .sala.e-desconocido .etiqueta-sala small { color: #94a3b8; }
+/* Selector de estado */
+.co-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.co-seg button { height: 38px; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 0 4px; border-radius: 10px; border: 1px solid var(--linea); background: var(--papel); font: 600 12.5px var(--ui); color: var(--texto); white-space: nowrap; transition: border-color .15s, background .15s; }
+.co-seg button i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.co-seg button[aria-checked=true] { border-color: var(--c); background: var(--cv); color: var(--c); }
+.co-seg button:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Botones */
+.co-btn { height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; border-radius: 11px; border: 1px solid var(--linea); background: var(--papel); font: 600 14px var(--ui); color: var(--tinta); transition: background .15s, border-color .15s; }
+.co-btn:hover { background: #f7faf9; }
+.co-prim { background: var(--cred); border-color: var(--cred); color: #fff; }
+.co-prim:hover { background: var(--cred2); }
+.co-prim:disabled { opacity: .6; cursor: progress; }
+.co-prim kbd { border-color: rgba(255, 255, 255, .3); color: #cfe; }
+.co-borrar { color: var(--rosa); border-color: #f3c6cf; }
+.co-borrar:hover { background: var(--rosav); }
+.co-ancho { width: 100%; }
+.co-acc-in { display: grid; gap: 10px; }
+.co-acc-t { font-size: 13px; font-weight: 600; color: var(--media); }
+
+/* Edición: todo lo demás se atenúa */
+.co.editando .co-plano, .co.editando .co-lista, .co.editando .co-cifra { opacity: .35; filter: saturate(.6); pointer-events: none; }
+
+/* ---------- Lista ---------- */
+.co-lista { background: var(--papel); border: 1px solid var(--linea); border-radius: 18px; overflow: hidden; transition: opacity .35s, filter .35s; }
+.co-lh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 16px 18px; border-bottom: 1px solid var(--linea2); }
+.co-lh h2 { margin-right: auto; font: 750 20px var(--disp); color: var(--tinta); }
+.co-lh h2 small { font: 500 13px var(--ui); color: var(--media); margin-left: 6px; }
+.co-lh button { height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--linea); background: var(--papel); font: 600 13px var(--ui); color: var(--texto); }
+.co-lh button[aria-pressed=true] { background: var(--tinta); border-color: var(--tinta); color: #fff; }
+.co-fila { display: flex; align-items: center; border-bottom: 1px solid var(--linea2); }
+.co-fila:last-child { border-bottom: 0; }
+.co-fila.sel { background: linear-gradient(90deg, rgba(14, 124, 114, .08), transparent 60%); box-shadow: inset 3px 0 0 var(--teal); }
+.co-fila-main { flex: 1; min-width: 0; display: grid; grid-template-columns: 44px minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.2fr); align-items: center; gap: 14px; padding: 12px 18px; text-align: left; background: none; }
+.co-fila-main:hover { background: rgba(11, 90, 84, .03); }
+.co-puerta { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--cv); box-shadow: inset 0 0 0 1.5px var(--c); }
+.co-puerta b { font: 750 15px var(--disp); font-stretch: 85%; color: var(--c); }
+.co-puerta.e-ocupado { background: var(--cred); }
+.co-puerta.e-ocupado b { color: #fff; }
+.co-fila-n { min-width: 0; display: flex; flex-direction: column; }
+.co-fila-n b { font-weight: 650; color: var(--tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-fila-n small { font: 500 12px var(--mono); color: var(--media); letter-spacing: .03em; }
+.co-estado { justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--cv); color: var(--c); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.co-estado i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.co-medico { font-size: 13px; color: var(--media); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.co-fila-acc { display: flex; gap: 6px; padding-right: 16px; }
+.co-ico { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; border: 1px solid var(--linea); background: var(--papel); color: var(--texto); }
+.co-ico:hover { background: var(--niebla); color: var(--tinta); }
+.co-ico-r:hover { background: var(--rosav); color: var(--rosa); border-color: #f3c6cf; }
+.co-sin { padding: 28px 18px; text-align: center; font-size: 13px; color: var(--media); }
+.co-sin b { display: block; font: 750 18px var(--disp); color: var(--tinta); margin-bottom: 2px; }
+@container (max-width: 759px) {
+    .co-fila-main { grid-template-columns: 44px minmax(0, 1fr) auto; }
+    .co-medico { display: none; }
+}
+@container (max-width: 479px) { .co-estado span { display: none; } .co-estado { padding: 6px; } }
+
+@media (prefers-reduced-motion: reduce) {
+    .co-sala, .co-escena.cambio { animation: none !important; }
+    .co-placa-in { transition: none; }
+    .co-placa.volteada .co-placa-in { transform: none; }
+    .co-placa.volteada .co-frente { visibility: hidden; }
+    .co-reverso { transform: none; visibility: hidden; }
+    .co-placa.volteada .co-reverso { visibility: visible; }
+}
 </style>
 
 <script>
-    // Notificación flotante (esquina superior derecha). Se dibuja en el componente, por encima de los modales.
-    function toast(icon, title, ms = 3500) {
-        window.dispatchEvent(new CustomEvent('toast-consultorio', { detail: { icon, title, ms } }));
-    }
+function modConsultorios() {
+    const DATOS = JSON.parse(document.getElementById('co-datos').textContent);
+    const URL = DATOS.url, CSRF = DATOS.csrf;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const avisar = (m, t = 'success') => { if (window.notificar) window.notificar(m, t); };
+    const lee = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || d); } catch (e) { return JSON.parse(d); } };
+    const guarda = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+    const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const INFO = {
+        disponible:    { texto: 'Disponible',    corto: 'Libre',       plural: 'Disponibles',   icono: 'bi-door-open' },
+        ocupado:       { texto: 'En consulta',   corto: 'En consulta', plural: 'En consulta',   icono: 'bi-activity' },
+        mantenimiento: { texto: 'Mantenimiento', corto: 'Mant.',       plural: 'Mantenimiento', icono: 'bi-tools' },
+        desconocido:   { texto: 'Sin definir',   corto: '—',           plural: 'Sin definir',   icono: 'bi-question-circle' }
+    };
 
-    // Muestra el toast después de recargar la página
-    function toastYRecargar(icon, title) {
-        sessionStorage.setItem('toast_consultorios', JSON.stringify({ icon, title }));
-        location.reload();
-    }
-
-    function moduloConsultorios() {
     return {
-        openModal: false,
-        modoEdicion: false,
-        idSeleccionado: null,
-        form: { clinica_id: 1, nombre: '', piso: '1', estado: 'Disponible' },
-
-        // ----- Estados (coinciden con el enum de la BD) -----
-        estadosInfo: {
-            disponible:    { texto: 'Disponible',    badge: 'bg-emerald-50 text-emerald-600 border-emerald-200', punto: 'bg-emerald-500' },
-            ocupado:       { texto: 'Ocupado',       badge: 'bg-rose-50 text-rose-600 border-rose-200',         punto: 'bg-rose-400' },
-            mantenimiento: { texto: 'Mantenimiento', badge: 'bg-amber-50 text-amber-600 border-amber-200',      punto: 'bg-amber-400' },
-            desconocido:   { texto: 'Sin definir',   badge: 'bg-slate-100 text-slate-500 border-slate-200',     punto: 'bg-slate-400' }
-        },
-        opcionesEstado: [
-            { valor: 'Disponible',    punto: 'bg-emerald-500', activo: 'border-emerald-500 bg-emerald-50 text-emerald-700' },
-            { valor: 'Ocupado',       punto: 'bg-rose-400',    activo: 'border-rose-400 bg-rose-50 text-rose-600' },
-            { valor: 'Mantenimiento', punto: 'bg-amber-400',   activo: 'border-amber-400 bg-amber-50 text-amber-600' }
+        P: (DATOS.consultorios || []).map(c => Object.assign({ ocupadoPor: null }, c)),
+        sel: null,
+        piso: '',
+        pisosExtra: [],
+        q: '',
+        filtro: 'todos',
+        escala: 1,
+        animarPiso: false,
+        arrastre: null,
+        actualizado: '',
+        // Plano (mismas medidas que el CSS)
+        tam: 100, paso: 20, ancho: 720, alto: 540, angZ: 45, angX: 52,
+        // Edición
+        editando: false,
+        guardando: false,
+        form: { id: null, nombre: '', piso: '', estado: 'Disponible' },
+        errores: {},
+        mensajeForm: '',
+        pisoNuevo: { abierto: false, valor: '', error: '' },
+        opciones: [
+            { valor: 'Disponible',    slug: 'disponible',    corto: 'Libre',       plural: 'Disponibles' },
+            { valor: 'Ocupado',       slug: 'ocupado',       corto: 'En consulta', plural: 'En consulta' },
+            { valor: 'Mantenimiento', slug: 'mantenimiento', corto: 'Mant.',       plural: 'Mantenimiento' }
         ],
 
-        // ----- Información del consultorio (clic en el plano) -----
-        openInfo: false,
-        infoActual: { id: '', clinica_id: 1, nombre: '', piso: '', estado: 'disponible', creado: null, ocupadoPor: null },
+        init() {
+            // Pisos vacíos creados en este navegador (no hay tabla de pisos en la BD)
+            const reales = new Set(this.P.map(c => c.piso));
+            this.pisosExtra = lee('pisos_extra_consultorios', '[]').filter(p => !reales.has(p));
+            guarda('pisos_extra_consultorios', this.pisosExtra);
 
-        // ----- Plano 3D arrastrable -----
-        plano: @json($datosPlano),
-        tam: 100,       // tamaño de cada consultorio (px, en el plano)
-        paso: 20,       // cuadrícula de imantado
-        ancho: 720,     // superficie del piso
-        alto: 540,
-        anguloZ: 45,    // mismos ángulos que el CSS del piso
-        anguloX: 52,
-        arrastre: null,
-
-        // ----- Resumen con números animados -----
-        resumenMostrado: { total: 0, disponible: 0, ocupado: 0, mantenimiento: 0 },
-        animacionesResumen: {},
-
-        // ----- Confirmación de eliminar -----
-        confirmar: { abierto: false, cargando: false, id: null, nombre: '' },
-
-        // ----- Notificaciones -----
-        toasts: [],
-        toastId: 0,
-        estilosToast: {
-            success: { titulo: 'Listo',    bi: 'bi-check-lg',       icono: 'bg-emerald-50 text-emerald-600', barra: 'bg-emerald-400' },
-            warning: { titulo: 'Atención', bi: 'bi-exclamation-lg', icono: 'bg-amber-50 text-amber-600',     barra: 'bg-amber-400' },
-            error:   { titulo: 'Error',    bi: 'bi-x-lg',           icono: 'bg-rose-50 text-rose-600',       barra: 'bg-rose-400' },
-            info:    { titulo: 'Aviso',    bi: 'bi-info-lg',        icono: 'bg-sky-50 text-sky-600',         barra: 'bg-sky-400' }
-        },
-        agregarToast(d) {
-            const id = ++this.toastId;
-            const ms = d.ms || 3500;
-            this.toasts.push({ id, tipo: this.estilosToast[d.icon] ? d.icon : 'info', mensaje: d.title, ms, visible: false });
-            const t = this.toasts.find(x => x.id === id);
-            setTimeout(() => { t.visible = true; }, 30);
-            setTimeout(() => this.cerrarToast(id), ms + 30);
-        },
-        cerrarToast(id) {
-            const t = this.toasts.find(x => x.id === id);
-            if (!t) return;
-            t.visible = false;
-            setTimeout(() => { this.toasts = this.toasts.filter(x => x.id !== id); }, 300);
-        },
-
-        // Los números del resumen suben o bajan hasta su valor
-        animarResumen() {
-            const sinMov = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            ['total', 'disponible', 'ocupado', 'mantenimiento'].forEach(k => {
-                const destino = k === 'total' ? this.plano.length : this.contar(k);
-                const origen = this.resumenMostrado[k];
-                cancelAnimationFrame(this.animacionesResumen[k]);
-
-                if (sinMov || origen === destino) { this.resumenMostrado[k] = destino; return; }
-
-                const t0 = performance.now(), dur = 700;
-                const paso = (t) => {
-                    const p = Math.min(1, (t - t0) / dur);
-                    this.resumenMostrado[k] = Math.round(origen + (destino - origen) * (1 - Math.pow(1 - p, 3)));
-                    if (p < 1) this.animacionesResumen[k] = requestAnimationFrame(paso);
-                };
-                this.animacionesResumen[k] = requestAnimationFrame(paso);
+            // Posiciones: las guardadas en la BD, las de respaldo local o una cuadrícula automática
+            const locales = lee('plano_consultorios', '{}');
+            this.P.forEach(c => {
+                if (c.x === null || c.y === null) {
+                    if (locales[c.id]) { c.x = locales[c.id].x; c.y = locales[c.id].y; }
+                    else Object.assign(c, this.casillaLibre(c.piso, c.id));
+                }
             });
+
+            let ultimo = null; try { ultimo = sessionStorage.getItem('piso_activo_consultorios'); } catch (e) {}
+            this.piso = (ultimo !== null && this.pisos.includes(ultimo)) ? ultimo : (this.pisos[0] ?? '');
+            this.sel = this.planoVisible[0] || this.P[0] || null;
+
+            // Escala del plano según el ancho disponible
+            const ajustar = () => { const w = this.$refs.lienzo.clientWidth; this.escala = Math.min(1, Math.max(.35, w / 900)); };
+            ajustar();
+            if (window.ResizeObserver) new ResizeObserver(ajustar).observe(this.$refs.lienzo);
+            else window.addEventListener('resize', ajustar);
+
+            // Estado en vivo (cada 15 s con la pestaña visible)
+            this.sincronizar();
+            setInterval(() => { if (!document.hidden && !this.arrastre && !this.editando) this.sincronizar(); }, 15000);
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) this.sincronizar(); });
         },
 
-        // Rebote 3D del cuarto (API de animaciones: no interfiere con la animación de entrada en CSS)
-        rebotar(id) {
-            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-            const el = document.querySelector('.sala[data-id="' + id + '"]');
-            if (!el || !el.animate) return;
-            el.animate([
-                { transform: 'translateZ(0)' },
-                { transform: 'translateZ(34px)', offset: .35 },
-                { transform: 'translateZ(4px)',  offset: .65 },
-                { transform: 'translateZ(12px)', offset: .82 },
-                { transform: 'translateZ(0)' }
-            ], { duration: 900, easing: 'ease-out' });
+        /* ---------- Datos derivados ---------- */
+        info(slug) { return INFO[slug] || INFO.desconocido; },
+        get pisos() {
+            return [...new Set([...this.P.map(c => c.piso), ...this.pisosExtra])]
+                .sort((a, b) => String(a).localeCompare(String(b), 'es', { numeric: true }));
+        },
+        get planoVisible() { return this.P.filter(c => c.piso === this.piso); },
+        get filtrados() {
+            return this.P.filter(c => this.pasaFiltro(c))
+                .sort((a, b) => String(a.piso).localeCompare(String(b.piso), 'es', { numeric: true }) || a.nombre.localeCompare(b.nombre, 'es', { numeric: true }));
+        },
+        pasaFiltro(c) {
+            const q = norm(this.q.trim());
+            const texto = !q || norm(c.nombre + ' piso ' + c.piso).includes(q);
+            return texto && (this.filtro === 'todos' || c.estado === this.filtro);
+        },
+        contar(slug) { return this.P.filter(c => c.estado === slug).length; },
+        contarPiso(p) { return this.P.filter(c => c.piso === p).length; },
+        enConsultaPiso(p) { return this.P.filter(c => c.piso === p && c.estado === 'ocupado').length; },
+        etiquetaPiso(p) { return p === '' || p === null || p === undefined ? 'Sin piso' : (/^\d+$/.test(p) ? 'Piso ' + p : p); },
+        iniciales(n) {
+            const num = String(n).match(/\d+/);
+            if (num) return num[0].slice(-3);
+            return String(n).trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+        },
+        franja(c) {
+            if (c.estado === 'ocupado') return c.ocupadoPor ? 'En consulta con ' + c.ocupadoPor : 'En uso en este momento';
+            if (c.estado === 'mantenimiento') return 'En mantenimiento: no se le asignan citas';
+            if (c.estado === 'disponible') return 'Libre para asignar citas';
+            return 'Estado sin definir';
+        },
+        filtrar(slug) { this.filtro = this.filtro === slug ? 'todos' : slug; },
+
+        /* ---------- Patrón de seguridad de la placa ---------- */
+        guilloche(seed) {
+            let h = 2166136261; for (const ch of String(seed)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } h >>>= 0;
+            const w = 320, al = 360, n = 20 + h % 10, cx = w * .78, cy = al * .3; let d = '';
+            for (let k = 0; k < 12; k++) {
+                const A = 50 + k * 8, B = 6 + (k % 4) * 2, ph = k * .22 + (h % 100) / 50;
+                for (let i = 0; i <= 240; i++) { const t = i / 240 * 2 * Math.PI, r = A + B * Math.cos(n * t + ph); d += (i ? 'L' : 'M') + (cx + r * Math.cos(t)).toFixed(1) + ',' + (cy + r * Math.sin(t)).toFixed(1); }
+                d += 'Z';
+            }
+            for (let k = 0; k < 6; k++) { const y0 = 150 + k * 34; for (let x = 0; x <= w; x += 6) d += (x ? 'L' : 'M') + x + ',' + (y0 + 6 * Math.sin(x / 27 + k * .9 + h % 5) + 2.5 * Math.sin(x / 8 + k)).toFixed(1); }
+            return `<svg viewBox="0 0 ${w} ${al}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path d="${d}" fill="none" stroke="#a6efe2" stroke-width=".6" opacity=".22"/></svg>`;
         },
 
-        // Consultorios de un piso que están en consulta en este momento
-        ocupadosEnPiso(p) {
-            return this.plano.filter(c => c.piso === p && c.estado === 'ocupado').length;
-        },
-
-        // ----- Un plano por piso -----
-        pisoActivo: '',
-        animando: false,
-        tintes: ['#eef2f6', '#ecf7f1', '#f3eefb', '#fdf3e7', '#eaf3fb'],   // cada piso con un tono distinto
-
-        // Pisos creados desde "Nuevo piso" que aún no tienen ningún consultorio.
-        // No existe una tabla de pisos en la BD: los pisos "reales" nacen solos en
-        // cuanto un consultorio los usa, así que estos vacíos solo viven en este navegador
-        // hasta que se registre el primer consultorio ahí (momento en que ya vienen del plano).
-        pisosExtra: [],
-
-        get pisosPlano() {
-            return [...new Set([...this.plano.map(c => c.piso), ...this.pisosExtra])]
-                .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-        },
-        get planoVisible() {
-            return this.plano.filter(c => c.piso === this.pisoActivo);
-        },
-        get tinte() {
-            const i = Math.max(0, this.pisosPlano.indexOf(this.pisoActivo));
-            return this.tintes[i % this.tintes.length];
-        },
-        etiquetaPiso(p) { return p === '' ? 'Sin piso' : 'Piso ' + p; },
-        contarPiso(p) { return this.plano.filter(c => c.piso === p).length; },
+        /* ---------- Pisos ---------- */
         cambiarPiso(p) {
-            if (this.arrastre) return;
-            this.pisoActivo = p;
+            if (this.arrastre || this.editando) return;
+            this.piso = p;
             try { sessionStorage.setItem('piso_activo_consultorios', p); } catch (e) {}
-            this.animando = false;
-            this.$nextTick(() => { this.animando = true; });
+            if (!this.sel || this.sel.piso !== p) this.sel = this.planoVisible[0] || this.sel;
+            if (!reduce) { this.animarPiso = false; this.$nextTick(() => { this.animarPiso = true; }); }
+        },
+        abrirPisoNuevo() {
+            this.pisoNuevo = { abierto: true, valor: '', error: '' };
+            this.$nextTick(() => this.$refs.pisoNuevo.focus());
+        },
+        agregarPiso() {
+            const v = this.pisoNuevo.valor.trim().toUpperCase();
+            if (!v) { this.pisoNuevo.error = 'Escribe el piso'; return; }
+            if (this.pisos.includes(v)) { this.pisoNuevo.error = 'Ya existe'; return; }
+            this.pisosExtra.push(v); guarda('pisos_extra_consultorios', this.pisosExtra);
+            this.pisoNuevo.abierto = false;
+            this.cambiarPiso(v);
+            avisar(this.etiquetaPiso(v) + ' agregado. Registra su primer consultorio.');
         },
 
-        // ----- Agregar un piso nuevo (vacío) -----
-        nuevoPiso: { abierto: false, valor: '', error: '' },
-
-        guardarPisosExtra() {
-            try { localStorage.setItem('pisos_extra_consultorios', JSON.stringify(this.pisosExtra)); } catch (e) {}
+        /* ---------- Selección ---------- */
+        seleccionar(c, desdeLista) {
+            if (this.editando || !c) return;
+            this.sel = c;
+            if (c.piso !== this.piso) this.cambiarPiso(c.piso);
+            if (desdeLista && this.$refs.lienzo) this.$refs.lienzo.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' });
         },
 
-        abrirNuevoPiso() {
-            this.nuevoPiso = { abierto: true, valor: '', error: '' };
-            this.$nextTick(() => this.$refs.inputNuevoPiso && this.$refs.inputNuevoPiso.focus());
-        },
-
-        confirmarNuevoPiso() {
-            const valor = (this.nuevoPiso.valor || '').trim();
-
-            if (!valor) {
-                this.nuevoPiso.error = 'Escribe un número o nombre para el piso.';
-                return;
+        /* ---------- Plano: posiciones y arrastre ---------- */
+        casillaLibre(piso, sinId) {
+            // Casillas ordenadas desde el centro de la losa: los consultorios se agrupan al centro,
+            // con pasillos de 40 px; si ya no caben, se usa una cuadrícula más apretada.
+            const ocupa = (x, y) => this.P.some(o => o.id !== sinId && o.piso === piso && o.x !== null && o.x !== undefined && Math.abs(o.x - x) < this.tam && Math.abs(o.y - y) < this.tam);
+            for (const paso of [140, 120, 100]) {
+                const casillas = [], cols = Math.floor((this.ancho - this.tam) / paso) + 1, filas = Math.floor((this.alto - this.tam) / paso) + 1;
+                const x0 = Math.round((this.ancho - this.tam - (cols - 1) * paso) / 2 / this.paso) * this.paso;
+                const y0 = Math.round((this.alto - this.tam - (filas - 1) * paso) / 2 / this.paso) * this.paso;
+                for (let f = 0; f < filas; f++) for (let k = 0; k < cols; k++) casillas.push({ x: x0 + k * paso, y: y0 + f * paso });
+                const cx = (this.ancho - this.tam) / 2, cy = (this.alto - this.tam) / 2;
+                casillas.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy) || a.y - b.y || a.x - b.x);
+                const libre = casillas.find(k => !ocupa(k.x, k.y));
+                if (libre) return libre;
             }
-            if (this.pisosPlano.includes(valor)) {
-                this.nuevoPiso.error = 'Ese piso ya existe.';
-                return;
-            }
-
-            this.pisosExtra.push(valor);
-            this.guardarPisosExtra();
-            this.nuevoPiso.abierto = false;
-            this.cambiarPiso(valor);
-            toast('success', 'Piso ' + valor + ' agregado. Ahora registra su primer consultorio.');
+            return { x: 0, y: 0 };
         },
-
-        // true = guarda pos_x / pos_y en la BD (ruta PATCH /consultorios/{id}/posicion).
-        // false = solo en este navegador.
-        guardarEnServidor: true,
-
-        // ----- Estado en vivo: un consultorio figura "Ocupado" mientras un médico lo usa en una consulta -----
-        estadoDe(id) {
-            const c = this.plano.find(x => x.id === id);
-            return c ? c.estado : 'desconocido';
+        estiloSala(c, i) {
+            const alzada = this.arrastre && this.arrastre.id === c.id && this.arrastre.movio;
+            return `left:${c.x}px;top:${c.y}px;width:${this.tam}px;height:${this.tam}px;--d:${i * 60}ms;`
+                + `transform:translateZ(${alzada ? 22 : (this.sel && this.sel.id === c.id ? 8 : 0)}px);z-index:${alzada ? 20 : 10};`
+                + `transition:${alzada ? 'none' : 'left .15s, top .15s, transform .2s, opacity .3s'};`;
         },
-        contar(slug) {
-            return this.plano.filter(c => c.estado === slug).length;
+        estiloDestino() {
+            const a = this.arrastre;
+            if (!a || !a.movio) return 'display:none';
+            const c = a.choque ? '200,16,46' : '14,124,114';
+            return `left:${a.sx}px;top:${a.sy}px;width:${this.tam}px;height:${this.tam}px;background:rgba(${c},.14);border:2px dashed rgba(${c},.8);`;
         },
-        slugEstado(txt) {
-            const v = String(txt || '').trim().toLowerCase();
-            return ['disponible', 'ocupado', 'mantenimiento'].includes(v) ? v : 'desconocido';
+        iniciarArrastre(e, c) {
+            if (this.editando || e.button > 0) return;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            this.arrastre = { id: c.id, cx: e.clientX, cy: e.clientY, x0: c.x, y0: c.y, sx: c.x, sy: c.y, movio: false, choque: false };
         },
-        async sincronizarEstados() {
+        mover(e, c) {
+            const a = this.arrastre;
+            if (!a || a.id !== c.id) return;
+            if (!a.movio) { if (Math.hypot(e.clientX - a.cx, e.clientY - a.cy) < 5) return; a.movio = true; }
+            const t = this.angZ * Math.PI / 180, f = this.angX * Math.PI / 180;
+            const u = (e.clientX - a.cx) / this.escala, v = (e.clientY - a.cy) / this.escala / Math.cos(f);
+            c.x = Math.max(0, Math.min(a.x0 + u * Math.cos(t) + v * Math.sin(t), this.ancho - this.tam));
+            c.y = Math.max(0, Math.min(a.y0 - u * Math.sin(t) + v * Math.cos(t), this.alto - this.tam));
+            const snap = (val, max) => Math.max(0, Math.min(Math.floor(max / this.paso) * this.paso, Math.round(val / this.paso) * this.paso));
+            a.sx = snap(c.x, this.ancho - this.tam); a.sy = snap(c.y, this.alto - this.tam);
+            a.choque = this.P.some(o => o.id !== c.id && o.piso === c.piso && Math.abs(o.x - a.sx) < this.tam && Math.abs(o.y - a.sy) < this.tam);
+        },
+        soltar(c) {
+            const a = this.arrastre;
+            if (!a || a.id !== c.id) return;
+            this.arrastre = null;
+            if (!a.movio) { this.seleccionar(c); return; }
+            if (a.choque) { c.x = a.x0; c.y = a.y0; avisar('Ese lugar ya lo ocupa otro consultorio.', 'warning'); return; }
+            c.x = a.sx; c.y = a.sy;
+            if (c.x !== a.x0 || c.y !== a.y0) this.guardarPosicion(c);
+        },
+        cancelarArrastre(c) {
+            const a = this.arrastre;
+            if (!a || a.id !== c.id) return;
+            c.x = a.x0; c.y = a.y0; this.arrastre = null;
+        },
+        async guardarPosicion(c) {
+            let causa = '';
             try {
-                const r = await fetch('{{ url('consultorios/estados') }}', { headers: { 'Accept': 'application/json' } });
+                const r = await fetch(`${URL}/${c.id}/posicion`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF },
+                    body: JSON.stringify({ pos_x: Math.round(c.x), pos_y: Math.round(c.y) })
+                });
+                if (!r.ok) {
+                    const d = await r.json().catch(() => ({}));
+                    const msg = d.message ? ': ' + d.message : '';
+                    causa = r.status === 419 ? 'tu sesión expiró, recarga la página'
+                          : r.status === 403 ? 'tu rol no tiene permiso para editar consultorios'
+                          : r.status === 404 ? 'no existe la ruta PATCH consultorios/{id}/posicion (corre php artisan optimize:clear)'
+                          : r.status === 422 ? 'datos no válidos' + msg
+                          : /pos_x|pos_y|column/i.test(d.message || '') ? 'faltan las columnas pos_x y pos_y (corre php artisan migrate)'
+                          : 'error ' + r.status + msg;
+                    throw new Error(causa);
+                }
+                const locales = lee('plano_consultorios', '{}'); delete locales[c.id]; guarda('plano_consultorios', locales);
+            } catch (e) {
+                const locales = lee('plano_consultorios', '{}'); locales[c.id] = { x: c.x, y: c.y }; guarda('plano_consultorios', locales);
+                console.warn('[Consultorios] No se guardó la posición:', e);
+                avisar('No se guardó la posición en el servidor (' + (causa || 'sin conexión') + '). Quedó guardada en este navegador.', 'warning');
+            }
+        },
+        rebotar(id) {
+            if (reduce) return;
+            const el = this.$root.querySelector(`.co-sala[data-id="${id}"]`);
+            if (el && el.animate) el.animate([{ transform: 'translateZ(0)' }, { transform: 'translateZ(34px)', offset: .35 }, { transform: 'translateZ(4px)', offset: .65 }, { transform: 'translateZ(0)' }], { duration: 900, easing: 'ease-out' });
+        },
+
+        /* ---------- Estado en vivo ---------- */
+        async sincronizar() {
+            try {
+                const r = await fetch(`${URL}/estados`, { headers: { 'Accept': 'application/json' } });
                 if (!r.ok) return;
-                const lista = await r.json();
-                let huboCambios = false;
-
-                lista.forEach(e => {
-                    const c = this.plano.find(x => x.id === e.id);
+                (await r.json()).forEach(e => {
+                    const c = this.P.find(x => x.id === e.id);
                     if (!c) return;
-
-                    const nuevo = this.slugEstado(e.estado);
+                    const nuevo = ['disponible', 'ocupado', 'mantenimiento'].includes(String(e.estado).toLowerCase()) ? String(e.estado).toLowerCase() : 'desconocido';
                     if (c.estado !== nuevo) {
                         c.estado = nuevo;
-                        huboCambios = true;
-                        this.rebotar(c.id);   // el cuarto rebota un momento para llamar la atención
-                        toast(nuevo === 'ocupado' ? 'info' : 'success',
-                              c.nombre + ' ahora está ' + this.estadosInfo[nuevo].texto.toLowerCase(), 4000);
+                        this.rebotar(c.id);
+                        avisar(`${c.nombre}: ${this.info(nuevo).texto.toLowerCase()}`, 'info');
                     }
                     c.ocupadoPor = e.ocupado_por || null;
                 });
-
-                if (huboCambios) this.animarResumen();
-            } catch (err) { /* se reintenta en el siguiente ciclo */ }
+                this.actualizado = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
+            } catch (e) { /* se reintenta en el siguiente ciclo */ }
         },
 
-        init() {
-            window.addEventListener('toast-consultorio', e => this.agregarToast(e.detail));
-            this.animarResumen();
+        /* ---------- Alta y edición (la placa se voltea) ---------- */
+        nuevo() {
+            if (this.editando) return;
+            this.form = { id: null, nombre: '', piso: this.piso || (this.pisos[0] ?? '1'), estado: 'Disponible' };
+            this.abrirForm();
+        },
+        editar(c) {
+            if (this.editando || !c) return;
+            this.seleccionar(c);
+            this.form = { id: c.id, nombre: c.nombre, piso: c.piso, estado: (this.opciones.find(o => o.slug === c.estado) || this.opciones[0]).valor };
+            this.abrirForm();
+        },
+        abrirForm() {
+            this.errores = {}; this.mensajeForm = 'Ctrl+Enter guarda';
+            this.editando = true;
+            this.$root.querySelector('.co-placa').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' });
+            setTimeout(() => this.$refs.campoNombre.focus({ preventScroll: true }), reduce ? 0 : 450);
+        },
+        cancelar() {
+            this.editando = false; this.guardando = false;
+            // El foco regresa al frente (el formulario queda oculto)
+            this.$nextTick(() => { const b = this.$root.querySelector('.co-acc .co-prim'); if (b) b.focus({ preventScroll: true }); else document.activeElement && document.activeElement.blur(); });
+        },
+        async guardar() {
+            if (this.guardando) return;
+            const f = this.form;
+            f.nombre = f.nombre.trim(); f.piso = String(f.piso || '').trim().toUpperCase();
+            this.errores = {};
+            if (!f.nombre) this.errores.nombre = 'Escribe el nombre del consultorio.';
+            if (this.P.some(c => c.id !== f.id && norm(c.nombre) === norm(f.nombre) && c.piso === f.piso)) this.errores.nombre = 'Ya hay un consultorio con ese nombre en este piso.';
+            if (Object.keys(this.errores).length) { this.mensajeForm = 'Revisa el dato marcado.'; return; }
 
-            // Estado en vivo de los consultorios (cada 15 s, solo con la pestaña visible)
-            this.sincronizarEstados();
-            setInterval(() => { if (!document.hidden && !this.arrastre) this.sincronizarEstados(); }, 15000);
-            document.addEventListener('visibilitychange', () => { if (!document.hidden) this.sincronizarEstados(); });
-
-            // Pisos "vacíos" agregados con "Nuevo piso" (no existen en la BD, solo en este navegador).
-            // Se descartan los que ya tienen consultorios reales, porque esos ya vienen del plano.
+            this.guardando = true; this.mensajeForm = 'Guardando…';
             try {
-                const guardados = JSON.parse(localStorage.getItem('pisos_extra_consultorios') || '[]');
-                const pisosReales = new Set(this.plano.map(c => c.piso));
-                this.pisosExtra = guardados.filter(p => !pisosReales.has(p));
-                if (this.pisosExtra.length !== guardados.length) this.guardarPisosExtra();
-            } catch (e) { /* sin almacenamiento local */ }
-
-            // Piso que se muestra al abrir: el último que se estaba viendo, o el más bajo
-            let guardado = null;
-            try { guardado = sessionStorage.getItem('piso_activo_consultorios'); } catch (e) {}
-            this.pisoActivo = (guardado !== null && this.pisosPlano.includes(guardado))
-                ? guardado
-                : (this.pisosPlano[0] ?? '');
-
-            // Toast pendiente tras recargar
-            const pendiente = sessionStorage.getItem('toast_consultorios');
-            if (pendiente) {
-                sessionStorage.removeItem('toast_consultorios');
-                const t = JSON.parse(pendiente);
-                this.$nextTick(() => toast(t.icon, t.title));
-            }
-
-            // Posiciones guardadas solo en este navegador (cuando el servidor no las pudo guardar)
-            try {
-                const locales = JSON.parse(localStorage.getItem('plano_consultorios') || '{}');
-                this.plano.forEach(c => {
-                    if (!c.guardado && locales[c.id]) {
-                        c.x = locales[c.id].x;
-                        c.y = locales[c.id].y;
-                    }
+                const r = await fetch(f.id ? `${URL}/${f.id}` : URL, {
+                    method: f.id ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF },
+                    body: JSON.stringify({ nombre: f.nombre, piso: f.piso, estado: f.id ? f.estado : 'Disponible' })
                 });
-            } catch (e) { /* sin almacenamiento local */ }
-        },
-
-        get maxX() { return Math.floor((this.ancho - this.tam) / this.paso) * this.paso; },
-        get maxY() { return Math.floor((this.alto - this.tam) / this.paso) * this.paso; },
-        snap(v, max) { return Math.max(0, Math.min(max, Math.round(v / this.paso) * this.paso)); },
-
-        estiloSala(c, i = 0) {
-            const alzado = this.arrastre && this.arrastre.id === c.id && this.arrastre.movio;
-            return `left:${c.x}px; top:${c.y}px; width:${this.tam}px; height:${this.tam}px; --d:${i * 60}ms;`
-                 + `transform:${alzado ? 'translateZ(22px)' : 'translateZ(0)'};`
-                 + `z-index:${alzado ? 20 : 10};`
-                 + `transition:${alzado ? 'none' : 'left .15s, top .15s, transform .15s'};`;
-        },
-
-        // Casilla que indica dónde caerá el consultorio al soltarlo
-        estiloDestino() {
-            const a = this.arrastre;
-            if (!a || !a.movio) return 'display:none;';
-            const color = a.choque ? '244,63,94' : '13,148,136';
-            return `left:${a.sx}px; top:${a.sy}px; width:${this.tam}px; height:${this.tam}px;`
-                 + `background:rgba(${color},0.18); border:2px dashed rgba(${color},0.8);`;
-        },
-
-        iniciarArrastre(e, item) {
-            e.currentTarget.setPointerCapture(e.pointerId);
-            this.arrastre = { id: item.id, cx: e.clientX, cy: e.clientY, x0: item.x, y0: item.y, movio: false, sx: item.x, sy: item.y, choque: false };
-        },
-
-        // Convierte el movimiento del puntero en pantalla al movimiento sobre el plano inclinado
-        mover(e, item) {
-            const a = this.arrastre;
-            if (!a || a.id !== item.id) return;
-
-            // Un desplazamiento pequeño se considera clic, no arrastre
-            if (!a.movio) {
-                if (Math.hypot(e.clientX - a.cx, e.clientY - a.cy) < 5) return;
-                a.movio = true;
-            }
-
-            const t = this.anguloZ * Math.PI / 180;
-            const f = this.anguloX * Math.PI / 180;
-            const u = e.clientX - a.cx;
-            const v = (e.clientY - a.cy) / Math.cos(f);
-            const px = u * Math.cos(t) + v * Math.sin(t);
-            const py = -u * Math.sin(t) + v * Math.cos(t);
-            item.x = Math.max(0, Math.min(a.x0 + px, this.ancho - this.tam));
-            item.y = Math.max(0, Math.min(a.y0 + py, this.alto - this.tam));
-
-            a.sx = this.snap(item.x, this.maxX);
-            a.sy = this.snap(item.y, this.maxY);
-            a.choque = this.hayColision(item.id, a.sx, a.sy);
-        },
-
-        soltar(item) {
-            const a = this.arrastre;
-            if (!a || a.id !== item.id) return;
-            this.arrastre = null;
-
-            // Fue un clic: mostrar información
-            if (!a.movio) {
-                this.verInfo(item);
-                return;
-            }
-
-            if (a.choque) {
-                item.x = a.x0;
-                item.y = a.y0;
-                toast('warning', 'Ese espacio ya está ocupado por otro consultorio');
-                return;
-            }
-
-            item.x = a.sx;
-            item.y = a.sy;
-            if (item.x !== a.x0 || item.y !== a.y0) this.guardarPosicion(item);
-        },
-
-        cancelar(item) {
-            const a = this.arrastre;
-            if (!a || a.id !== item.id) return;
-            item.x = a.x0;
-            item.y = a.y0;
-            this.arrastre = null;
-        },
-
-        hayColision(id, x, y) {
-            const yo = this.plano.find(o => o.id === id);
-            return this.plano.some(o => o.id !== id && o.piso === yo.piso &&
-                Math.abs(o.x - x) < this.tam && Math.abs(o.y - y) < this.tam);
-        },
-
-        guardarPosicion(item) {
-            if (!this.guardarEnServidor) {
-                this.guardarLocal(item);
-                toast('success', 'Posición guardada en este navegador');
-                return;
-            }
-
-            fetch(`/consultorios/${item.id}/posicion`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({ pos_x: item.x, pos_y: item.y })
-            })
-            .then(async r => {
-                const res = await r.json().catch(() => ({}));
-                if (!r.ok) {
-                    throw { status: r.status, message: res.message };
+                const d = await r.json().catch(() => ({}));
+                if (r.status === 422) {
+                    Object.entries(d.errors || {}).forEach(([k, v]) => { this.errores[k] = v[0]; });
+                    this.mensajeForm = d.message || 'Revisa los datos.'; this.guardando = false; return;
                 }
-                // Si el servidor devuelve lo guardado, se compara; si no lo devuelve, se acepta la respuesta OK
-                if (res.pos_x !== undefined && (Number(res.pos_x) !== item.x || Number(res.pos_y) !== item.y)) {
-                    throw { custom: true, message: 'El servidor respondió OK pero guardó otra posición (' + res.pos_x + ', ' + res.pos_y + ')' };
+                if (!r.ok) throw new Error(r.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (d.message || 'No se pudo guardar.'));
+
+                const datos = d.consultorio || { id: f.id, nombre: f.nombre, piso: f.piso, estado: f.estado.toLowerCase() };
+                let c = this.P.find(x => x.id === datos.id);
+                if (c) {
+                    const cambioPiso = c.piso !== datos.piso;
+                    Object.assign(c, { nombre: datos.nombre, piso: datos.piso, estado: datos.estado, ocupadoPor: datos.ocupadoPor ?? c.ocupadoPor });
+                    if (cambioPiso) { Object.assign(c, this.casillaLibre(c.piso, c.id)); this.guardarPosicion(c); }
+                } else {
+                    c = Object.assign({ ocupadoPor: null }, datos);
+                    Object.assign(c, this.casillaLibre(c.piso, c.id));
+                    this.P.push(c);
+                    this.guardarPosicion(c);
+                    this.pisosExtra = this.pisosExtra.filter(p => p !== c.piso); guarda('pisos_extra_consultorios', this.pisosExtra);
                 }
-                item.guardado = true;
-                this.borrarLocal(item.id);
-                toast('success', 'Posición guardada');
-            })
-            .catch(err => {
-                // El bloque se queda donde lo dejó el usuario; se guarda una copia local
-                this.guardarLocal(item);
-                let causa = 'No se pudo conectar con el servidor';
-                if (err && err.custom) causa = err.message;
-                else if (err && err.status === 404) causa = 'Error 404: falta la ruta PATCH /consultorios/{id}/posicion';
-                else if (err && err.status === 405) causa = 'Error 405: la ruta de posición no acepta PATCH';
-                else if (err && err.status === 419) causa = 'Error 419: la sesión/CSRF expiró, recarga la página';
-                else if (err && err.status === 422) causa = 'Error 422: ' + (err.message || 'datos no válidos');
-                else if (err && err.status) causa = 'Error ' + err.status + (err.message ? ': ' + err.message : ' en el servidor (revisa storage/logs/laravel.log)');
-                toast('warning', causa + '. Se guardó solo en este navegador.', 6000);
-            });
-        },
-
-        guardarLocal(item) {
-            try {
-                const locales = JSON.parse(localStorage.getItem('plano_consultorios') || '{}');
-                locales[item.id] = { x: item.x, y: item.y };
-                localStorage.setItem('plano_consultorios', JSON.stringify(locales));
-            } catch (e) { /* sin almacenamiento local */ }
-        },
-
-        borrarLocal(id) {
-            try {
-                const locales = JSON.parse(localStorage.getItem('plano_consultorios') || '{}');
-                delete locales[id];
-                localStorage.setItem('plano_consultorios', JSON.stringify(locales));
-            } catch (e) { /* sin almacenamiento local */ }
-        },
-
-        // ----- Información del consultorio -----
-        verInfo(item) {
-            this.infoActual = {
-                id: item.id,
-                clinica_id: item.clinica_id,
-                nombre: item.nombre,
-                piso: item.piso,
-                estado: item.estado,
-                creado: item.creado,
-                ocupadoPor: item.ocupadoPor || null
-            };
-            this.openInfo = true;
-        },
-
-        editarDesdeInfo() {
-            this.openInfo = false;
-            this.abrirModalEditar(this.infoActual.id);
-        },
-
-        eliminarDesdeInfo() {
-            this.openInfo = false;
-            this.eliminarConsultorio(this.infoActual.id);
-        },
-
-        // ----- Filtros de la tabla -----
-        busqueda: '',
-        filtroPiso: 'todos',
-        filtroEstado: 'todos',
-
-        coincide(nombre, piso, estado) {
-            const texto = this.busqueda.trim().toLowerCase();
-            const pasaTexto = texto === '' || nombre.toLowerCase().includes(texto);
-            const pasaPiso = this.filtroPiso === 'todos' || String(piso) === String(this.filtroPiso);
-            const pasaEstado = this.filtroEstado === 'todos' || estado === this.filtroEstado;
-            return pasaTexto && pasaPiso && pasaEstado;
-        },
-
-        get visibles() {
-            return this.plano.filter(c => this.coincide(c.nombre, c.piso, c.estado)).length;
-        },
-
-        // ----- CRUD -----
-        abrirModalCrear() {
-            this.modoEdicion = false;
-            // Si hay un piso activo (por ejemplo uno recién agregado), el consultorio nuevo
-            // se propone ahí; si no, se usa "1" como antes. Siempre nace en Disponible.
-            this.form = { clinica_id: 1, nombre: '', piso: this.pisoActivo || '1', estado: 'Disponible' };
-            this.openModal = true;
-        },
-
-        // Recibe el id del consultorio y toma sus datos del plano
-        abrirModalEditar(id) {
-            const c = this.plano.find(x => x.id === id);
-            if (!c) return;
-            this.modoEdicion = true;
-            this.idSeleccionado = c.id;
-            this.form = {
-                clinica_id: c.clinica_id,
-                nombre: c.nombre,
-                piso: c.piso,
-                estado: c.estado === 'desconocido' ? 'Disponible' : this.estadosInfo[c.estado].texto
-            };
-            this.openModal = true;
-        },
-
-        guardar() {
-            let url = this.modoEdicion ? `/consultorios/${this.idSeleccionado}` : '/consultorios';
-            let method = this.modoEdicion ? 'PUT' : 'POST';
-
-            fetch(url, {
-                method: method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify(this.form)
-            })
-            .then(async response => {
-                let res = await response.json().catch(() => ({}));
-
-                if (!response.ok) {
-                    let mensaje = res.message || 'Revisa que todos los campos requeridos estén llenos.';
-                    if (res.errors) {
-                        let primerCampo = Object.keys(res.errors)[0];
-                        mensaje = res.errors[primerCampo][0];
-                    }
-                    toast('warning', mensaje, 5000);
-                    return;
-                }
-
-                this.openModal = false;
-                toastYRecargar('success', res.message || 'Consultorio guardado');
-            })
-            .catch(error => {
-                console.error('Error de red:', error);
-                toast('error', 'No se pudo comunicar con el servidor');
-            });
-        },
-
-        eliminarConsultorio(id) {
-            const c = this.plano.find(x => x.id === id);
-            this.confirmar = { abierto: true, cargando: false, id, nombre: c ? c.nombre : 'este consultorio' };
-        },
-
-        async confirmarEliminar() {
-            if (this.confirmar.cargando) return;
-            this.confirmar.cargando = true;
-
-            try {
-                const r = await fetch(`/consultorios/${this.confirmar.id}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Accept': 'application/json',
-                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                    }
-                });
-                const res = await r.json().catch(() => ({}));
-
-                if (!r.ok) {
-                    this.confirmar.abierto = false;
-                    this.confirmar.cargando = false;
-                    toast('error', res.message || 'No se pudo eliminar el consultorio.', 6000);
-                    return;
-                }
-
-                this.confirmar.abierto = false;
-                toastYRecargar('success', res.message || 'Consultorio eliminado');
+                this.cancelar();
+                this.sel = c;
+                if (c.piso !== this.piso) this.cambiarPiso(c.piso);
+                this.$nextTick(() => this.rebotar(c.id));
+                avisar(d.message || 'Consultorio guardado.');
             } catch (e) {
-                this.confirmar.abierto = false;
-                this.confirmar.cargando = false;
-                toast('error', 'No se pudo comunicar con el servidor');
+                this.guardando = false; this.mensajeForm = e.message;
+                avisar(e.message, 'error');
             }
+        },
+        async cambiarEstado(op) {
+            const c = this.sel;
+            if (!c || c.estado === op.slug || this.guardando) return;
+            const antes = c.estado;
+            c.estado = op.slug; this.guardando = true;
+            try {
+                const r = await fetch(`${URL}/${c.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF },
+                    body: JSON.stringify({ nombre: c.nombre, piso: c.piso, estado: op.valor })
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(r.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (d.message || 'No se pudo cambiar el estado.'));
+                if (d.consultorio) c.ocupadoPor = d.consultorio.ocupadoPor;
+                this.rebotar(c.id);
+                avisar(`${c.nombre}: ${this.info(op.slug).texto.toLowerCase()}`);
+            } catch (e) {
+                c.estado = antes; avisar(e.message, 'error');
+            }
+            this.guardando = false;
+        },
+        eliminar(c) {
+            if (!c || this.editando) return;
+            Swal.fire({
+                title: '¿Eliminar este consultorio?',
+                html: `<p style="font-size:14px">Se eliminará <b>${String(c.nombre).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))}</b>. Si tiene citas registradas no se podrá eliminar.</p>`,
+                icon: 'warning', iconColor: '#c8102e', showCancelButton: true, reverseButtons: true, focusCancel: true,
+                confirmButtonText: 'Eliminar consultorio', cancelButtonText: 'Cancelar', confirmButtonColor: '#c8102e', cancelButtonColor: '#56625f',
+                showLoaderOnConfirm: true,
+                preConfirm: async () => {
+                    try {
+                        const r = await fetch(`${URL}/${c.id}`, { method: 'DELETE', headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF } });
+                        const d = await r.json().catch(() => ({}));
+                        if (!r.ok) throw new Error(r.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (d.message || 'No se pudo eliminar.'));
+                        return d;
+                    } catch (e) { Swal.showValidationMessage(e.message); }
+                },
+                allowOutsideClick: () => !Swal.isLoading()
+            }).then(res => {
+                if (!res.isConfirmed) return;
+                const i = this.P.findIndex(x => x.id === c.id);
+                this.P.splice(i, 1);
+                if (!this.P.some(x => x.piso === c.piso) && !this.pisosExtra.includes(c.piso)) { this.pisosExtra.push(c.piso); guarda('pisos_extra_consultorios', this.pisosExtra); }
+                this.sel = this.planoVisible[0] || this.P[0] || null;
+                avisar((res.value && res.value.message) || 'Consultorio eliminado.');
+            });
+        },
+
+        /* ---------- Teclado ---------- */
+        tecla(e) {
+            const enCampo = /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.target.isContentEditable;
+            if (this.editando) {
+                if (e.key === 'Escape') { e.preventDefault(); this.cancelar(); }
+                else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.guardar(); }
+                return;
+            }
+            if (enCampo || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('.swal2-popup:not(.swal2-toast)') || document.querySelector('.ly-paleta:not([style*="none"])')) return;
+            if (e.key === '/') { e.preventDefault(); this.$refs.buscar.focus(); }
+            else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); this.nuevo(); }
+            else if ((e.key === 'e' || e.key === 'E') && this.sel) { e.preventDefault(); this.editar(this.sel); }
         }
-    }
-    }
+    };
+}
 </script>
+@endverbatim
 @endsection

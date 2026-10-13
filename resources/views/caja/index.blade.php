@@ -203,8 +203,20 @@ function cajaApp() {
         ultimoFolioLeido: '',
         ultimaLecturaMs: 0,
         pagados: [],
-        urlBuscarTicket: "{{ route('caja.buscar-ticket', '__FOLIO__') }}",
-        urlPagar: "{{ route('caja.procesar-pago', '__ID__') }}",
+        // Rutas relativas (false): funcionan igual en localhost que por el túnel https
+        urlBuscarTicket: "{{ route('caja.buscar-ticket', '__FOLIO__', false) }}",
+        urlPagar: "{{ route('caja.procesar-pago', '__ID__', false) }}",
+
+        // Convierte la respuesta a JSON; si el servidor regresó HTML (error 500,
+        // página de login, 404...) lanza un error con el código para mostrarlo
+        async leerRespuesta(res) {
+            const tipo = res.headers.get('content-type') || '';
+            if (tipo.includes('application/json')) return res.json();
+            if (res.status === 401 || res.status === 419 || res.redirected) {
+                throw new Error('LA SESIÓN EXPIRÓ. RECARGUE LA PÁGINA E INICIE SESIÓN DE NUEVO.');
+            }
+            throw new Error(`EL SERVIDOR RESPONDIÓ CON ERROR (HTTP ${res.status}). REVISE storage/logs/laravel.log`);
+        },
 
         init() {
             this.enfocarLector();
@@ -244,7 +256,7 @@ function cajaApp() {
                 const res = await fetch(this.urlBuscarTicket.replace('__FOLIO__', encodeURIComponent(folio)), {
                     headers: { 'Accept': 'application/json' }
                 });
-                const data = await res.json();
+                const data = await this.leerRespuesta(res);
 
                 if (data.status !== 'success') {
                     this.mostrarError(data.message || 'NO SE PUDO LEER EL TICKET.');
@@ -261,7 +273,7 @@ function cajaApp() {
                 }
             } catch (e) {
                 console.error(e);
-                this.mostrarError('ERROR DE CONEXIÓN AL BUSCAR EL TICKET.');
+                this.mostrarError(e.message && !e.message.startsWith('Failed') ? e.message : 'SIN CONEXIÓN CON EL SERVIDOR AL BUSCAR EL TICKET.');
             } finally {
                 this.buscandoTicket = false;
             }
@@ -363,7 +375,7 @@ function cajaApp() {
                     },
                     body: JSON.stringify({ metodo_pago: this.metodoPago })
                 });
-                const data = await res.json();
+                const data = await this.leerRespuesta(res);
 
                 if (data.status === 'success') {
                     if (window.notificar) window.notificar(data.message, 'success');
@@ -382,7 +394,7 @@ function cajaApp() {
                 }
             } catch (e) {
                 console.error(e);
-                this.mostrarError('ERROR DE CONEXIÓN AL PROCESAR EL PAGO');
+                this.mostrarError(e.message && !e.message.startsWith('Failed') ? e.message : 'SIN CONEXIÓN CON EL SERVIDOR AL PROCESAR EL PAGO.');
             } finally {
                 this.cargando = false;
             }

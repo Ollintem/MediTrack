@@ -41,6 +41,41 @@
         </div>
     </div>
 
+    <!-- SECCIÓN DE PEDIDOS POR ENTREGAR (TICKETS PAGADOS PENDIENTES DE DESPACHO) -->
+    <div x-show="obtenerTicketsPorEntregar().length > 0" x-cloak class="bg-gradient-to-r from-emerald-50 via-teal-50 to-white border border-emerald-200 p-5 rounded-3xl shadow-xs space-y-3">
+        <div class="flex items-center justify-between border-b border-emerald-200/60 pb-2">
+            <h3 class="text-xs font-black text-emerald-900 uppercase flex items-center gap-2">
+                <i class="bi bi-box-seam-fill text-emerald-600 text-sm"></i> 
+                <span>PEDIDOS POR ENTREGAR (PAGADOS)</span>
+                <span class="bg-emerald-200 text-emerald-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full" x-text="`${obtenerTicketsPorEntregar().length} LISTOS`"></span>
+            </h3>
+            <span class="text-[10px] font-bold text-emerald-700 uppercase">SURTIR Y ENTREGAR MEDICAMENTO AL CLIENTE</span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[220px] overflow-y-auto pr-1">
+            <template x-for="tck in obtenerTicketsPorEntregar()" :key="tck.id">
+                <div class="p-3 bg-white rounded-2xl border border-emerald-100 shadow-xs flex items-center justify-between gap-2">
+                    <div class="space-y-0.5 min-w-0">
+                        <div class="flex items-center gap-1.5">
+                            <span class="font-black text-emerald-800 text-xs truncate" x-text="tck.codigo_ticket"></span>
+                            <span class="text-[9px] font-black bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md uppercase">PAGADO</span>
+                        </div>
+                        <p class="text-[10px] font-semibold text-gray-500 uppercase truncate" x-text="`PACIENTE: ${tck.paciente ? (tck.paciente.nombre_completo || tck.paciente.primer_nombre) : 'PÚBLICO GENERAL'}`"></p>
+                        <p class="text-[10px] font-black text-teal-800" x-text="`$${parseFloat(tck.monto_total).toFixed(2)}`"></p>
+                    </div>
+
+                    <button type="button" 
+                            @click="marcarComoEntregado(tck)" 
+                            :disabled="procesandoEntregado === tck.id"
+                            class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white font-extrabold rounded-xl text-[10px] uppercase transition-all shadow-xs active:scale-95 flex items-center gap-1 cursor-pointer shrink-0">
+                        <i class="bi bi-check2-circle text-xs"></i>
+                        <span x-text="procesandoEntregado === tck.id ? 'SURTIENDO...' : 'ENTREGAR'"></span>
+                    </button>
+                </div>
+            </template>
+        </div>
+    </div>
+
     <!-- PANEL PRINCIPAL DEL POS (2 COLUMNAS) -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
@@ -93,13 +128,6 @@
 
                                     <span class="text-sm font-black text-teal-800" x-text="`$${parseFloat(prod.precio_venta).toFixed(2)}`"></span>
                                 </div>
-
-                                <template x-if="(prod.stock_reservado || 0) > 0">
-                                    <div class="flex items-center gap-1 text-[9px] font-black text-amber-800 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200/60">
-                                        <i class="bi bi-clock-history text-amber-600"></i>
-                                        <span>APARTADO EN TICKET: <strong x-text="`${prod.stock_reservado} PZAS.`"></strong></span>
-                                    </div>
-                                </template>
                             </div>
                         </div>
                     </template>
@@ -216,7 +244,7 @@
                             <option value="pendiente">PENDIENTES</option>
                             <option value="pagado">PAGADOS</option>
                             <option value="entregado">ENTREGADOS</option>
-                            <option value="expirado">EXPIRADOS</option>
+                            <option value="expirado">EXPIRADOS / CANCELADOS</option>
                         </select>
                     </div>
                 </div>
@@ -228,22 +256,36 @@
                             <div class="space-y-0.5">
                                 <div class="flex items-center gap-2">
                                     <span class="font-black text-teal-800" x-text="tck.codigo_ticket"></span>
+                                    
+                                    <!-- BADGE ESTADO -->
                                     <span class="text-[9px] font-black px-2 py-0.5 rounded-md uppercase"
                                           :class="{
-                                              'bg-amber-100 text-amber-800 border border-amber-200': tck.status === 'pendiente',
-                                              'bg-emerald-100 text-emerald-800 border border-emerald-200': tck.status === 'pagado',
-                                              'bg-blue-100 text-blue-800 border border-blue-200': tck.status === 'entregado',
-                                              'bg-rose-100 text-rose-800 border border-rose-200': tck.status === 'expirado'
-                                          }" x-text="tck.status"></span>
+                                              'bg-amber-100 text-amber-800 border border-amber-200': obtenerEstadoTicket(tck) === 'pendiente',
+                                              'bg-emerald-100 text-emerald-800 border border-emerald-200': obtenerEstadoTicket(tck) === 'pagado',
+                                              'bg-blue-100 text-blue-800 border border-blue-200': obtenerEstadoTicket(tck) === 'entregado',
+                                              'bg-rose-100 text-rose-800 border border-rose-200': obtenerEstadoTicket(tck) === 'expirado' || obtenerEstadoTicket(tck) === 'cancelado'
+                                          }" x-text="obtenerEstadoTicket(tck)"></span>
                                 </div>
                                 <p class="text-[10px] font-semibold text-gray-500 uppercase" x-text="`PACIENTE: ${tck.paciente ? (tck.paciente.nombre_completo || tck.paciente.primer_nombre) : 'PÚBLICO GENERAL'}`"></p>
                             </div>
 
-                            <div class="flex items-center gap-3">
-                                <span class="font-black text-gray-800" x-text="`$${parseFloat(tck.monto_total).toFixed(2)}`"></span>
+                            <div class="flex items-center gap-2">
+                                <span class="font-black text-gray-800 mr-2" x-text="`$${parseFloat(tck.monto_total).toFixed(2)}`"></span>
+                                
+                                <!-- BOTÓN ENTREGAR -->
+                                <template x-if="obtenerEstadoTicket(tck) === 'pagado'">
+                                    <button type="button" 
+                                            @click="marcarComoEntregado(tck)" 
+                                            :disabled="procesandoEntregado === tck.id"
+                                            class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white font-extrabold rounded-xl text-[10px] uppercase transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1">
+                                        <i class="bi bi-box-seam"></i>
+                                        <span x-text="procesandoEntregado === tck.id ? 'SURTIENDO...' : 'ENTREGAR'"></span>
+                                    </button>
+                                </template>
+
                                 <button type="button" 
                                         @click="verDetalleTicket(tck)" 
-                                        class="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white font-extrabold rounded-xl text-[10px] uppercase transition-all shadow-xs active:scale-95 cursor-pointer">
+                                        class="px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white font-extrabold rounded-xl text-[10px] uppercase transition-all shadow-xs active:scale-95 cursor-pointer">
                                     VER / REIMPRIMIR
                                 </button>
                             </div>
@@ -282,16 +324,91 @@ function posApp() {
         openHistorialModal: false,
         ticketGenerado: null,
         procesando: false,
+        procesandoEntregado: null,
 
         init() {
             this.productosFiltrados = this.productos;
+        },
+
+        obtenerEstadoTicket(tck) {
+            const st = (tck.status || '').toLowerCase();
+            if (st === 'pendiente' && tck.expires_at) {
+                const ahora = new Date().getTime();
+                const fechaExpiracion = new Date(tck.expires_at).getTime();
+                if (ahora > fechaExpiracion) {
+                    return 'expirado';
+                }
+            }
+            return st;
+        },
+
+        obtenerTicketsPorEntregar() {
+            return this.listaTickets.filter(t => this.obtenerEstadoTicket(t) === 'pagado');
+        },
+
+        async marcarComoEntregado(ticket) {
+            if (!confirm(`¿CONFIRMAR SURTIDO Y ENTREGA DEL TICKET ${ticket.codigo_ticket}? SE DESCONTARÁ EL STOCK DEFINITIVO.`)) {
+                return;
+            }
+
+            this.procesandoEntregado = ticket.id;
+
+            try {
+                // RUTA CORRECTA APUNTANDO A POS CONTROLLER
+                const url = `{{ url('/pos/marcar-entregado') }}/${ticket.id}`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    // Actualizar el estado localmente
+                    ticket.status = 'entregado';
+                    
+                    // Descontar del stock local en pantalla
+                    if (ticket.detalles && ticket.detalles.length > 0) {
+                        ticket.detalles.forEach(det => {
+                            const prod = this.productos.find(p => p.id === det.producto_id);
+                            if (prod) {
+                                prod.stock_actual = Math.max(0, (prod.stock_actual || 0) - det.cantidad);
+                                if (prod.stock_disponible !== undefined) {
+                                    prod.stock_disponible = Math.max(0, (prod.stock_disponible || 0) - det.cantidad);
+                                }
+                            }
+                        });
+                    }
+                    this.filtrarProductos();
+
+                    // NOTIFICACIÓN TOAST DE MEDITRACK
+                    if (typeof window.notificar === 'function') {
+                        window.notificar(data.message || `TICKET ${ticket.codigo_ticket} ENTREGADO.`, 'success');
+                    }
+                } else {
+                    if (typeof window.notificar === 'function') {
+                        window.notificar(data.message || 'OCURRIÓ UN ERROR AL ENTREGAR', 'error');
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+                if (typeof window.notificar === 'function') {
+                    window.notificar('ERROR DE CONEXIÓN CON EL SERVIDOR', 'error');
+                }
+            } finally {
+                this.procesandoEntregado = null;
+            }
         },
 
         obtenerStockDisponible(prod) {
             if (prod.stock_disponible !== undefined && prod.stock_disponible !== null) {
                 return prod.stock_disponible;
             }
-            return Math.max(0, (prod.stock_actual || 0) - (prod.stock_reservado || 0));
+            return prod.stock_actual || 0;
         },
 
         filtrarProductos() {
@@ -320,7 +437,9 @@ function posApp() {
                 this.searchQuery = '';
                 this.filtrarProductos();
             } else {
-                alert('PRODUCTO NO ENCONTRADO CON ESE CÓDIGO');
+                if (typeof window.notificar === 'function') {
+                    window.notificar('PRODUCTO NO ENCONTRADO CON ESE CÓDIGO', 'warning');
+                }
             }
         },
 
@@ -331,7 +450,7 @@ function posApp() {
             return this.listaTickets.filter(t => {
                 const cod = (t.codigo_ticket || '').toUpperCase();
                 const pac = t.paciente ? (t.paciente.nombre_completo || t.paciente.primer_nombre || '').toUpperCase() : 'PÚBLICO GENERAL';
-                const st = (t.status || '').toLowerCase();
+                const st = this.obtenerEstadoTicket(t);
 
                 const coincideTexto = !q || cod.includes(q) || pac.includes(q);
                 const coincideEstatus = !estatus || st === estatus;
@@ -344,14 +463,18 @@ function posApp() {
             const stockDisponible = this.obtenerStockDisponible(producto);
             
             if (stockDisponible <= 0) {
-                alert('MEDICAMENTO SIN STOCK DISPONIBLE');
+                if (typeof window.notificar === 'function') {
+                    window.notificar('MEDICAMENTO SIN STOCK DISPONIBLE', 'error');
+                }
                 return;
             }
 
             const itemExistente = this.carrito.find(item => item.id === producto.id);
             if (itemExistente) {
                 if (itemExistente.cantidad + 1 > stockDisponible) {
-                    alert(`SOLO TIENE ${stockDisponible} PZAS. DISPONIBLES.`);
+                    if (typeof window.notificar === 'function') {
+                        window.notificar(`SOLO TIENE ${stockDisponible} PZAS. DISPONIBLES.`, 'warning');
+                    }
                     return;
                 }
                 itemExistente.cantidad++;
@@ -371,7 +494,9 @@ function posApp() {
             const stockDisponible = this.obtenerStockDisponible(item.productoRef);
             
             if (item.cantidad + 1 > stockDisponible) {
-                alert(`SOLO TIENE ${stockDisponible} PZAS. DISPONIBLES PARA AGREGAR.`);
+                if (typeof window.notificar === 'function') {
+                    window.notificar(`SOLO TIENE ${stockDisponible} PZAS. DISPONIBLES PARA AGREGAR.`, 'warning');
+                }
                 return;
             }
             item.cantidad++;
@@ -417,6 +542,7 @@ function posApp() {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json',
                         'X-CSRF-TOKEN': '{{ csrf_token() }}'
                     },
                     body: JSON.stringify(payload)
@@ -425,27 +551,26 @@ function posApp() {
                 const data = await response.json();
 
                 if (data.status === 'success') {
-                    // 1. Descontar localmente el stock reservado en el array de productos en vivo
-                    this.carrito.forEach(cartItem => {
-                        const prod = this.productos.find(p => p.id === cartItem.id);
-                        if (prod) {
-                            prod.stock_reservado = (prod.stock_reservado || 0) + cartItem.cantidad;
-                            prod.stock_disponible = Math.max(0, (prod.stock_disponible ?? prod.stock_actual) - cartItem.cantidad);
-                        }
-                    });
-
                     this.ticketGenerado = data.ticket;
                     this.listaTickets.unshift(data.ticket);
                     this.openTicketModal = true;
                     this.carrito = [];
                     this.pacienteId = '';
                     this.filtrarProductos();
+
+                    if (typeof window.notificar === 'function') {
+                        window.notificar('TICKET DE FILTRO GENERADO CON ÉXITO', 'success');
+                    }
                 } else {
-                    alert(data.message || 'ERROR AL GENERAR TICKET');
+                    if (typeof window.notificar === 'function') {
+                        window.notificar(data.message || 'ERROR AL GENERAR TICKET', 'error');
+                    }
                 }
             } catch (error) {
                 console.error(error);
-                alert('OCURRIÓ UN ERROR EN EL SERVIDOR');
+                if (typeof window.notificar === 'function') {
+                    window.notificar('OCURRIÓ UN ERROR EN EL SERVIDOR', 'error');
+                }
             } finally {
                 this.procesando = false;
             }

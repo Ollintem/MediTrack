@@ -8,611 +8,778 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
+    <!-- Tipografías del sistema: Bricolage Grotesque, Geist y Geist Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,200..800&family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap">
+
     <!-- CSS y JS de SweetAlert2 y Flatpickr -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
 
-    <!-- Estado global del layout -->
-    <script>
-        function layoutMeditrack() {
-            return {
-                sidebarOpen: (() => { try { return localStorage.getItem('sidebarOpen') !== 'false'; } catch (e) { return true; } })(),
-                mobileOpen: false,
-                ancho: window.innerWidth,
-                ahora: new Date(),
-                headerVisible: true,
-                tip: { texto: '', top: 0, left: 0 },
-                headerHover: false,
-                ultimoScroll: 0,
-                search: '', // Buscador reactivo del sidebar
-
-                coincide(texto) {
-                    if (!this.search || !this.search.trim()) return true;
-                    const normalize = str => String(str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-                    return normalize(texto).includes(normalize(this.search));
-                },
-
-                get saludo() {
-                    const h = this.ahora.getHours();
-                    if (h < 12) return 'Buenos días';
-                    if (h < 19) return 'Buenas tardes';
-                    return 'Buenas noches';
-                },
-                get hora() {
-                    return this.ahora.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
-                },
-                get fecha() {
-                    return this.ahora.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
-                },
-
-                init() {
-                    this.$watch('sidebarOpen', v => { try { localStorage.setItem('sidebarOpen', v); } catch (e) {} });
-                    window.addEventListener('resize', () => {
-                        this.ancho = window.innerWidth;
-                        if (this.ancho >= 1024) this.mobileOpen = false;
-                    });
-                    setInterval(() => { this.ahora = new Date(); }, 15000);
-                },
-
-                alScrollear(el) {
-                    const y = el.scrollTop;
-                    const delta = y - this.ultimoScroll;
-                    if (y < 80) this.headerVisible = true;
-                    else if (delta > 6 && !this.headerHover) this.headerVisible = false;
-                    else if (delta < -6) this.headerVisible = true;
-                    this.ultimoScroll = y;
-                },
-
-                alMoverCursor(e, el) {
-                    if (this.headerVisible) return;
-                    if ((e.clientY - el.getBoundingClientRect().top) < 40) this.headerVisible = true;
-                },
-
-                mostrarTip(el, texto) {
-                    if (this.sidebarOpen || this.ancho < 1024) return;
-                    const r = el.getBoundingClientRect();
-                    this.tip = { texto, top: r.top + r.height / 2, left: r.right + 14 };
-                },
-                ocultarTip() { this.tip.texto = ''; },
-
-                alternarMenu() {
-                    if (this.ancho < 1024) this.mobileOpen = !this.mobileOpen;
-                    else { this.sidebarOpen = !this.sidebarOpen; this.ocultarTip(); }
-                },
-
-                enfocarBuscador() {
-                    if (this.ancho < 1024) this.mobileOpen = true;
-                    else this.sidebarOpen = true;
-                    setTimeout(() => this.$refs.inputBuscadorSidebar?.focus(), 250);
-                }
-            };
+    {{-- Estado global del layout (menú, gafete y paleta Ctrl+K). Va antes de Alpine. --}}
+@verbatim
+<script>
+/* Patrones de seguridad */
+function mtHash(s) { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+function mtRoseta(seed, size) {
+    const hv = mtHash(seed || 'MT'), n = 18 + hv % 9, c = size / 2; let d = '';
+    for (let k = 0; k < 9; k++) {
+        const A = size * .11 + k * size * .042, B = size * .03 + (k % 3) * size * .012;
+        for (let i = 0; i <= 160; i++) {
+            const t = i / 160 * 2 * Math.PI, r = A + B * Math.cos(n * t + k * .4);
+            d += (i ? 'L' : 'M') + (c + r * Math.cos(t)).toFixed(1) + ',' + (c + r * Math.sin(t)).toFixed(1);
         }
-    </script>
+        d += 'Z';
+    }
+    return `<svg viewBox="0 0 ${size} ${size}" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width=".6"/></svg>`;
+}
+function mtGuilloche(seed) {
+    const hv = mtHash(seed || 'MEDITRACK'), w = 300, h = 110, n = 22 + hv % 10, cx = w * .86, cy = h * .5; let d = '';
+    for (let k = 0; k < 10; k++) {
+        const A = 34 + k * 6, B = 5 + (k % 4) * 1.6, ph = k * .22 + (hv % 100) / 50;
+        for (let i = 0; i <= 220; i++) {
+            const t = i / 220 * 2 * Math.PI, r = A + B * Math.cos(n * t + ph);
+            d += (i ? 'L' : 'M') + (cx + r * Math.cos(t)).toFixed(1) + ',' + (cy + r * Math.sin(t) * .9).toFixed(1);
+        }
+        d += 'Z';
+    }
+    for (let k = 0; k < 4; k++) {
+        const y0 = 16 + k * 26;
+        for (let x = 0; x <= w; x += 5) d += (x ? 'L' : 'M') + x + ',' + (y0 + 5 * Math.sin(x / 23 + k * .9 + hv % 5) + 2 * Math.sin(x / 7 + k)).toFixed(1);
+    }
+    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><path d="${d}" fill="none" stroke="#a6efe2" stroke-width=".5" opacity=".28"/></svg>`;
+}
+const mtNorm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+function layoutMeditrack() {
+    const lee = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } };
+    const guarda = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    return {
+        sidebarOpen: lee('sidebarOpen', 'true') !== 'false',
+        mobileOpen: false,
+        ancho: window.innerWidth,
+        ahora: new Date(),
+        headerVisible: true,
+        headerHover: false,
+        ultimoScroll: 0,
+        tip: { texto: '', top: 0, left: 0 },
+        gafeteVuelta: false,
+
+        // Paleta
+        paleta: false,
+        q: '',
+        sel: 0,
+        remotos: [],
+        buscando: false,
+        nav: { modulos: [], acciones: [], buscar: null, semilla: 'MT' },
+        semilla: 'MT',
+        _timer: null,
+        _peticion: 0,
+        _foco: null,
+
+        get saludo() {
+            const h = this.ahora.getHours();
+            return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches';
+        },
+        get hora() { return this.ahora.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false }); },
+        get fecha() { const f = this.ahora.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' }); return f.charAt(0).toUpperCase() + f.slice(1); },
+
+        init() {
+            try { this.nav = Object.assign(this.nav, JSON.parse(document.getElementById('ly-nav').textContent)); } catch (e) {}
+            this.semilla = this.nav.semilla || 'MT';
+            this.$watch('sidebarOpen', v => guarda('sidebarOpen', v));
+            this.$watch('mobileOpen', v => { if (!v) this.gafeteVuelta = false; });
+            this.$watch('q', () => this.buscarRemoto());
+            window.addEventListener('resize', () => {
+                this.ancho = window.innerWidth;
+                if (this.ancho >= 1024) this.mobileOpen = false;
+            });
+            setInterval(() => { this.ahora = new Date(); }, 15000);
+            this.$nextTick(() => { if (this.$refs.gafeteGl) this.$refs.gafeteGl.innerHTML = mtGuilloche(this.semilla); });
+        },
+
+        roseta(seed, size) { return mtRoseta(seed, size); },
+
+        alScrollear(el) {
+            const y = el.scrollTop, delta = y - this.ultimoScroll;
+            if (y < 80) this.headerVisible = true;
+            else if (delta > 6 && !this.headerHover) this.headerVisible = false;
+            else if (delta < -6) this.headerVisible = true;
+            this.ultimoScroll = y;
+        },
+        alMoverCursor(e, el) {
+            if (!this.headerVisible && (e.clientY - el.getBoundingClientRect().top) < 40) this.headerVisible = true;
+        },
+
+        mostrarTip(el, texto) {
+            if (this.sidebarOpen || this.ancho < 1024) return;
+            const r = el.getBoundingClientRect();
+            this.tip = { texto, top: r.top + r.height / 2, left: r.right + 12 };
+        },
+        ocultarTip() { this.tip.texto = ''; },
+        alternarMenu() {
+            if (this.ancho < 1024) this.mobileOpen = !this.mobileOpen;
+            else { this.sidebarOpen = !this.sidebarOpen; this.gafeteVuelta = false; this.ocultarTip(); }
+        },
+        voltearGafete() {
+            this.ocultarTip();
+            const enfocar = () => setTimeout(() => {
+                const el = document.querySelector('.ly-gf-reverso a, .ly-gf-reverso button');
+                el && el.focus({ preventScroll: true });
+            }, reduce ? 0 : 420);
+            if (this.ancho >= 1024 && !this.sidebarOpen) {
+                this.sidebarOpen = true;
+                setTimeout(() => { this.gafeteVuelta = true; enfocar(); }, reduce ? 0 : 320);
+                return;
+            }
+            this.gafeteVuelta = !this.gafeteVuelta;
+            if (this.gafeteVuelta) enfocar();
+        },
+
+        abrirPaleta() {
+            if (this.paleta) { this.$refs.pq.select(); return; }
+            this._foco = document.activeElement;
+            this.mobileOpen = false;
+            this.q = ''; this.remotos = []; this.sel = 0; this.paleta = true;
+            this.$nextTick(() => this.$refs.pq.focus());
+        },
+        cerrarPaleta() {
+            this.paleta = false; this.buscando = false;
+            if (this._foco && this._foco.focus) this._foco.focus({ preventScroll: true });
+        },
+        recordar(nombre) {
+            let l = []; try { l = JSON.parse(lee('ly-recientes', '[]')) || []; } catch (e) {}
+            l = [nombre, ...l.filter(x => x !== nombre)].slice(0, 4);
+            guarda('ly-recientes', JSON.stringify(l));
+        },
+        coincide(texto, q) {
+            const h = mtNorm(texto);
+            return mtNorm(q).split(/\s+/).filter(Boolean).every(p => h.includes(p));
+        },
+        get resultados() {
+            const q = this.q.trim(), salida = [];
+            const mod = (m, grupo) => ({ clave: grupo + m.t, grupo, tipo: 'modulo', titulo: m.t, sub: m.s, icono: m.i, url: m.u, nombre: m.t });
+            const acc = a => ({ clave: 'a' + a.t, grupo: 'Acciones', tipo: 'accion', titulo: a.t, sub: a.d, icono: a.i, url: a.u, accion: a.accion });
+            const acciones = [...this.nav.acciones, { t: 'Cerrar sesión', d: 'Salir de MediTrack', i: 'bi-box-arrow-right', k: 'salir logout', accion: 'salir' }];
+
+            if (!q) {
+                let rec = []; try { rec = JSON.parse(lee('ly-recientes', '[]')) || []; } catch (e) {}
+                rec.map(n => this.nav.modulos.find(m => m.t === n)).filter(Boolean).forEach(m => salida.push(mod(m, 'Recientes')));
+                this.nav.acciones.forEach(a => salida.push(acc(a)));
+                this.nav.modulos.filter(m => !rec.includes(m.t)).forEach(m => salida.push(mod(m, 'Ir a')));
+                return salida;
+            }
+            this.nav.modulos.filter(m => this.coincide(m.t + ' ' + m.s + ' ' + m.k, q)).forEach(m => salida.push(mod(m, 'Ir a')));
+            acciones.filter(a => this.coincide(a.t + ' ' + a.k, q)).forEach(a => salida.push(acc(a)));
+            this.remotos.forEach((p, i) => salida.push({ clave: 'p' + i + p.url, grupo: 'Pacientes', tipo: 'paciente', titulo: p.titulo, sub: p.subtitulo, url: p.url, semilla: p.semilla, alergia: p.alergia }));
+            return salida;
+        },
+        mover(d) {
+            const n = this.resultados.length; if (!n) return;
+            this.sel = (this.sel + d + n) % n;
+            this.$nextTick(() => { const el = document.getElementById('ly-r-' + this.sel); el && el.scrollIntoView({ block: 'nearest' }); });
+        },
+        buscarRemoto() {
+            this.sel = 0;
+            clearTimeout(this._timer);
+            const q = this.q.trim();
+            if (q.length < 2 || !this.nav.buscar) { this.remotos = []; this.buscando = false; return; }
+            this.buscando = true;
+            const id = ++this._peticion;
+            this._timer = setTimeout(async () => {
+                try {
+                    const r = await fetch(this.nav.buscar + '?q=' + encodeURIComponent(q), { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+                    const datos = r.ok ? await r.json() : [];
+                    if (id !== this._peticion) return;
+                    this.remotos = (Array.isArray(datos) ? datos : []).filter(x => x.categoria === 'Pacientes');
+                } catch (e) {
+                    if (id === this._peticion) this.remotos = [];
+                } finally {
+                    if (id === this._peticion) this.buscando = false;
+                }
+            }, 180);
+        },
+        abrirResultado(r) {
+            if (!r) return;
+            if (r.tipo === 'modulo') this.recordar(r.nombre);
+            if (r.accion === 'salir') { document.getElementById('ly-salir')?.submit(); return; }
+            if (!r.url) return;
+            this.paleta = false;
+            const barra = document.getElementById('top-progress-bar');
+            if (barra) { barra.style.opacity = '1'; barra.style.width = '70%'; }
+            window.location.href = r.url;
+        }
+    };
+}
+</script>
+@endverbatim
 
     <!-- Alpine.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
-    <style>
-        [x-cloak] { display: none !important; }
+@verbatim
+<style>
+[x-cloak] { display: none !important; }
 
-        /* BARRA DE PROGRESO SUPERIOR */
-        #top-progress-bar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            height: 3px;
-            width: 0%;
-            background: linear-gradient(90deg, #0d9488 0%, #10b981 50%, #06b6d4 100%);
-            box-shadow: 0 0 10px rgba(13, 148, 136, 0.7);
-            z-index: 9999;
-            transition: width 200ms ease-out, opacity 150ms ease-in;
-            pointer-events: none;
-            opacity: 0;
-        }
+:root {
+    --ly-tinta: #0b1e1c; --ly-texto: #2c3d3a; --ly-media: #56625f;
+    --ly-linea: #dbe4e1; --ly-linea2: #edf2f1; --ly-niebla: #eef3f1; --ly-papel: #fff;
+    --ly-cred: #0b5a54; --ly-cred2: #073f3b; --ly-foil: #a6efe2; --ly-teal: #0e7c72; --ly-velo: #e2efec;
+    --ly-rosa: #c8102e; --ly-rosav: #fdecef;
+    --ly-disp: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+    --ly-ui: 'Geist', ui-sans-serif, system-ui, sans-serif;
+    --ly-mono: 'Geist Mono', ui-monospace, monospace;
+    --ly-e: cubic-bezier(.2, .8, .2, 1);
+}
+.ly-body { background: var(--ly-niebla); }
+.ly-velo-movil { position: fixed; inset: 0; z-index: 30; background: rgba(11, 30, 28, .5); }
+.ly-sb, .ly-hd, .ly-paleta, .ly-tip { font-family: var(--ly-ui); }
+.ly-sb :focus-visible, .ly-hd :focus-visible, .ly-paleta :focus-visible { outline: 2px solid var(--ly-teal); outline-offset: 2px; }
+.ly-sb .t, .ly-hd .t, .ly-paleta .t { font-variant-numeric: tabular-nums; }
+.ly-sb kbd, .ly-paleta kbd { font: 600 11px var(--ly-mono); border: 1px solid var(--ly-linea); border-radius: 6px; padding: 1px 6px; color: var(--ly-media); background: var(--ly-papel); }
 
-        /* ANIMACIÓN DE ENTRADA DE PÁGINA */
-        .page-fade-in { animation: fadeInPage 220ms ease-out forwards; }
-        @keyframes fadeInPage {
-            from { opacity: 0.85; transform: translateY(4px); }
-            to   { opacity: 1; transform: translateY(0); }
-        }
+/* Barra de progreso */
+#top-progress-bar { position: fixed; top: 0; left: 0; height: 3px; width: 0; background: var(--ly-teal); z-index: 9999; transition: width 200ms ease-out, opacity 150ms ease-in; pointer-events: none; opacity: 0; }
 
-        /* SIDEBAR MEDITRACK */
-        .mt-sidebar {
-            background: #ffffff;
-            width: 18rem;
-            z-index: 40;
-            transition: width .3s cubic-bezier(.2,.8,.2,1), transform .3s cubic-bezier(.2,.8,.2,1);
-        }
-        .mt-header { transition: transform .35s cubic-bezier(.2,.8,.2,1), opacity .25s ease; will-change: transform; }
-        .mt-header.header-oculto { transform: translateY(-110%); opacity: 0; pointer-events: none; }
-        @media (prefers-reduced-motion: reduce) { .mt-header { transition: none; } }
+.page-fade-in { animation: mtPagina 220ms ease-out both; }
+@keyframes mtPagina { from { opacity: .85; transform: translateY(4px); } }
 
-        @media (max-width: 1023.98px) {
-            .mt-sidebar { position: fixed; top: 0; bottom: 0; left: 0; transform: translateX(-100%); }
-            .mt-sidebar.movil-abierto { transform: translateX(0); box-shadow: 0 25px 50px -12px rgba(15,23,42,.25); }
-        }
-        .solo-rail { display: none !important; }
+@media (min-width: 1024px) { .ly-movil { display: none !important; } }
+@media (max-width: 639.98px) { .ly-sm { display: none !important; } }
+.ly-marca-tx, .ly-hd-tit { flex: 1; min-width: 0; }
 
-        @media (min-width: 1024px) {
-            .mt-sidebar { position: relative; }
-            .mt-sidebar.rail { width: 5.25rem; }
-            .mt-sidebar.rail .solo-expandido { display: none !important; }
-            .mt-sidebar.rail .solo-rail { display: flex !important; }
-            .mt-sidebar.rail .marca-fila { justify-content: center; }
-            .mt-sidebar.rail .nav-link { justify-content: center; padding: .5rem; }
-        }
+.ly-ico { position: relative; flex: none; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: var(--ly-texto); background: var(--ly-papel); border: 1px solid var(--ly-linea); transition: background .15s, color .15s, border-color .15s; }
+.ly-ico:hover { color: var(--ly-tinta); border-color: #c5d3cf; background: #f7faf9; }
+.ly-ico .bi { font-size: 17px; }
 
-        .nav-scroll::-webkit-scrollbar { width: 4px; }
-        .nav-scroll::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.12); border-radius: 999px; }
-        .nav-scroll::-webkit-scrollbar-track { background: transparent; }
-        .nav-scroll { scrollbar-width: thin; scrollbar-color: rgba(15,23,42,0.12) transparent; }
+/* MENÚ LATERAL */
+.ly-sb { --ancho: 272px; width: var(--ancho); height: 100%; flex: none; display: flex; flex-direction: column; background: #f8fbfa; border-right: 1px solid var(--ly-linea); z-index: 40; color: var(--ly-texto); transition: width .3s var(--ly-e), transform .3s var(--ly-e); }
+@media (max-width: 1023.98px) {
+    .ly-sb { position: fixed; inset: 0 auto 0 0; transform: translateX(-100%); }
+    .ly-sb.movil-abierto { transform: none; box-shadow: 0 30px 60px -20px rgba(11, 30, 28, .45); }
+}
+@media (min-width: 1024px) {
+    .ly-sb { position: relative; }
+    .ly-sb.rail { --ancho: 76px; }
+    .ly-sb.rail .ly-oculta-rail { display: none !important; }
+}
 
-        .latido { display: inline-block; animation: latido 1.4s ease-in-out infinite; transform-origin: center; }
-        @keyframes latido {
-            0%, 100% { transform: scale(1); }
-            14%      { transform: scale(1.18); }
-            28%      { transform: scale(1); }
-            42%      { transform: scale(1.12); }
-            70%      { transform: scale(1); }
-        }
+/* Marca */
+.ly-marca { display: flex; align-items: center; gap: 12px; padding: 20px 16px 18px; }
+.ly-sello { flex: none; display: block; width: 42px; height: 42px; filter: drop-shadow(0 6px 10px rgba(7, 63, 59, .28)); transition: transform .3s var(--ly-e); }
+.ly-sello svg { width: 100%; height: 100%; display: block; }
+.ly-sello:hover { transform: rotate(90deg); }
+.ly-logo { font: 700 23px/1 var(--ly-disp); font-stretch: 85%; letter-spacing: -.02em; color: var(--ly-tinta); }
+.ly-clinica { margin-top: 6px; font: 500 12px/1.2 var(--ly-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--ly-media); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ly-sb.rail .ly-marca { justify-content: center; padding-inline: 0; }
 
-        .ecg-trazo {
-            stroke-dasharray: 160;
-            stroke-dashoffset: 160;
-            animation: ecg 2.8s linear infinite;
-        }
-        @keyframes ecg {
-            0%   { stroke-dashoffset: 160; opacity: 1; }
-            70%  { stroke-dashoffset: 0;   opacity: 1; }
-            100% { stroke-dashoffset: 0;   opacity: 0; }
-        }
+/* Buscador */
+.ly-buscar-wrap { padding: 0 16px 8px; }
+.ly-buscar { width: 100%; height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 12px; border-radius: 10px; background: var(--ly-papel); border: 1px solid var(--ly-linea); color: var(--ly-media); font-size: 13.5px; font-weight: 450; text-align: left; box-shadow: 0 6px 16px -14px rgba(11, 30, 28, .6); transition: border-color .15s, box-shadow .15s; }
+.ly-buscar:hover { border-color: #b9cbc6; box-shadow: 0 8px 20px -14px rgba(11, 30, 28, .7); }
+.ly-buscar .bi { font-size: 14px; color: var(--ly-cred); }
+.ly-buscar span { flex: 1; }
+.ly-sb.rail .ly-buscar-wrap { padding-inline: 16px; }
+.ly-sb.rail .ly-buscar { justify-content: center; padding: 0; }
 
-        .pulso-online::after {
-            content: '';
-            position: absolute;
-            inset: -3px;
-            border-radius: 999px;
-            border: 2px solid #34d399;
-            animation: ondaOnline 2s ease-out infinite;
-        }
-        @keyframes ondaOnline {
-            from { opacity: .8; transform: scale(.6); }
-            to   { opacity: 0;  transform: scale(1.6); }
-        }
+/* Navegación */
+.ly-nav { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 4px 12px 12px; scrollbar-width: thin; scrollbar-color: rgba(11, 30, 28, .14) transparent; }
+.ly-grupo { margin-top: 14px; }
+.ly-grupo:first-child { margin-top: 4px; }
+.ly-grupo-t { display: flex; align-items: center; gap: 8px; padding: 0 10px 6px; font-size: 12px; font-weight: 600; color: var(--ly-media); }
+.ly-grupo-t:before { content: ""; flex: none; width: 8px; height: 8px; background: linear-gradient(var(--ly-cred), var(--ly-cred)) center / 8px 2px no-repeat, linear-gradient(var(--ly-cred), var(--ly-cred)) center / 2px 8px no-repeat; opacity: .7; }
+.ly-grupo-t:after { content: ""; flex: 1; height: 1px; background: var(--ly-linea); }
+.ly-sb.rail .ly-grupo-t { padding: 0; justify-content: center; }
+.ly-sb.rail .ly-grupo-t span, .ly-sb.rail .ly-grupo-t:before { display: none; }
+.ly-sb.rail .ly-grupo-t:after { flex: 0 0 24px; }
 
-        .nav-item { animation: navEntrada 380ms cubic-bezier(.2,.8,.2,1) both; }
-        @keyframes navEntrada {
-            from { opacity: 0; transform: translateX(-10px); }
-            to   { opacity: 1; transform: translateX(0); }
-        }
+.ly-link { position: relative; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 8px 0 6px; margin-top: 2px; border-radius: 11px; font-size: 14px; font-weight: 500; color: var(--ly-texto); transition: background .15s, color .15s; }
+.ly-link .bi { flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font-size: 15px; color: var(--ly-media); transition: color .15s, background .15s, box-shadow .15s; }
+.ly-link-t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+a.ly-link:hover { background: rgba(11, 90, 84, .06); color: var(--ly-tinta); }
+a.ly-link:hover .bi { color: var(--ly-cred); background: var(--ly-papel); box-shadow: 0 0 0 1px var(--ly-linea); }
+.ly-link.es-activo { background: var(--ly-velo); color: var(--ly-tinta); font-weight: 650; }
+.ly-link.es-activo .bi { color: #fff; background: var(--ly-cred); box-shadow: 0 6px 12px -6px rgba(7, 63, 59, .8); }
+.ly-link.es-activo:after { content: ""; position: absolute; right: 10px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--ly-cred); }
+.ly-link.es-pronto { cursor: default; color: #7d8986; }
+.ly-link.es-pronto .bi { color: #9aa6a3; }
+.ly-link em { font: 500 12px var(--ly-ui); font-style: normal; color: #7d8986; }
+.ly-sb.rail .ly-link { justify-content: center; padding: 0; height: 44px; }
+.ly-sb.rail .ly-link .bi { width: 34px; height: 34px; font-size: 17px; }
+.ly-sb.rail .ly-link.es-activo { background: transparent; }
+.ly-sb.rail .ly-link.es-activo:after { display: none; }
 
-        /* FIX DE SWEETALERT2 */
-        .swal2-container.swal2-top-end,
-        .swal2-container.swal2-top-right {
-            top: 1.25rem !important;
-            right: 1.25rem !important;
-            left: auto !important;
-            bottom: auto !important;
-            width: auto !important;
-            max-width: 380px !important;
-            background: transparent !important;
-            pointer-events: none !important;
-        }
-        .swal2-popup.swal2-toast {
-            display: flex !important;
-            align-items: center !important;
-            width: 100% !important;
-            max-width: 360px !important;
-            background: rgba(255, 255, 255, 0.98) !important;
-            border-radius: 1rem !important;
-            padding: 0.75rem 1rem !important;
-            pointer-events: auto !important;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important;
-        }
-        .swal2-toast .swal2-title {
-            font-size: 0.8rem !important;
-            font-weight: 700 !important;
-            color: #1e293b !important;
-            margin: 0 0 0 0.5rem !important;
-        }
-    </style>
+.ly-tip { position: fixed; z-index: 70; transform: translateY(-50%); pointer-events: none; padding: 6px 10px; border-radius: 8px; background: var(--ly-tinta); color: #fff; font-size: 13px; font-weight: 550; white-space: nowrap; box-shadow: 0 10px 24px -12px rgba(11, 30, 28, .7); }
+
+/* GAFETE DE USUARIO */
+.ly-pie { padding: 10px 12px 14px; border-top: 1px solid var(--ly-linea); }
+.ly-gafete { perspective: 900px; }
+.ly-gafete-in { position: relative; height: 84px; transform-style: preserve-3d; transition: transform .7s cubic-bezier(.3, .7, .1, 1); }
+.ly-gafete.volteado .ly-gafete-in { transform: rotateY(180deg); }
+.ly-gf { position: absolute; inset: 0; border-radius: 14px; backface-visibility: hidden; -webkit-backface-visibility: hidden; overflow: hidden; }
+
+.ly-gf-frente { display: flex; align-items: center; gap: 12px; padding: 0 12px; text-align: left; color: #eafaf6; background: linear-gradient(150deg, #0d6a63, var(--ly-cred) 45%, var(--ly-cred2)); box-shadow: 0 14px 28px -18px rgba(7, 63, 59, .9), inset 0 0 0 1px rgba(166, 239, 226, .18); }
+.ly-gf-frente:after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .14) 50%, transparent 65%); transform: translateX(-100%); transition: transform .8s var(--ly-e); pointer-events: none; }
+.ly-gf-frente:hover:after { transform: translateX(100%); }
+.ly-gf-gl, .ly-gf-gl svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.ly-gf-datos { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ly-gf-k { font: 500 12px/1.2 var(--ly-mono); color: var(--ly-foil); opacity: .85; }
+.ly-gf-n { margin-top: 3px; font: 750 17px/1.1 var(--ly-disp); font-stretch: 80%; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ly-gf-r { margin-top: 2px; font-size: 12px; font-weight: 500; color: #cdeee7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ly-gf-giro { position: relative; font-size: 14px; color: var(--ly-foil); opacity: .7; transition: transform .3s var(--ly-e), opacity .15s; }
+.ly-gf-frente:hover .ly-gf-giro { opacity: 1; transform: rotate(90deg); }
+
+.ly-avatar { position: relative; flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: var(--ly-foil); background: rgba(7, 63, 59, .55); box-shadow: inset 0 0 0 1px rgba(166, 239, 226, .35); }
+.ly-avatar > span, .ly-avatar > span svg { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .6; }
+.ly-avatar b { position: relative; font: 800 16px/1 var(--ly-disp); font-stretch: 80%; color: #fff; }
+.ly-avatar-hd { width: 40px; height: 40px; background: radial-gradient(circle at 30% 25%, #11766e, var(--ly-cred2)); }
+.ly-avatar-hd b { font-size: 14px; }
+
+.ly-gf-reverso { transform: rotateY(180deg); background: var(--ly-papel); border: 1px solid var(--ly-linea); box-shadow: 0 14px 28px -20px rgba(11, 30, 28, .6); padding: 10px 10px 10px 12px; display: flex; flex-direction: column; justify-content: space-between; }
+.ly-gf-mail { font: 500 12px var(--ly-mono); color: var(--ly-media); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 30px; }
+.ly-gf-acc { display: flex; gap: 6px; }
+.ly-gf-acc > a, .ly-gf-acc form { flex: 1; min-width: 0; }
+.ly-gf-acc a, .ly-gf-acc button { width: 100%; height: 36px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 9px; font-size: 13px; font-weight: 600; white-space: nowrap; border: 1px solid var(--ly-linea); color: var(--ly-tinta); background: var(--ly-papel); transition: background .15s, border-color .15s; }
+.ly-gf-acc a:hover { background: var(--ly-niebla); }
+.ly-gf-acc .es-salir { color: var(--ly-rosa); border-color: #f3c6cf; }
+.ly-gf-acc .es-salir:hover { background: var(--ly-rosav); }
+.ly-gf-volver { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--ly-media); }
+.ly-gf-volver:hover { background: var(--ly-niebla); color: var(--ly-tinta); }
+
+.ly-sb.rail .ly-pie { padding-inline: 0; display: flex; justify-content: center; }
+.ly-sb.rail .ly-gafete-in { width: 52px; height: 52px; }
+.ly-sb.rail .ly-gf-frente { padding: 0; justify-content: center; border-radius: 50%; }
+.ly-sb.rail .ly-gf-reverso { display: none; }
+
+/* ENCABEZADO */
+.ly-hd { position: sticky; top: 0; z-index: 20; padding: 14px 16px 8px; background: linear-gradient(var(--ly-niebla) 70%, rgba(238, 243, 241, 0)); transition: transform .35s var(--ly-e), opacity .25s ease; }
+@media (min-width: 640px) { .ly-hd { padding-inline: 24px; } }
+@media (min-width: 1024px) { .ly-hd { padding-inline: 32px; } }
+.ly-hd.oculto { transform: translateY(-110%); opacity: 0; pointer-events: none; }
+.ly-hd-in { display: flex; align-items: center; gap: 12px; }
+.ly-ruta { font-size: 13px; font-weight: 500; color: var(--ly-media); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 10px; }
+.ly-saludo { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ly-ruta-s { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px 1px 7px; border-radius: 6px; background: var(--ly-velo); color: var(--ly-cred); font: 500 12px/18px var(--ly-mono); letter-spacing: .04em; text-transform: uppercase; }
+.ly-ruta-s:before { content: ""; width: 7px; height: 7px; background: linear-gradient(currentColor, currentColor) center / 7px 2px no-repeat, linear-gradient(currentColor, currentColor) center / 2px 7px no-repeat; }
+.ly-pag { margin-top: 2px; font: 700 27px/1.05 var(--ly-disp); font-stretch: 85%; letter-spacing: -.02em; color: var(--ly-tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ly-reloj { display: none; flex-direction: column; align-items: flex-end; line-height: 1.15; padding-right: 4px; }
+.ly-reloj b { font: 600 16px var(--ly-mono); color: var(--ly-tinta); }
+.ly-reloj span { font-size: 12px; font-weight: 500; color: var(--ly-media); }
+@media (min-width: 768px) { .ly-reloj { display: flex; } }
+.ly-badge { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--ly-rosa); color: #fff; font: 700 11px/18px var(--ly-ui); text-align: center; box-shadow: 0 0 0 2px var(--ly-niebla); }
+
+.ly-pop { position: absolute; right: 0; top: calc(100% + 10px); z-index: 30; background: var(--ly-papel); border: 1px solid var(--ly-linea); border-radius: 16px; box-shadow: 0 24px 48px -24px rgba(11, 30, 28, .5); overflow: hidden; }
+.ly-notis { width: 320px; max-width: calc(100vw - 32px); }
+.ly-pop-h { display: flex; align-items: center; justify-between; padding: 14px 16px; border-bottom: 1px solid var(--ly-linea2); }
+.ly-pop-h p { font: 750 16px var(--ly-disp); color: var(--ly-tinta); }
+.ly-pop-h span { font-size: 12px; font-weight: 600; color: var(--ly-media); }
+.ly-vacio { display: flex; gap: 12px; padding: 18px 16px 20px; color: var(--ly-media); font-size: 13px; }
+.ly-vacio .bi { font-size: 22px; color: #08734f; }
+.ly-vacio b { display: block; color: var(--ly-tinta); font-weight: 600; margin-bottom: 2px; }
+
+/* PALETA Ctrl+K */
+.ly-paleta { position: fixed; inset: 0; z-index: 10050; display: flex; justify-content: center; align-items: flex-start; padding: 12vh 16px 16px; }
+.ly-pal-velo { position: absolute; inset: 0; background: rgba(11, 30, 28, .42); backdrop-filter: blur(2px); }
+.ly-pal { position: relative; width: 100%; max-width: 640px; max-height: 72vh; display: flex; flex-direction: column; background: var(--ly-papel); border-radius: 18px; border: 1px solid var(--ly-linea); box-shadow: 0 40px 80px -30px rgba(11, 30, 28, .65); overflow: hidden; }
+.ly-pal-in { animation: mtPalIn .22s var(--ly-e); }
+.ly-pal-out { animation: mtPalIn .12s ease-in reverse; }
+@keyframes mtPalIn { from { opacity: 0; } }
+.ly-pal-in .ly-pal { animation: mtPalSube .26s var(--ly-e); }
+@keyframes mtPalSube { from { opacity: 0; transform: translateY(-8px) scale(.985); } }
+
+.ly-pal-q { display: flex; align-items: center; gap: 12px; height: 58px; padding: 0 14px 0 18px; border-bottom: 1px solid var(--ly-linea2); }
+.ly-pal-q > .bi { font-size: 17px; color: var(--ly-cred); }
+.ly-pal-q input, .ly-pal-q input:focus-visible { outline: 0 !important; box-shadow: none !important; }
+.ly-pal-q input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font: 450 16px var(--ly-ui); color: var(--ly-tinta); }
+.ly-pal-q input::placeholder { color: var(--ly-media); }
+.ly-pal-cargando { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--ly-linea); border-top-color: var(--ly-teal); animation: mtGira .7s linear infinite; }
+@keyframes mtGira { to { transform: rotate(360deg); } }
+
+.ly-pal-lista { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 8px 8px; scrollbar-width: thin; }
+.ly-pal-g { padding: 10px 10px 4px; font-size: 12px; font-weight: 600; color: var(--ly-media); }
+.ly-pal-r { position: relative; width: 100%; display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: 10px; text-align: left; color: var(--ly-texto); }
+.ly-pal-r.on { background: var(--ly-velo); }
+.ly-pal-r.on:before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--ly-cred); }
+.ly-pal-i { flex: none; width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--ly-niebla); color: var(--ly-cred); font-size: 16px; }
+.ly-pal-i.es-pac { position: relative; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #11766e, var(--ly-cred2)); color: var(--ly-foil); }
+.ly-pal-ros, .ly-pal-ros svg { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .75; }
+.ly-pal-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ly-pal-tx b { font-size: 14px; font-weight: 600; color: var(--ly-tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ly-pal-tx small { font-size: 12px; color: var(--ly-media); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ly-pal-tx small.mono { font-family: var(--ly-mono); letter-spacing: .02em; }
+.ly-pal-alg { flex: none; max-width: 40%; font-style: normal; font-size: 12px; font-weight: 600; color: var(--ly-rosa); background: var(--ly-rosav); padding: 2px 8px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ly-pal-enter { font-size: 13px; color: var(--ly-media); opacity: 0; }
+.ly-pal-r.on .ly-pal-enter { opacity: 1; }
+.ly-pal-vacio { padding: 26px 18px 30px; text-align: center; font-size: 13px; color: var(--ly-media); }
+.ly-pal-vacio b { display: block; font: 750 17px var(--ly-disp); color: var(--ly-tinta); margin-bottom: 4px; }
+.ly-pal-pie { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-top: 1px solid var(--ly-linea2); font-size: 12px; color: var(--ly-media); background: #fafcfb; }
+.ly-pal-pie kbd { margin-right: 3px; }
+.ly-pal-ayuda { margin-left: auto; }
+@media (max-width: 639.98px) { .ly-pal-ayuda { display: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+    .ly-sb, .ly-hd, .ly-gafete-in, .ly-gf-frente:after, .page-fade-in, .ly-pal-in, .ly-pal-in .ly-pal, .ly-pal-out { transition: none !important; animation: none !important; }
+    .ly-gafete.volteado .ly-gafete-in { transform: none; }
+    .ly-gafete.volteado .ly-gf-frente { visibility: hidden; }
+    .ly-gf-reverso { transform: none; visibility: hidden; }
+    .ly-gafete.volteado .ly-gf-reverso { visibility: visible; }
+}
+
+/* SWEETALERT2 TOASTS */
+.swal2-container.swal2-top-end,
+.swal2-container.swal2-top-right { top: 1.25rem !important; right: 1.25rem !important; left: auto !important; bottom: auto !important; width: auto !important; max-width: 380px !important; background: transparent !important; pointer-events: none !important; }
+.swal2-popup.swal2-toast { display: flex !important; align-items: center !important; width: 100% !important; max-width: 360px !important; background: rgba(255, 255, 255, .98) !important; border-radius: 14px !important; padding: .75rem 1rem !important; pointer-events: auto !important; box-shadow: 0 20px 40px -20px rgba(11, 30, 28, .45) !important; font-family: var(--ly-ui) !important; }
+.swal2-toast .swal2-title { font-size: .85rem !important; font-weight: 600 !important; color: var(--ly-tinta) !important; margin: 0 0 0 .5rem !important; }
+</style>
+@endverbatim
 </head>
-<body class="bg-slate-100/70 flex h-screen overflow-hidden font-sans text-gray-800"
+<body class="ly-body flex h-screen overflow-hidden font-sans text-gray-800"
       x-data="layoutMeditrack()"
-      @keydown.escape.window="mobileOpen = false"
-      @keydown.window.ctrl.k.prevent="enfocarBuscador()"
-      @keydown.window.meta.k.prevent="enfocarBuscador()">
+      @keydown.escape.window="if (!paleta) mobileOpen = false"
+      @keydown.window.ctrl.k.prevent="abrirPaleta()"
+      @keydown.window.meta.k.prevent="abrirPaleta()">
 
     <!-- BARRA DE PROGRESO DE NAVEGACIÓN -->
     <div id="top-progress-bar"></div>
 
     @php
         $user = Auth::user();
-        $isSuperAdmin = $user ? ($user->id === 1 ? true : ($user->rol ? in_array(strtolower($user->rol->nombre), ['super admin', 'administrador']) : false)) : false;
+        $puede = fn ($modulo, $accion = 'ver') => $user ? (bool) $user->tienePermiso($modulo, $accion) : false;
 
-        $tienePermiso = function($nombreModulo) use ($user, $isSuperAdmin) {
-            if ($isSuperAdmin) return true;
-            if (!$user || !$user->rol_id) return false;
-
-            return \App\Models\Permiso::where('rol_id', $user->rol_id)
-                ->whereHas('modulo', function($query) use ($nombreModulo) {
-                    $query->whereRaw('LOWER(TRIM(nombre)) = ?', [strtolower(trim($nombreModulo))]);
-                })
-                ->where('puede_ver', 1)
-                ->exists();
-        };
-
-        // ===== MENÚ RESTAURADO CON CORRECCIONES DE RUTAS Y PERMISOS =====
+        // Menú lateral limpio (sin Despacho Farmacia, Proveedores, Facturación ni Reportes)
         $menu = [
             ['titulo' => null, 'items' => [
-                ['texto' => 'Dashboard',        'ruta' => 'home',               'activo' => 'home',           'icono' => 'bi-grid-1x2-fill',          'permiso' => null],
+                ['texto' => 'Dashboard',         'ruta' => 'home',               'activo' => 'home',            'icono' => 'bi-grid-1x2',               'permiso' => null,            'claves' => 'inicio panel resumen estadisticas'],
             ]],
-            ['titulo' => 'Gestión Médica', 'items' => [
-                ['texto' => 'Pacientes',        'ruta' => 'pacientes.index',     'activo' => 'pacientes.*',    'icono' => 'bi-people-fill',            'permiso' => 'Pacientes'],
-                ['texto' => 'Citas',            'ruta' => 'citas.index',         'activo' => 'citas.*',        'icono' => 'bi-calendar2-week-fill',    'permiso' => 'Citas'],
-                ['texto' => 'Consultas',        'ruta' => 'consultas.index',     'activo' => 'consultas.*',    'icono' => 'bi-clipboard2-pulse-fill',  'permiso' => 'Consultas'],
-                ['texto' => 'Consultorios',     'ruta' => 'consultorios.index',  'activo' => 'consultorios.*', 'icono' => 'bi-hospital-fill',          'permiso' => 'Consultorios'],
+            ['titulo' => 'Gestión médica', 'items' => [
+                ['texto' => 'Pacientes',         'ruta' => 'pacientes.index',     'activo' => 'pacientes.*',     'icono' => 'bi-people',                 'permiso' => 'Pacientes',     'claves' => 'expedientes credencial curp alergias'],
+                ['texto' => 'Citas',             'ruta' => 'citas.index',         'activo' => 'citas.*',         'icono' => 'bi-calendar2-week',         'permiso' => 'Citas',         'claves' => 'agenda calendario turnos agendar'],
+                ['texto' => 'Consultas',         'ruta' => 'consultas.index',     'activo' => 'consultas.*',     'icono' => 'bi-clipboard2-pulse',       'permiso' => 'Consultas',     'claves' => 'atencion diagnostico signos vitales'],
+                ['texto' => 'Consultorios',      'ruta' => 'consultorios.index',  'activo' => 'consultorios.*',  'icono' => 'bi-hospital',               'permiso' => 'Consultorios',  'claves' => 'salas espacios'],
+                ['texto' => 'Recetas',           'ruta' => 'recetas.index',       'activo' => 'recetas.*',       'icono' => 'bi-file-earmark-medical',   'permiso' => 'Recetas',       'claves' => 'prescripcion medicamentos'],
             ]],
-            ['titulo' => 'Farmacia y Finanzas', 'items' => [
-                ['texto' => 'Terminal POS',     'ruta' => 'pos.index',           'activo' => 'pos.*',          'icono' => 'bi-shop',                   'permiso' => 'POS'],
-                ['texto' => 'Caja Central',     'ruta' => 'caja.index',          'activo' => 'caja.*',         'icono' => 'bi-cash-coin',              'permiso' => 'Caja'],
-                ['texto' => 'Despacho Farmacia','ruta' => 'farmacia.despacho',   'activo' => 'farmacia.*',     'icono' => 'bi-bag-check-fill',         'permiso' => 'Farmacia'],
-                ['texto' => 'Inventario',       'ruta' => 'inventario.index',    'activo' => 'inventario.*',   'icono' => 'bi-box-seam-fill',          'permiso' => 'Inventario'],
-                ['texto' => 'Proveedores',      'ruta' => 'proveedores.index',   'activo' => 'proveedores.*',  'icono' => 'bi-truck',                  'permiso' => 'Proveedores'],
-                ['texto' => 'Recetas',          'ruta' => 'recetas.index',       'activo' => 'recetas.*',      'icono' => 'bi-file-earmark-medical-fill','permiso' => 'Recetas'],
-                ['texto' => 'Facturación',      'ruta' => null,                  'activo' => 'facturacion.*',  'icono' => 'bi-credit-card-2-front-fill','permiso' => 'Facturación'],
+            ['titulo' => 'Farmacia y finanzas', 'items' => [
+                ['texto' => 'Terminal POS',      'ruta' => 'pos.index',           'activo' => 'pos.*',           'icono' => 'bi-shop',                   'permiso' => 'POS',           'claves' => 'venta vender cobrar punto de venta'],
+                ['texto' => 'Caja central',      'ruta' => 'caja.index',          'activo' => 'caja.*',          'icono' => 'bi-cash-coin',              'permiso' => 'Caja',          'claves' => 'corte apertura dinero pagos'],
+                ['texto' => 'Inventario',        'ruta' => 'inventario.index',    'activo' => 'inventario.*',    'icono' => 'bi-box-seam',               'permiso' => 'Inventario',    'claves' => 'stock productos existencias lotes'],
             ]],
             ['titulo' => 'Administración', 'items' => [
-                ['texto' => 'Personal',         'ruta' => 'personal.index',      'activo' => 'personal.*',     'icono' => 'bi-person-badge-fill',      'permiso' => 'Personal'],
-                ['texto' => 'Roles y Permisos', 'ruta' => 'roles.index',         'activo' => 'roles.*',        'icono' => 'bi-shield-lock-fill',       'permiso' => 'Roles'],
-                ['texto' => 'Reportes',         'ruta' => null,                  'activo' => 'reportes.*',     'icono' => 'bi-bar-chart-line-fill',    'permiso' => 'Reportes'],
-                ['texto' => 'Configuración',    'ruta' => 'configuracion.index', 'activo' => 'configuracion.*','icono' => 'bi-gear-fill',              'permiso' => 'Configuración'],
-                ['texto' => 'Bitácora',         'ruta' => 'bitacora.index',      'activo' => 'bitacora.*',     'icono' => 'bi-journal-text',           'permiso' => 'Bitácora'],
+                ['texto' => 'Personal',          'ruta' => 'personal.index',      'activo' => 'personal.*',      'icono' => 'bi-person-badge',           'permiso' => 'Personal',      'claves' => 'medicos doctores empleados nomina usuarios'],
+                ['texto' => 'Roles y permisos',  'ruta' => 'roles.index',         'activo' => 'roles.*',         'icono' => 'bi-shield-lock',            'permiso' => 'Roles',         'claves' => 'accesos seguridad'],
+                ['texto' => 'Configuración',     'ruta' => 'configuracion.index', 'activo' => 'configuracion.*', 'icono' => 'bi-gear',                  'permiso' => null,            'claves' => 'ajustes clinica aviso de privacidad cuenta'],
+                ['texto' => 'Bitácora',          'ruta' => 'bitacora.index',      'activo' => 'bitacora.*',      'icono' => 'bi-journal-text',           'permiso' => 'Bitácora',      'claves' => 'historial registros auditoria'],
             ]],
         ];
 
+        // Filtra por permisos, resuelve rutas y detecta la página actual.
         $seccionActual = null;
         $paginaActual  = 'Dashboard';
+        $navJs = [];
         foreach ($menu as $i => $seccion) {
-            foreach ($menu[$i]['items'] as $item) {
-                if (request()->routeIs($item['activo'])) {
-                    $seccionActual = $seccion['titulo'];
-                    $paginaActual  = $item['texto'];
-                }
-            }
+            $menu[$i]['items'] = collect($seccion['items'])
+                ->filter(fn ($item) => is_null($item['permiso']) || $puede($item['permiso']))
+                ->map(function ($item) use ($seccion, &$seccionActual, &$paginaActual, &$navJs) {
+                    $item['pendiente'] = empty($item['ruta']) || !\Illuminate\Support\Facades\Route::has($item['ruta']);
+                    $item['href']      = $item['pendiente'] ? null : route($item['ruta']);
+                    $item['esActivo']  = request()->routeIs($item['activo']);
+                    if ($item['esActivo']) {
+                        $seccionActual = $seccion['titulo'];
+                        $paginaActual  = $item['texto'];
+                    }
+                    if (!$item['pendiente']) {
+                        $navJs[] = ['t' => $item['texto'], 's' => $seccion['titulo'] ?? 'General', 'i' => $item['icono'], 'u' => $item['href'], 'k' => $item['claves']];
+                    }
+                    return $item;
+                })->values();
         }
 
-        $nombreUsuario = $user->nombre ?? 'Usuario';
-        $primerNombre  = \Illuminate\Support\Str::of($nombreUsuario)->trim()->explode(' ')->first() ?: 'Usuario';
-        $iniciales     = collect(preg_split('/\s+/', trim($nombreUsuario)))
-                            ->filter()->take(2)
-                            ->map(fn($p) => mb_strtoupper(mb_substr($p, 0, 1)))
-                            ->implode('') ?: 'U';
-        $rolUsuario    = optional(optional($user)->rol)->nombre ?? ($isSuperAdmin ? 'Super Admin' : 'Personal');
+        // Acciones rápidas de la paleta.
+        $accionesJs = [];
+        if (\Illuminate\Support\Facades\Route::has('pacientes.index') && $puede('Pacientes', 'crear')) {
+            $accionesJs[] = ['t' => 'Registrar paciente', 'd' => 'Emite una credencial nueva', 'i' => 'bi-person-plus', 'u' => route('pacientes.index', ['nuevo' => 1]), 'k' => 'nuevo alta curp'];
+        }
+        if (\Illuminate\Support\Facades\Route::has('citas.index') && $puede('Citas', 'crear')) {
+            $accionesJs[] = ['t' => 'Agendar una cita', 'd' => 'Abre la agenda de citas', 'i' => 'bi-calendar-plus', 'u' => route('citas.index'), 'k' => 'nueva cita calendario'];
+        }
+        if (\Illuminate\Support\Facades\Route::has('pos.index') && $puede('POS')) {
+            $accionesJs[] = ['t' => 'Cobrar una venta', 'd' => 'Abre la terminal POS', 'i' => 'bi-upc-scan', 'u' => route('pos.index'), 'k' => 'vender ticket'];
+        }
+
+        // Datos del usuario en sesión.
+        $nombreUsuario = trim(optional(optional($user)->personal)->nombre_completo ?: (optional($user)->name ?? '')) ?: 'Usuario';
+        $palabras      = collect(preg_split('/\s+/', $nombreUsuario))->filter()->values();
+        $primerNombre  = \Illuminate\Support\Str::title(mb_strtolower($palabras->first() ?? 'Usuario'));
+        $iniciales     = $palabras->take(2)->map(fn ($p) => mb_strtoupper(mb_substr($p, 0, 1)))->implode('') ?: 'U';
+        $rolUsuario    = optional(optional($user)->rol)->nombre ?? (optional($user)->id === 1 ? 'Super Admin' : 'Personal');
+        $nombreClinica = optional($clinica ?? null)->nombre ?? ($config['nombre_clinica'] ?? null);
+        $folioUsuario  = 'MT-' . str_pad((string) (optional($user)->id ?? 0), 4, '0', STR_PAD_LEFT);
+        $puedeConfig   = \Illuminate\Support\Facades\Route::has('configuracion.index');
 
         $totalNotificaciones = (int) ($totalNotificaciones ?? 0);
-        $contadorPaso = 0;
     @endphp
 
     <!-- FONDO OSCURO EN MÓVIL -->
     <div x-show="mobileOpen" x-cloak
          x-transition.opacity.duration.200ms
          @click="mobileOpen = false"
-         class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-30 lg:hidden"></div>
+         class="ly-velo-movil ly-movil"></div>
 
-    <!-- BARRA LATERAL (SIDEBAR) -->
-    <aside class="mt-sidebar h-full flex flex-col flex-shrink-0 text-slate-700 border-r border-slate-200"
-           :class="{ 'movil-abierto': mobileOpen, 'rail': !sidebarOpen }">
+    <!-- SIDEBAR -->
+    <aside class="ly-sb" :class="{ 'movil-abierto': mobileOpen, 'rail': !sidebarOpen && ancho >= 1024 }" aria-label="Menú principal">
 
         <!-- MARCA -->
-        <div class="relative flex-shrink-0 px-4 pt-5 pb-4">
-            <div class="marca-fila flex items-center gap-3">
-                <a href="{{ route('home') }}" class="relative flex-shrink-0 w-11 h-11 rounded-2xl bg-teal-600 flex items-center justify-center shadow-md shadow-teal-600/25">
-                    <i class="bi bi-heart-pulse-fill text-xl text-white latido"></i>
-                </a>
-
-                <div class="solo-expandido min-w-0 flex-1">
-                    <p class="text-lg font-black tracking-tight leading-none text-slate-800">
-                        Medi<span class="text-teal-600">Track</span>
-                    </p>
-                    <svg class="mt-1.5 w-28 h-3.5" viewBox="0 0 120 16" fill="none" aria-hidden="true">
-                        <path d="M0 8 H38 L44 2 L50 14 L56 4 L60 8 H78 L82 5 L86 8 H120" stroke="rgba(13,148,136,.15)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path class="ecg-trazo" d="M0 8 H38 L44 2 L50 14 L56 4 L60 8 H78 L82 5 L86 8 H120" stroke="#14b8a6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </div>
-
-                <button x-show="ancho < 1024" @click="mobileOpen = false"
-                        class="lg:hidden p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition" title="Cerrar menú">
-                    <i class="bi bi-x-lg"></i>
-                </button>
+        <div class="ly-marca">
+            <a href="{{ route('home') }}" class="ly-sello" aria-label="Ir al inicio"
+               @mouseenter="mostrarTip($el, 'Inicio')" @mouseleave="ocultarTip()">
+                <svg viewBox="0 0 44 44" aria-hidden="true">
+                    <rect x="15" y="2" width="14" height="40" rx="4" fill="#0b5a54"/>
+                    <rect x="2" y="15" width="40" height="14" rx="4" fill="#0b5a54"/>
+                    <rect x="15" y="15" width="14" height="14" fill="#073f3b"/>
+                    <path d="M16.5 22h3.5l1.5-4 2.5 8 1.5-4h2.5" stroke="#a6efe2" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </a>
+            <div class="ly-oculta-rail ly-marca-tx">
+                <p class="ly-logo">MediTrack</p>
+                <p class="ly-clinica" title="{{ $nombreClinica }}">{{ $nombreClinica ?: 'Sistema clínico' }}</p>
             </div>
-        </div>
-
-        <!-- BUSCADOR DEL SIDEBAR -->
-        <div class="relative flex-shrink-0 px-4 mb-2 z-[10]">
-            <button type="button" @click="enfocarBuscador()"
-                    @mouseenter="mostrarTip($el, 'Buscar módulo (Ctrl+K)')" @mouseleave="ocultarTip()"
-                    class="solo-rail w-full h-11 rounded-2xl bg-slate-100 hover:bg-teal-50 text-slate-500 hover:text-teal-700 items-center justify-center transition">
-                <i class="bi bi-search"></i>
+            <button type="button" class="ly-ico ly-movil" x-show="ancho < 1024" @click="mobileOpen = false" aria-label="Cerrar menú">
+                <i class="bi bi-x-lg"></i>
             </button>
-
-            <div class="solo-expandido relative flex items-center">
-                <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-400">
-                    <i class="bi bi-search text-xs"></i>
-                </span>
-
-                <input type="text"
-                       x-ref="inputBuscadorSidebar"
-                       x-model="search"
-                       placeholder="Ir a un módulo…"
-                       class="w-full pl-9 pr-14 py-2.5 bg-slate-100 hover:bg-slate-200/60 focus:bg-white border border-transparent focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 rounded-2xl text-xs font-bold text-slate-700 placeholder-slate-400 outline-none transition-all">
-
-                <span class="absolute right-2.5 flex items-center gap-1">
-                    <button type="button" @click="search = ''" x-show="search" x-cloak class="text-slate-400 hover:text-slate-600">
-                        <i class="bi bi-x-circle-fill text-xs"></i>
-                    </button>
-                    <kbd x-show="!search" class="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-[9px] font-bold text-slate-400 font-sans">Ctrl K</kbd>
-                </span>
-            </div>
         </div>
 
-        <!-- NAVEGACIÓN CON FILTRADO EN TIEMPO REAL -->
-        <nav class="nav-scroll relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-2 space-y-5">
-            @foreach($menu as $seccion)
-                @php
-                    $itemsVisibles = collect($seccion['items'])->filter(function($item) use ($tienePermiso) {
-                        return is_null($item['permiso']) || $tienePermiso($item['permiso']);
-                    });
-                @endphp
+        <!-- BUSCADOR -->
+        <div class="ly-buscar-wrap">
+            <button type="button" class="ly-buscar" @click="abrirPaleta()"
+                    @mouseenter="mostrarTip($el, 'Buscar (Ctrl K)')" @mouseleave="ocultarTip()"
+                    aria-label="Buscar pacientes, módulos o acciones" aria-keyshortcuts="Control+K">
+                <i class="bi bi-search"></i>
+                <span class="ly-oculta-rail">Buscar o ir a…</span>
+                <kbd class="ly-oculta-rail">Ctrl K</kbd>
+            </button>
+        </div>
 
-                @continue($itemsVisibles->count() === 0)
-
-                <div>
-                    @if($seccion['titulo'])
-                        <p class="solo-expandido flex items-center gap-2 px-3 mb-2 text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
-                            <span>{{ $seccion['titulo'] }}</span>
-                            <span class="flex-1 h-px bg-slate-200"></span>
-                        </p>
-                        <div class="solo-rail justify-center mb-2"><span class="h-px w-8 bg-slate-200"></span></div>
+        <!-- NAVEGACIÓN -->
+        <nav class="ly-nav" aria-label="Módulos">
+            @foreach ($menu as $seccion)
+                @continue($seccion['items']->isEmpty())
+                <div class="ly-grupo">
+                    @if ($seccion['titulo'])
+                        <p class="ly-grupo-t"><span>{{ $seccion['titulo'] }}</span></p>
                     @endif
-
-                    <div class="space-y-1">
-                        @foreach($itemsVisibles as $item)
-                            @php
-                                $esActivo  = request()->routeIs($item['activo']);
-                                $pendiente = empty($item['ruta']) || !\Illuminate\Support\Facades\Route::has($item['ruta']);
-                                $href      = $pendiente ? '#' : route($item['ruta']);
-                                $contadorPaso++;
-                            @endphp
-
-                            <a href="{{ $href }}"
-                               x-show="coincide(@js($item['texto'])) || (search && coincide(@js($seccion['titulo'])))"
-                               @if($pendiente) aria-disabled="true" @endif
-                               @if($esActivo) aria-current="page" @endif
-                               @mouseenter="mostrarTip($el, @js($item['texto'] . ($pendiente ? ' · Pronto' : '')))"
-                               @mouseleave="ocultarTip()"
-                               style="animation-delay: {{ $contadorPaso * 35 }}ms"
-                               class="nav-item nav-link group relative flex items-center gap-3 px-2.5 py-2 rounded-2xl text-[13px] font-bold transition-all duration-200
-                                      {{ $esActivo
-                                          ? 'bg-teal-50 text-teal-800'
-                                          : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50' }}
-                                      {{ $pendiente ? 'cursor-default' : '' }}">
-
-                                @if($esActivo)
-                                    <span class="absolute -left-4 top-1/2 -translate-y-1/2 h-7 w-1.5 rounded-r-full bg-teal-600"></span>
-                                @endif
-
-                                <span class="flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200
-                                             {{ $esActivo
-                                                 ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/30'
-                                                 : 'bg-slate-100 text-slate-500 group-hover:bg-teal-100 group-hover:text-teal-700 group-hover:scale-105' }}">
-                                    <i class="bi {{ $item['icono'] }} text-[15px]"></i>
-                                </span>
-
-                                <span class="solo-expandido truncate">{{ $item['texto'] }}</span>
-
-                                @if($pendiente)
-                                    <span class="solo-expandido ml-auto text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-400 border border-slate-200">Pronto</span>
-                                @elseif($esActivo)
-                                    <i class="solo-expandido bi bi-chevron-right ml-auto text-[10px] text-teal-500"></i>
-                                @endif
+                    @foreach ($seccion['items'] as $item)
+                        @php $tipTexto = $item['texto'] . ($item['pendiente'] ? ' · Pronto' : ''); @endphp
+                        @if ($item['pendiente'])
+                            <span class="ly-link es-pronto" aria-disabled="true"
+                                  @mouseenter="mostrarTip($el, @js($tipTexto))" @mouseleave="ocultarTip()">
+                                <i class="bi {{ $item['icono'] }}"></i>
+                                <span class="ly-oculta-rail ly-link-t">{{ $item['texto'] }}</span>
+                                <em class="ly-oculta-rail">Pronto</em>
+                            </span>
+                        @else
+                            <a href="{{ $item['href'] }}" class="ly-link {{ $item['esActivo'] ? 'es-activo' : '' }}"
+                               @if ($item['esActivo']) aria-current="page" @endif
+                               @mouseenter="mostrarTip($el, @js($tipTexto))" @mouseleave="ocultarTip()"
+                               @click="recordar(@js($item['texto']))">
+                                <i class="bi {{ $item['icono'] }}{{ $item['esActivo'] ? '-fill' : '' }}"></i>
+                                <span class="ly-oculta-rail ly-link-t">{{ $item['texto'] }}</span>
                             </a>
-                        @endforeach
-                    </div>
+                        @endif
+                    @endforeach
                 </div>
             @endforeach
         </nav>
 
-        <!-- PIE DEL SIDEBAR -->
-        <div class="relative flex-shrink-0 p-4">
-            <div class="solo-rail justify-center py-2"
-                 @mouseenter="mostrarTip($el, 'Sistema en línea')" @mouseleave="ocultarTip()">
-                <span class="pulso-online relative w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-            </div>
-            <div class="solo-expandido rounded-2xl bg-slate-50 border border-slate-200 p-3">
-                <div class="flex items-center gap-2.5">
-                    <span class="relative flex w-2 h-2">
-                        <span class="pulso-online relative w-2 h-2 rounded-full bg-emerald-400"></span>
-                    </span>
-                    <p class="text-[11px] font-bold text-slate-600">Sistema en línea</p>
-                    <span class="ml-auto text-[10px] font-semibold text-slate-400" x-text="hora"></span>
+        <!-- GAFETE DE USUARIO -->
+        <div class="ly-pie">
+            <div class="ly-gafete" :class="{ 'volteado': gafeteVuelta }" @click.outside="gafeteVuelta = false"
+                 @keydown.escape.stop="gafeteVuelta = false; $refs.gafeteFrente.focus()">
+                <div class="ly-gafete-in">
+                    <!-- Frente -->
+                    <button type="button" class="ly-gf ly-gf-frente" x-ref="gafeteFrente"
+                            @click="voltearGafete()" :aria-expanded="gafeteVuelta.toString()" :tabindex="gafeteVuelta ? -1 : 0"
+                            @mouseenter="mostrarTip($el, @js($nombreUsuario))" @mouseleave="ocultarTip()"
+                            aria-label="Mi cuenta: {{ $nombreUsuario }}">
+                        <span class="ly-gf-gl" x-ref="gafeteGl" aria-hidden="true"></span>
+                        <span class="ly-avatar" aria-hidden="true">
+                            <span x-html="roseta(semilla, 44)"></span>
+                            <b>{{ $iniciales }}</b>
+                        </span>
+                        <span class="ly-oculta-rail ly-gf-datos">
+                            <span class="ly-gf-k">Gafete · <span class="t">{{ $folioUsuario }}</span></span>
+                            <span class="ly-gf-n">{{ $nombreUsuario }}</span>
+                            <span class="ly-gf-r">{{ $rolUsuario }}</span>
+                        </span>
+                        <i class="ly-oculta-rail bi bi-arrow-repeat ly-gf-giro" aria-hidden="true"></i>
+                    </button>
+
+                    <!-- Reverso -->
+                    <div class="ly-gf ly-gf-reverso" :aria-hidden="(!gafeteVuelta).toString()">
+                        <p class="ly-gf-mail" title="{{ $user->email ?? '' }}">{{ $user->email ?? $nombreUsuario }}</p>
+                        <div class="ly-gf-acc">
+                            @if ($puedeConfig)
+                                <a href="{{ route('configuracion.index') }}" :tabindex="gafeteVuelta ? 0 : -1">
+                                    <i class="bi bi-gear"></i> Mi cuenta
+                                </a>
+                            @endif
+                            <form method="POST" action="{{ route('logout') }}" id="ly-salir">
+                                @csrf
+                                <button type="submit" class="es-salir" :tabindex="gafeteVuelta ? 0 : -1">
+                                    <i class="bi bi-box-arrow-right"></i> Cerrar sesión
+                                </button>
+                            </form>
+                        </div>
+                        <button type="button" class="ly-gf-volver" @click="gafeteVuelta = false; $refs.gafeteFrente.focus()"
+                                :tabindex="gafeteVuelta ? 0 : -1" aria-label="Regresar al frente del gafete">
+                            <i class="bi bi-arrow-counterclockwise"></i>
+                        </button>
+                    </div>
                 </div>
-                <p class="mt-1 pl-[18px] text-[10px] text-slate-400 capitalize" x-text="fecha"></p>
             </div>
         </div>
     </aside>
 
-    <!-- ETIQUETA FLOTANTE DE ÍCONOS -->
+    <!-- ETIQUETA FLOTANTE -->
     <div x-show="tip.texto && !sidebarOpen && ancho >= 1024" x-cloak
-         x-transition:enter="transition ease-out duration-150"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
          :style="`top:${tip.top}px; left:${tip.left}px`"
-         class="fixed z-[70] -translate-y-1/2 pointer-events-none">
-        <div class="relative px-3 py-1.5 rounded-xl bg-slate-800 text-white text-xs font-bold shadow-xl whitespace-nowrap">
-            <span class="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-slate-800"></span>
-            <span x-text="tip.texto"></span>
-        </div>
-    </div>
+         class="ly-tip" role="tooltip"><span x-text="tip.texto"></span></div>
 
     <!-- ÁREA PRINCIPAL -->
     <div class="flex-1 min-w-0 flex flex-col overflow-y-auto"
          @scroll.passive="alScrollear($el)"
          @mousemove.throttle.100ms="alMoverCursor($event,$el)">
 
-        <header class="mt-header sticky top-0 z-20 w-full px-4 sm:px-6 lg:px-8 pt-4 pb-3 bg-slate-100/70 backdrop-blur-xl"
-                :class="{ 'header-oculto': !headerVisible }"
-                @mouseenter="headerHover = true"
-                @mouseleave="headerHover = false">
-            <div class="flex items-center gap-3 sm:gap-4 rounded-3xl bg-white/90 border border-white shadow-[0_8px_30px_-12px_rgba(15,118,110,0.18)] ring-1 ring-slate-200/60 px-3 sm:px-4 py-2.5">
-
-                <button @click="alternarMenu()"
-                        class="group flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center border transition"
-                        :class="(ancho < 1024 ? mobileOpen : sidebarOpen)
-                                    ? 'text-slate-500 hover:text-teal-700 bg-slate-50 hover:bg-teal-50 border-slate-200/70'
-                                    : 'text-white bg-teal-600 hover:bg-teal-700 border-teal-600 shadow-md shadow-teal-600/25'"
-                        :title="(ancho < 1024 ? mobileOpen : sidebarOpen) ? 'Ocultar menú' : 'Mostrar menú'">
-                    <i class="bi text-lg transition-transform duration-200"
-                       :class="(ancho < 1024 ? mobileOpen : sidebarOpen) ? 'bi-list' : 'bi-arrow-bar-right group-hover:translate-x-0.5'"></i>
+        <header class="ly-hd" :class="{ 'oculto': !headerVisible }"
+                @mouseenter="headerHover = true" @mouseleave="headerHover = false">
+            <div class="ly-hd-in">
+                <button type="button" class="ly-ico" @click="alternarMenu()"
+                        :aria-label="(ancho < 1024 ? mobileOpen : sidebarOpen) ? 'Contraer menú' : 'Mostrar menú'"
+                        :aria-expanded="(ancho < 1024 ? mobileOpen : sidebarOpen).toString()">
+                    <i class="bi" :class="ancho < 1024 ? 'bi-list' : (sidebarOpen ? 'bi-layout-sidebar-inset' : 'bi-layout-sidebar')"></i>
                 </button>
 
-                <div class="min-w-0 flex-1">
-                    <nav class="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400" aria-label="Ruta">
-                        <i class="bi bi-house-door-fill text-teal-500"></i>
-                        @if($seccionActual)
-                            <i class="bi bi-chevron-right text-[8px]"></i>
-                            <span class="hidden sm:inline">{{ $seccionActual }}</span>
-                            <i class="bi bi-chevron-right text-[8px] hidden sm:inline"></i>
-                        @else
-                            <i class="bi bi-chevron-right text-[8px]"></i>
-                        @endif
-                        <span class="text-teal-700 font-bold truncate">{{ $paginaActual }}</span>
-                    </nav>
-                    <p class="text-sm sm:text-base font-black text-slate-800 truncate leading-tight mt-0.5">
-                        <span x-text="saludo">Hola</span>, {{ $primerNombre }}
+                <div class="ly-hd-tit">
+                    <p class="ly-ruta">
+                        <span class="ly-saludo"><span x-text="saludo">Hola</span>, {{ $primerNombre }}</span>
+                        @if ($seccionActual)<span class="ly-ruta-s ly-sm">{{ $seccionActual }}</span>@endif
                     </p>
+                    <p class="ly-pag">{{ $paginaActual }}</p>
                 </div>
 
-                <div class="hidden md:flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-teal-50 border border-teal-100">
-                    <i class="bi bi-clock-history text-teal-600"></i>
-                    <div class="leading-tight">
-                        <p class="text-sm font-black text-teal-900 tabular-nums" x-text="hora"></p>
-                        <p class="text-[10px] font-semibold text-teal-700/70 capitalize" x-text="fecha"></p>
-                    </div>
+                <button type="button" class="ly-ico ly-movil" @click="abrirPaleta()" aria-label="Buscar">
+                    <i class="bi bi-search"></i>
+                </button>
+
+                <div class="ly-reloj" aria-label="Hora actual">
+                    <b class="t" x-text="hora"></b>
+                    <span x-text="fecha"></span>
                 </div>
 
-                <!-- NOTIFICACIONES -->
-                <div x-data="{ abierto: false }" class="relative">
-                    <button @click="abierto = !abierto" @click.outside="abierto = false"
-                            class="relative w-10 h-10 rounded-2xl flex items-center justify-center text-slate-500 hover:text-teal-700 bg-slate-50 hover:bg-teal-50 border border-slate-200/70 transition"
-                            title="Notificaciones">
-                        <i class="bi bi-bell-fill"></i>
-                        @if($totalNotificaciones > 0)
-                            <span class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center ring-2 ring-white">
-                                {{ $totalNotificaciones > 9 ? '9+' :$totalNotificaciones }}
-                            </span>
-                            <span class="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-rose-500 animate-ping opacity-40"></span>
+                <div x-data="{ abierto: false }" class="relative" @keydown.escape.stop="abierto = false">
+                    <button type="button" class="ly-ico" @click="abierto = !abierto" @click.outside="abierto = false"
+                            :aria-expanded="abierto.toString()"
+                            aria-label="Notificaciones{{ $totalNotificaciones ? ': ' . $totalNotificaciones . ' nuevas' : '' }}">
+                        <i class="bi bi-bell"></i>
+                        @if ($totalNotificaciones > 0)
+                            <span class="ly-badge t">{{ $totalNotificaciones > 9 ? '9+' :$totalNotificaciones }}</span>
                         @endif
                     </button>
 
-                    <div x-show="abierto" x-cloak
-                         x-transition:enter="transition ease-out duration-150"
-                         x-transition:enter-start="opacity-0 translate-y-1 scale-95"
-                         x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                         x-transition:leave="transition ease-in duration-100"
-                         x-transition:leave-end="opacity-0 scale-95"
-                         class="absolute right-0 mt-3 w-80 origin-top-right rounded-3xl bg-white shadow-2xl shadow-slate-900/15 ring-1 ring-slate-200 overflow-hidden">
-                        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-                            <p class="text-sm font-black text-slate-800">Notificaciones</p>
-                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-50 text-teal-700">{{ $totalNotificaciones }} nuevas</span>
+                    <div x-show="abierto" x-cloak x-transition.origin.top.right class="ly-pop ly-notis">
+                        <div class="ly-pop-h">
+                            <p>Notificaciones</p>
+                            <span class="t">{{ $totalNotificaciones }} nuevas</span>
                         </div>
-                        <div class="px-5 py-8 text-center">
-                            <div class="w-12 h-12 mx-auto rounded-2xl bg-teal-50 text-teal-500 flex items-center justify-center mb-3">
-                                <i class="bi bi-bell-slash text-xl"></i>
-                            </div>
-                            <p class="text-xs font-bold text-slate-600">Todo al día</p>
-                            <p class="text-[11px] text-slate-400 mt-1">Aquí aparecerán alertas de citas y stock.</p>
+                        <div class="ly-vacio">
+                            <i class="bi bi-check2-circle"></i>
+                            <p><b>Todo al día</b>Aquí aparecerán los avisos de citas y de inventario.</p>
                         </div>
                     </div>
                 </div>
 
-                <!-- USUARIO -->
-                <div x-data="{ abierto: false }" class="relative">
-                    <button @click="abierto = !abierto" @click.outside="abierto = false"
-                            class="flex items-center gap-2.5 pl-1 pr-2 sm:pr-3 py-1 rounded-2xl hover:bg-slate-50 border border-transparent hover:border-slate-200/70 transition"
-                            :class="abierto && 'bg-slate-50 border-slate-200/70'">
-                        <span class="relative flex-shrink-0">
-                            <span class="w-10 h-10 rounded-2xl bg-teal-600 text-white flex items-center justify-center font-black text-sm shadow-md shadow-teal-600/25">
-                                {{ $iniciales }}
-                            </span>
-                            <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-white"></span>
-                        </span>
-                        <span class="hidden sm:block text-left leading-tight">
-                            <span class="block text-xs font-black text-slate-800 max-w-[140px] truncate">{{ $nombreUsuario }}</span>
-                            <span class="block text-[10px] font-bold text-teal-600 uppercase tracking-wider">{{ $rolUsuario }}</span>
-                        </span>
-                        <i class="bi bi-chevron-down text-[10px] text-slate-400 hidden sm:block transition-transform duration-200" :class="abierto && 'rotate-180'"></i>
-                    </button>
-
-                    <div x-show="abierto" x-cloak
-                         x-transition:enter="transition ease-out duration-150"
-                         x-transition:enter-start="opacity-0 translate-y-1 scale-95"
-                         x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                         x-transition:leave="transition ease-in duration-100"
-                         x-transition:leave-end="opacity-0 scale-95"
-                         class="absolute right-0 mt-3 w-72 origin-top-right rounded-3xl bg-white shadow-2xl shadow-slate-900/15 ring-1 ring-slate-200 overflow-hidden">
-
-                        <div class="relative px-5 pt-5 pb-4 bg-teal-50 text-slate-800 border-b border-teal-100 overflow-hidden">
-                            <div class="relative flex items-center gap-3">
-                                <span class="w-12 h-12 rounded-2xl bg-teal-600 text-white flex items-center justify-center font-black text-lg">{{ $iniciales }}</span>
-                                <div class="min-w-0">
-                                    <p class="text-sm font-black truncate">{{ $nombreUsuario }}</p>
-                                    <p class="text-[11px] text-slate-500 truncate">{{ $user->email ?? '' }}</p>
-                                </div>
-                            </div>
-                            <span class="relative inline-flex items-center gap-1 mt-3 px-2 py-0.5 rounded-full bg-white ring-1 ring-teal-200 text-[10px] font-extrabold uppercase tracking-wider text-teal-700">
-                                <i class="bi bi-shield-check"></i> {{ $rolUsuario }}
-                            </span>
-                        </div>
-
-                        <div class="p-2">
-                            <a href="{{ route('configuracion.index') }}" class="flex items-center gap-3 px-3 py-2.5 rounded-2xl text-xs font-bold text-slate-600 hover:bg-teal-50 hover:text-teal-700 transition">
-                                <span class="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center"><i class="bi bi-gear-fill"></i></span>
-                                Configuración
-                            </a>
-
-                            <div class="my-1.5 mx-3 h-px bg-slate-100"></div>
-
-                            <form method="POST" action="{{ route('logout') }}" class="m-0">
-                                @csrf
-                                <button type="submit" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-xs font-bold text-rose-600 hover:bg-rose-50 transition">
-                                    <span class="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center"><i class="bi bi-box-arrow-right"></i></span>
-                                    Cerrar sesión
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
+                <button type="button" class="ly-avatar ly-avatar-hd ly-movil" @click="mobileOpen = true; gafeteVuelta = true"
+                        aria-label="Mi cuenta: {{ $nombreUsuario }}">
+                    <span x-html="roseta(semilla, 40)"></span>
+                    <b>{{ $iniciales }}</b>
+                </button>
             </div>
         </header>
 
-        <!-- CONTENIDO DINÁMICO DE LAS VISTAS DE LARAVEL -->
         <main id="main-content" class="px-4 sm:px-6 lg:px-8 pt-3 pb-8 space-y-6 w-full min-w-0 flex-1 block page-fade-in">
             @yield('content')
         </main>
     </div>
 
-    <!-- CONTROL DE BARRA PROGRESIVA SUPERIOR -->
+    <!-- PALETA DE BÚSQUEDA GLOBAL (Ctrl+K) -->
+    <div class="ly-paleta" x-show="paleta" x-cloak
+         x-transition:enter="ly-pal-in" x-transition:leave="ly-pal-out"
+         @keydown.escape.prevent.stop="cerrarPaleta()">
+        <div class="ly-pal-velo" @click="cerrarPaleta()"></div>
+
+        <div class="ly-pal" role="dialog" aria-modal="true" aria-label="Buscar en MediTrack">
+            <div class="ly-pal-q">
+                <i class="bi bi-search" aria-hidden="true"></i>
+                <input type="text" x-ref="pq" x-model="q"
+                       @keydown.arrow-down.prevent="mover(1)" @keydown.arrow-up.prevent="mover(-1)"
+                       @keydown.enter.prevent="abrirResultado(resultados[sel])"
+                       placeholder="Busca un paciente, un módulo o una acción…" autocomplete="off" spellcheck="false"
+                       role="combobox" aria-expanded="true" aria-controls="ly-pal-lista"
+                       :aria-activedescendant="resultados.length ? 'ly-r-' + sel : null">
+                <span class="ly-pal-cargando" x-show="buscando" aria-hidden="true"></span>
+                <kbd>Esc</kbd>
+            </div>
+
+            <div class="ly-pal-lista" id="ly-pal-lista" role="listbox" x-ref="plista">
+                <template x-for="(r, i) in resultados" :key="r.clave">
+                    <div>
+                        <p class="ly-pal-g" x-show="i === 0 || resultados[i - 1].grupo !== r.grupo" x-text="r.grupo"></p>
+                        <button type="button" class="ly-pal-r" role="option" :id="'ly-r-' + i"
+                                :aria-selected="(i === sel).toString()" :class="{ 'on': i === sel }"
+                                @mousemove="sel = i" @click="abrirResultado(r)">
+                            <span class="ly-pal-i" :class="r.tipo === 'paciente' && 'es-pac'">
+                                <template x-if="r.tipo === 'paciente'"><span class="ly-pal-ros" x-html="roseta(r.semilla, 32)"></span></template>
+                                <template x-if="r.tipo !== 'paciente'"><i class="bi" :class="r.icono"></i></template>
+                            </span>
+                            <span class="ly-pal-tx">
+                                <b x-text="r.titulo"></b>
+                                <small :class="r.tipo === 'paciente' && 't mono'" x-text="r.sub"></small>
+                            </span>
+                            <em class="ly-pal-alg" x-show="r.alergia" x-text="r.alergia"></em>
+                            <i class="bi bi-arrow-return-left ly-pal-enter" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </template>
+
+                <div class="ly-pal-vacio" x-show="!resultados.length && !buscando">
+                    <template x-if="q.trim().length >= 2">
+                        <p><b>Sin resultados para «<span x-text="q.trim()"></span>»</b>Prueba con el apellido, la CURP o el celular del paciente.</p>
+                    </template>
+                    <template x-if="q.trim().length < 2">
+                        <p><b>Escribe para buscar</b>Pacientes, módulos y acciones rápidas.</p>
+                    </template>
+                </div>
+            </div>
+
+            <div class="ly-pal-pie">
+                <span><kbd>↑</kbd><kbd>↓</kbd> moverse</span>
+                <span><kbd>↵</kbd> abrir</span>
+                <span><kbd>Esc</kbd> cerrar</span>
+                <span class="ly-pal-ayuda">Busca pacientes por nombre, CURP, código o celular</span>
+            </div>
+        </div>
+    </div>
+
+    <script type="application/json" id="ly-nav">{!! json_encode(['modulos' => $navJs, 'acciones' =>$accionesJs, 'buscar' => \Illuminate\Support\Facades\Route::has('buscar.global') ? route('buscar.global') : null, 'semilla' => optional($user)->email ?? $nombreUsuario], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) !!}</script>
+
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const progressBar = document.getElementById('top-progress-bar');
-
             document.body.addEventListener('click', (e) => {
                 const link = e.target.closest('a');
-
                 if (link && link.href) {
                     const targetUrl = link.href;
                     const isExternal = link.target === '_blank';
@@ -636,13 +803,13 @@
         });
     </script>
 
-    <!-- NOTIFICACIONES TOAST -->
+    <!-- TOASTS -->
     <script>
         window.notificar = function(mensaje, tipo = 'success') {
             const colores = {
-                success: { border: 'border-teal-200', icon: '#0d9488' },
-                error:   { border: 'border-rose-200', icon: '#f43f5e' },
-                warning: { border: 'border-amber-200', icon: '#f59e0b' },
+                success: { border: 'border-teal-200', icon: '#0b5a54' },
+                error:   { border: 'border-rose-200', icon: '#c8102e' },
+                warning: { border: 'border-amber-200', icon: '#9a5800' },
                 info:    { border: 'border-sky-200', icon: '#0284c7' }
             };
 

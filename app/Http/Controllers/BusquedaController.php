@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Paciente;
 use Illuminate\Http\Request;
 
 class BusquedaController extends Controller
@@ -38,7 +39,7 @@ class BusquedaController extends Controller
                 'keywords' => ['dashboard', 'inicio', 'panel', 'resumen', 'principal', 'estadisticas'],
                 'categoria' => 'General',
                 'icono' => 'bi-speedometer2',
-                'route' => 'dashboard',
+                'route' => 'home',
                 'permiso' => null,
             ],
             [
@@ -128,6 +129,43 @@ class BusquedaController extends Controller
                     'titulo'    => $mod['nombre'],
                     'subtitulo' => 'Ir al módulo de ' . $mod['nombre'],
                     'url'       => route($mod['route']),
+                ];
+            }
+        }
+
+        // Pacientes: nombre, apellidos, CURP, código o celular (cada palabra debe coincidir)
+        if (\Route::has('pacientes.index') && $tienePermiso('Pacientes')) {
+            $palabras = collect(preg_split('/\s+/', mb_strtoupper(trim($request->input('q', '')), 'UTF-8')))
+                ->filter()
+                ->take(4);
+
+            $pacientes = Paciente::query()
+                ->with('alergias')
+                ->where(function ($consulta) use ($palabras) {
+                    foreach ($palabras as $palabra) {
+                        $consulta->where(function ($w) use ($palabra) {
+                            foreach (['primer_nombre', 'apellido_paterno', 'apellido_materno', 'rut', 'codigo', 'celular'] as $columna) {
+                                $w->orWhere($columna, 'like', '%' . $palabra . '%');
+                            }
+                        });
+                    }
+                })
+                ->orderBy('apellido_paterno')
+                ->limit(6)
+                ->get();
+
+            foreach ($pacientes as $p) {
+                $apellidos = trim($p->apellido_paterno . ' ' . $p->apellido_materno);
+                $alergias  = $p->alergias->pluck('descripcion')->filter()->values();
+
+                $resultados[] = [
+                    'categoria' => 'Pacientes',
+                    'icono'     => 'bi-person-vcard',
+                    'titulo'    => trim($apellidos . ', ' . $p->primer_nombre, ', '),
+                    'subtitulo' => collect([$p->rut ?: 'SIN CURP', $p->codigo])->filter()->implode(' · '),
+                    'alergia'   => $alergias->isNotEmpty() ? 'Alergia: ' . $alergias->first() . ($alergias->count() > 1 ? ' +' . ($alergias->count() - 1) : '') : null,
+                    'semilla'   => $p->rut ?: ($p->codigo ?: (string) $p->id),
+                    'url'       => route('pacientes.index', ['p' => $p->id]),
                 ];
             }
         }

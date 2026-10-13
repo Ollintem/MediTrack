@@ -12,18 +12,19 @@
     $puedeEditar   = auth()->user()->tienePermiso('Roles', 'editar');
     $puedeEliminar = auth()->user()->tienePermiso('Roles', 'eliminar');
 
+    // Mapeo con los 12 módulos activos de MediTrack (incluye Configuración)
     $iconos = [
         'Pacientes'     => 'bi-people-fill',
         'Citas'         => 'bi-calendar-event-fill',
-        'Facturación'   => 'bi-credit-card-fill',
+        'Consultas'     => 'bi-clipboard2-pulse-fill',
+        'Consultorios'  => 'bi-hospital-fill',
+        'Recetas'       => 'bi-file-earmark-medical-fill',
+        'POS'           => 'bi-shop',
+        'Caja'          => 'bi-cash-coin',
         'Inventario'    => 'bi-box-seam-fill',
         'Personal'      => 'bi-person-badge-fill',
         'Roles'         => 'bi-shield-lock-fill',
-        'Reportes'      => 'bi-graph-up-arrow',
-        'Configuración' => 'bi-gear-fill',
-        'Recetas'       => 'bi-prescription2',
-        'Consultas'     => 'bi-clipboard2-pulse-fill',
-        'Consultorios'  => 'bi-building-fill',
+        'Configuración' => 'bi-gear-fill',          // <--- Ícono del módulo
         'Bitácora'      => 'bi-journal-text',
     ];
 
@@ -33,7 +34,7 @@
         'icono'  => $iconos[$m->nombre] ?? 'bi-app-indicator',
     ])->values();
 
-    // Rol del usuario actual (para avisar si se quita a sí mismo el acceso a Roles)
+    // Rol del usuario actual
     $miRolId = data_get(auth()->user(), 'rol_id') ?? data_get(auth()->user(), 'role_id') ?? data_get(auth()->user(), 'rol.id');
     $moduloRolesId = optional($modulos->firstWhere('nombre', 'Roles'))->id;
 
@@ -49,7 +50,6 @@
             ];
         }
 
-        // Cuántos usuarios tienen este rol (si el modelo tiene la relación)
         $usuarios = $rol->usuarios_count ?? $rol->users_count ?? null;
         if ($usuarios === null) {
             foreach (['usuarios', 'users'] as $rel) {
@@ -64,7 +64,6 @@
     })->values();
 
     $acciones = [
-        // clave, texto, icono, color activo
         ['ver',      'Ver',      'bi-eye-fill',    'bg-teal-100 text-teal-800 border-teal-200'],
         ['crear',    'Crear',    'bi-plus-lg',     'bg-emerald-100 text-emerald-800 border-emerald-200'],
         ['editar',   'Editar',   'bi-pencil-fill', 'bg-amber-100 text-amber-800 border-amber-200'],
@@ -177,7 +176,7 @@
                             <circle cx="28" cy="28" r="23" fill="none" stroke="#e2e8f0" stroke-width="5"/>
                             <circle cx="28" cy="28" r="23" fill="none" stroke-width="5" stroke-linecap="round"
                                     :stroke="colorCobertura(cobertura(rol))" stroke-dasharray="144.5"
-                                    :stroke-dashoffset="144.5 - 144.5 * cobertura(rol) / 100"
+                                    :stroke-dashoffset="144.5 - (144.5 * cobertura(rol) / 100)"
                                     style="transition: stroke-dashoffset 1s cubic-bezier(.16,1,.3,1)"/>
                         </svg>
                         <span class="absolute inset-0 flex items-center justify-center text-[11px] font-black text-slate-700 tabular-nums" x-text="cobertura(rol) + '%'"></span>
@@ -210,7 +209,7 @@
                     </div>
                 </div>
 
-                {{-- Módulos: primero los que tienen acceso --}}
+                {{-- Módulos --}}
                 <div class="p-5 space-y-2">
                     <template x-for="mod in modulosOrdenados(rol).slice(0, rol._verTodo ? 999 : Math.max(modulosConAcceso(rol), 3))" :key="mod.id">
                         <div class="p-2.5 rounded-2xl border flex items-center justify-between gap-2 transition-all"
@@ -294,7 +293,7 @@
         @endif
     </div>
 
-    {{-- Modal para crear (usa: openCreateModal) --}}
+    {{-- Modal para crear --}}
     @include('personal.modalRoles')
 
     {{-- ===================== MODAL: EDITAR ROL ===================== --}}
@@ -329,7 +328,7 @@
                             </button>
                         </div>
                         <div class="relative mt-4 h-1.5 rounded-full bg-white/15 overflow-hidden">
-                            <div class="h-full rounded-full bg-gradient-to-r from-emerald-300 to-teal-200 transition-all duration-500" :style="'width:' + (modulos.length ? totalEdicion / (modulos.length * 4) * 100 : 0) + '%'"></div>
+                            <div class="h-full rounded-full bg-gradient-to-r from-emerald-300 to-teal-200 transition-all duration-500" :style="'width:' + (modulos.length ? (totalEdicion / (modulos.length * 4)) * 100 : 0) + '%'"></div>
                         </div>
                     </div>
 
@@ -395,13 +394,13 @@
                                                         <span x-text="mod.nombre"></span>
                                                     </button>
                                                 </td>
-                                                @foreach ($acciones as [$clave, $texto, $icono, $colorActivo])
+                                                @foreach ($acciones as [$clave, $texto, $icono,$colorActivo])
                                                     <td class="p-2 text-center">
                                                         <label class="inline-flex items-center justify-center cursor-pointer">
                                                             <input type="checkbox" :name="'permisos[' + mod.id + '][{{ $clave }}]'" value="1"
                                                                    x-model="editPermisos[mod.id].{{ $clave }}" @change="ajustarDependencias(mod.id, '{{ $clave }}')" class="sr-only peer">
                                                             <span class="w-9 h-9 rounded-2xl flex items-center justify-center text-sm border-2 border-transparent bg-slate-100 text-slate-300 transition-all duration-200 hover:scale-110 active:scale-90
-                                                                         peer-checked:{{ str_replace(' ', ' peer-checked:', $colorActivo) }} peer-focus-visible:ring-2 peer-focus-visible:ring-teal-400"
+                                                                        peer-checked:{{ str_replace(' ', ' peer-checked:', $colorActivo) }} peer-focus-visible:ring-2 peer-focus-visible:ring-teal-400"
                                                                   title="{{ $texto }}">
                                                                 <i class="bi {{ $icono }}"></i>
                                                             </span>
@@ -487,10 +486,8 @@
             vista: 'tarjetas',
             resumenMostrado: { roles: 0, modulos: 0, permisos: 0, cobertura: 0 },
 
-            // ----- Modal crear (lo usa personal.modalRoles) -----
             openCreateModal: false,
 
-            // ----- Modal editar -----
             openEditModal: false,
             editRolId: null,
             editRolNombre: '',
@@ -505,7 +502,6 @@
                 if (this.errores.length) setTimeout(() => avisoRoles(this.errores[0], 'warning'), 300);
             },
 
-            // ----- Resumen -----
             get resumen() {
                 const permisos = this.roles.reduce((n, r) => n + this.contarPermisos(r.permisos), 0);
                 const posibles = this.roles.length * this.modulos.length * 4;
@@ -513,7 +509,7 @@
                     roles: this.roles.length,
                     modulos: this.modulos.length,
                     permisos,
-                    cobertura: posibles ? Math.round(permisos / posibles * 100) : 0
+                    cobertura: posibles ? Math.round((permisos / posibles) * 100) : 0
                 };
             },
             animarResumen() {
@@ -532,8 +528,7 @@
                 });
             },
 
-            // ----- Utilidades -----
-            normalizar(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); },
+            normalizar(s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(); },
             get rolesFiltrados() {
                 const q = this.normalizar(this.busqueda);
                 return this.roles.filter(r => !q || this.normalizar(r.nombre).includes(q));
@@ -544,7 +539,7 @@
             },
             cobertura(rol) {
                 const posibles = this.modulos.length * 4;
-                return posibles ? Math.round(this.contarPermisos(rol.permisos) / posibles * 100) : 0;
+                return posibles ? Math.round((this.contarPermisos(rol.permisos) / posibles) * 100) : 0;
             },
             colorCobertura(pct) { return pct >= 75 ? '#0d9488' : pct >= 40 ? '#0ea5e9' : pct > 0 ? '#f59e0b' : '#cbd5e1'; },
             tieneAcceso(rol, modId) { const p = rol.permisos[modId]; return !!(p && ACCIONES.some(a => p[a])); },
@@ -555,7 +550,6 @@
             esMiRol(rol) { return this.miRolId !== null && String(rol.id) === String(this.miRolId); },
             urlRol(id) { return id ? `${URL_ROLES}/${id}` : '#'; },
 
-            // ----- Edición -----
             cargarEdicion(rol) {
                 this.editRolId = rol.id;
                 this.editRolNombre = rol.nombre;
@@ -590,7 +584,6 @@
                 }
                 this.openEditModal = false;
             },
-            // Crear / editar / eliminar requieren poder ver; quitar "ver" quita lo demás
             ajustarDependencias(modId, accion) {
                 const p = this.editPermisos[modId];
                 if (accion !== 'ver' && p[accion]) p.ver = true;
@@ -617,7 +610,6 @@
                 });
             },
 
-            // ----- Eliminar -----
             eliminar(rol) {
                 if (this.esMiRol(rol)) return;
                 const aviso = rol.usuarios ? `<br><span style="font-size:12px;color:#b45309">${rol.usuarios} ${rol.usuarios === 1 ? 'usuario tiene' : 'usuarios tienen'} este rol asignado.</span>` : '';

@@ -45,14 +45,37 @@ class CitaController extends Controller
 
     public function index()
     {
-        $pacientes = Paciente::all() ?? collect();
-        $medicos = Personal::all() ?? collect();
-        $consultorios = Consultorio::all() ?? collect();
+        $pacientes    = Paciente::with('alergias')->get();
+        $medicos      = Personal::with('usuario.rol')->where('estado', '!=', 'Inactivo')->orderBy('nombre_completo')->get();
 
-        // Obtenemos las citas reales con sus relaciones para mostrarlas en el calendario
-        $citas = Cita::with(['paciente', 'personal', 'consultorio'])->get();
+        // Solo el personal con rol de médico atiende citas (enfermería, recepción, etc. no aparecen).
+        // Si nadie tiene ese rol todavía, se muestra a todo el personal para no dejar la agenda vacía.
+        $esMedico   = fn ($m) => in_array(mb_strtolower(trim((string) optional(optional($m->usuario)->rol)->nombre)), ['doctor', 'doctora', 'médico', 'medico', 'médica', 'medica'], true);
+        $hayMedicos = $medicos->contains($esMedico);
+        $consultorios = Consultorio::orderBy('piso')->orderBy('nombre')->get();
+        $citas        = Cita::with(['paciente.alergias'])->get();
 
-        return view('citas.index', compact('pacientes', 'medicos', 'consultorios', 'citas'));
+        // Forma que consume la vista (tablero del día, mes, pase y formulario)
+        $datosCitas = [
+            'citas'        => $citas->map(fn ($c) => $this->presentar($c))->values(),
+            'pacientes'    => $pacientes->map(fn ($p) => [
+                'id'      => $p->id,
+                'nombre'  => $p->nombre ?: 'Paciente',
+                'curp'    => $p->rut,
+                'alergia' => $p->alergias->pluck('descripcion')->filter()->first(),
+            ])->sortBy('nombre', SORT_NATURAL | SORT_FLAG_CASE)->values(),
+            'medicos'      => $medicos->map(fn ($m) => [
+                'id'           => $m->id,
+                'nombre'       => $m->nombre_completo,
+                'especialidad' => $m->especialidad_principal,
+                'esMedico'     => $hayMedicos ? $esMedico($m) : true,
+            ])->values(),
+            'consultorios' => $consultorios->map(fn ($c) => [
+                'id' => $c->id, 'nombre' => $c->nombre, 'piso' => (string) ($c->piso ?? ''), 'estado' => $c->estado,
+            ])->values(),
+        ];
+
+        return view('citas.index', compact('pacientes', 'medicos', 'consultorios', 'citas', 'datosCitas'));
     }
 
     public function create()
@@ -115,10 +138,14 @@ class CitaController extends Controller
             return $this->errorHorario($request, $mensaje);
         }
 
-        Cita::create($data);
+        $cita = Cita::create($data);
 
         if ($request->wantsJson() || $request->ajax()) {
-            return response()->json(['status' => 'success', 'message' => 'Cita agendada correctamente']);
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Cita agendada correctamente',
+                'cita'    => $this->presentar($cita->fresh(['paciente.alergias'])),
+            ]);
         }
 
         return redirect()->route('citas.index')->with('success', 'Cita registrada correctamente.');
@@ -148,7 +175,11 @@ class CitaController extends Controller
         $cita->update($data);
 
         if ($request->wantsJson() || $request->ajax()) {
-            return response()->json(['status' => 'success', 'message' => 'Cita actualizada correctamente']);
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Cita actualizada correctamente',
+                'cita'    => $this->presentar($cita->fresh(['paciente.alergias'])),
+            ]);
         }
 
         return redirect()->route('citas.index')->with('success', 'Cita actualizada correctamente.');
@@ -174,6 +205,25 @@ class CitaController extends Controller
         }
 
         return redirect()->route('citas.index')->with('success', 'Cita eliminada correctamente.');
+    }
+
+    /** Datos de una cita para la vista. */
+    private function presentar(Cita $c): array
+    {
+        return [
+            'id'             => $c->id,
+            'fecha'          => Carbon::parse($c->fecha)->format('Y-m-d'),
+            'hora'           => Carbon::parse($c->hora)->format('H:i'),
+            'duracion_min'   => (int) ($c->duracion_min ?? 30),
+            'estado'         => $c->estado ?? 'Pendiente',
+            'motivo'         => $c->motivo ?? '',
+            'tipo_consulta'  => $c->tipo_consulta ?? 'Primera Vez',
+            'paciente_id'    => $c->paciente_id,
+            'personal_id'    => $c->personal_id,
+            'consultorio_id' => $c->consultorio_id,
+            'paciente'       => $c->paciente?->nombre ?: 'Paciente',
+            'alergia'        => $c->paciente?->alergias->pluck('descripcion')->filter()->first(),
+        ];
     }
 
     /** Respuesta de error cuando el horario se traslapa. */

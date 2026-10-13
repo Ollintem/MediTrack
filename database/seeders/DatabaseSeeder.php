@@ -17,6 +17,7 @@ use App\Models\MovimientoCaja;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 
 class DatabaseSeeder extends Seeder
 {
@@ -38,11 +39,30 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // 2. Crear Módulos del Sistema
-        $modulos = ['Pacientes', 'Citas', 'Consultas', 'Recetas', 'Facturación', 'Reportes', 'Inventario', 'Usuarios', 'Personal'];
-        foreach ($modulos as $mod) {
-            Modulo::firstOrCreate(['nombre' => $mod]);
-        }
+        // 2. Crear Módulos Reales y Activos del Sistema (Mismo orden que el Sidebar)
+       $modulos = [
+    'Pacientes', 
+    'Citas', 
+    'Consultas', 
+    'Consultorios', 
+    'Recetas', 
+    'POS', 
+    'Caja', 
+    'Inventario', 
+    'Personal', 
+    'Roles', 
+    'Configuración', // <--- Módulo agregado
+    'Bitácora'
+];
+
+foreach ($modulos as $mod) {
+    Modulo::firstOrCreate(['nombre' => $mod]);
+}
+
+// Eliminar de la BD módulos obsoletos si existen
+Modulo::whereNotIn('nombre', $modulos)->delete();
+        // Eliminar de la BD módulos viejos o deshabilitados si existen
+        Modulo::whereNotIn('nombre', $modulos)->delete();
 
         // 3. Crear Roles por defecto
         $rolDoctor = Rol::firstOrCreate(['nombre' => 'Doctor']);
@@ -112,108 +132,100 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // =========================================================
-        // 8. CATEGORÍAS DE INVENTARIO
-        // =========================================================
+        // 8. Categorías de Inventario
         $catAnalgesicos = CategoriaInventario::firstOrCreate(['nombre' => 'ANALGÉSICOS Y ANTIPIRÉTICOS']);
         $catAntibioticos = CategoriaInventario::firstOrCreate(['nombre' => 'ANTIBIÓTICOS']);
         $catGastricos   = CategoriaInventario::firstOrCreate(['nombre' => 'GASTROENTEROLOGÍA']);
         $catInsumos     = CategoriaInventario::firstOrCreate(['nombre' => 'INSUMOS MÉDICOS']);
 
-        // =========================================================
-        // 9. PRODUCTOS DE INVENTARIO (MEDICAMENTOS CON CÓDIGO EAN-13)
-        // =========================================================
+        // 9. Productos de Inventario
         $p1 = ProductoInventario::firstOrCreate(
             ['codigo' => '7501058618210'],
             [
-                'clinica_id'    => $clinica->id,
-                'categoria_id'  => $catAnalgesicos->id,
-                'nombre'        => 'PARACETAMOL 500MG (CAJA C/10 TABLETAS)',
-                'descripcion'   => 'PARACETAMOL ALIVIO DE FIEBRE Y DOLOR',
-                'precio_compra' => 15.00,
-                'precio_venta'  => 35.00,
-                'stock_disponible'  => 45,
-                'stock_minimo'  => 10,
-                'estado'        => 'Normal',
+                'clinica_id'       => $clinica->id,
+                'categoria_id'     => $catAnalgesicos->id,
+                'nombre'           => 'PARACETAMOL 500MG (CAJA C/10 TABLETAS)',
+                'descripcion'      => 'PARACETAMOL ALIVIO DE FIEBRE Y DOLOR',
+                'precio_compra'    => 15.00,
+                'precio_venta'     => 35.00,
+                'stock_disponible' => 45,
+                'stock_minimo'     => 10,
+                'estado'           => 'Normal',
             ]
         );
 
         $p2 = ProductoInventario::firstOrCreate(
             ['codigo' => '7501234567890'],
             [
-                'clinica_id'    => $clinica->id,
-                'categoria_id'  => $catAntibioticos->id,
-                'nombre'        => 'AMOXICILINA 500MG (CAJA C/12 CÁPSULAS)',
-                'descripcion'   => 'AMOXICILINA BACTERICIDA DE AMPLIO ESPECTRO',
-                'precio_compra' => 45.00,
-                'precio_venta'  => 98.00,
-                'stock_disponible'  => 20,
-                'stock_minimo'  => 5,
-                'estado'        => 'Normal',
+                'clinica_id'       => $clinica->id,
+                'categoria_id'     => $catAntibioticos->id,
+                'nombre'           => 'AMOXICILINA 500MG (CAJA C/12 CÁPSULAS)',
+                'descripcion'      => 'AMOXICILINA BACTERICIDA DE AMPLIO ESPECTRO',
+                'precio_compra'    => 45.00,
+                'precio_venta'     => 98.00,
+                'stock_disponible' => 20,
+                'stock_minimo'     => 5,
+                'estado'           => 'Normal',
             ]
         );
 
         $p3 = ProductoInventario::firstOrCreate(
             ['codigo' => '7509876543210'],
             [
-                'clinica_id'    => $clinica->id,
-                'categoria_id'  => $catGastricos->id,
-                'nombre'        => 'OMEPRAZOL 20MG (CAJA C/14 CÁPSULAS)',
-                'descripcion'   => 'OMEPRAZOL INHIBIDOR DE LA BOMBA DE PROTONES',
-                'precio_compra' => 28.00,
-                'precio_venta'  => 65.00,
-                'stock_disponible'  => 8,
-                'stock_minimo'  => 10,
-                'estado'        => 'Bajo Stock',
+                'clinica_id'       => $clinica->id,
+                'categoria_id'     => $catGastricos->id,
+                'nombre'           => 'OMEPRAZOL 20MG (CAJA C/14 CÁPSULAS)',
+                'descripcion'      => 'OMEPRAZOL INHIBIDOR DE LA BOMBA DE PROTONES',
+                'precio_compra'    => 28.00,
+                'precio_venta'     => 65.00,
+                'stock_disponible' => 8,
+                'stock_minimo'     => 10,
+                'estado'           => 'Bajo Stock',
             ]
         );
 
         $p4 = ProductoInventario::firstOrCreate(
             ['codigo' => '7501112223334'],
             [
-                'clinica_id'    => $clinica->id,
-                'categoria_id'  => $catAnalgesicos->id,
-                'nombre'        => 'IBUPROFENO 400MG (CAJA C/10 TABLETAS)',
-                'descripcion'   => 'IBUPROFENO ANTIINFLAMATORIO Y ANALGÉSICO',
-                'precio_compra' => 20.00,
-                'precio_venta'  => 48.00,
-                'stock_disponible'  => 30,
-                'stock_minimo'  => 8,
-                'estado'        => 'Normal',
+                'clinica_id'       => $clinica->id,
+                'categoria_id'     => $catAnalgesicos->id,
+                'nombre'           => 'IBUPROFENO 400MG (CAJA C/10 TABLETAS)',
+                'descripcion'      => 'IBUPROFENO ANTIINFLAMATORIO Y ANALGÉSICO',
+                'precio_compra'    => 20.00,
+                'precio_venta'     => 48.00,
+                'stock_disponible' => 30,
+                'stock_minimo'     => 8,
+                'estado'           => 'Normal',
             ]
         );
 
         $p5 = ProductoInventario::firstOrCreate(
             ['codigo' => '7504445556667'],
             [
-                'clinica_id'    => $clinica->id,
-                'categoria_id'  => $catInsumos->id,
-                'nombre'        => 'JERINGA DESECHABLE 5ML C/AGUJA 21G (PIEZA)',
-                'descripcion'   => 'JERINGA ESTÉRIL DE UN SOLO USO',
-                'precio_compra' => 2.50,
-                'precio_venta'  => 7.50,
-                'stock_disponible'  => 100,
-                'stock_minimo'  => 25,
-                'estado'        => 'Normal',
+                'clinica_id'       => $clinica->id,
+                'categoria_id'     => $catInsumos->id,
+                'nombre'           => 'JERINGA DESECHABLE 5ML C/AGUJA 21G (PIEZA)',
+                'descripcion'      => 'JERINGA ESTÉRIL DE UN SOLO USO',
+                'precio_compra'    => 2.50,
+                'precio_venta'     => 7.50,
+                'stock_disponible' => 100,
+                'stock_minimo'     => 25,
+                'estado'           => 'Normal',
             ]
         );
 
-        // Registros de auditoría inicial de entrada de mercancía
+        // Movimientos de auditoría inicial
         foreach ([$p1, $p2, $p3, $p4, $p5] as $prod) {
             MovimientoInventario::firstOrCreate(
                 ['producto_id' => $prod->id, 'tipo' => 'Entrada', 'motivo' => 'Inventario Inicial'],
                 [
                     'personal_id' => $personal->id,
-                    'cantidad'    => $prod->stock_actual,
+                    'cantidad'    => $prod->stock_disponible,
                 ]
             );
         }
 
-        // =========================================================
-        // 10. TICKETS DE PRUEBA (POS / TERMINAL DE VENTA Y CAJA)
-        // =========================================================
-
-        // A. Ticket 1: Estado PENDIENTE (En reserva temporal de 25 minutos para Caja)
+        // 10. Tickets de prueba
         $ticketPendiente = TicketVenta::firstOrCreate(
             ['codigo_ticket' => 'TCK-849201'],
             [
@@ -231,7 +243,7 @@ class DatabaseSeeder extends Seeder
                 'cantidad'        => 1,
                 'precio_unitario' => 35.00,
                 'subtotal'        => 35.00,
-            ]
+                ]
         );
 
         TicketDetalle::firstOrCreate(
@@ -243,7 +255,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // B. Ticket 2: Estado PAGADO (Cobrado en Caja Central, listo para despacho en Farmacia)
         $ticketPagado = TicketVenta::firstOrCreate(
             ['codigo_ticket' => 'TCK-102938'],
             [
@@ -264,7 +275,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Registra el ingreso económico en caja para el ticket pagado
         MovimientoCaja::firstOrCreate(
             ['ticket_id' => $ticketPagado->id],
             [

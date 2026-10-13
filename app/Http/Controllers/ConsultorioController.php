@@ -35,8 +35,12 @@ class ConsultorioController extends Controller
     {
         // get() trae TODAS las columnas, incluidas pos_x y pos_y
         $consultorios = Consultorio::orderBy('id')->get();
+        $medicos      = $this->medicosEnConsulta();
 
-        return view('consultorios.index', compact('consultorios'));
+        // Forma que consume la vista (plano, placa y lista)
+        $consultoriosJs = $consultorios->map(fn ($c) => $this->presentar($c, $medicos))->values();
+
+        return view('consultorios.index', compact('consultorios', 'consultoriosJs'));
     }
 
     public function store(Request $request)
@@ -48,9 +52,12 @@ class ConsultorioController extends Controller
         // se ignora cualquier valor que llegue del formulario y se fuerza en el servidor.
         $datos['estado'] = 'Disponible';
 
-        Consultorio::create($datos);
+        $consultorio = Consultorio::create($datos);
 
-        return response()->json(['message' => 'Consultorio registrado correctamente']);
+        return response()->json([
+            'message'     => 'Consultorio registrado correctamente',
+            'consultorio' => $this->presentar($consultorio->fresh()),
+        ], 201);
     }
 
     public function update(Request $request, $id)
@@ -58,9 +65,13 @@ class ConsultorioController extends Controller
         $datos = $request->validate($this->reglas(), $this->mensajes());
         $datos['clinica_id'] = $datos['clinica_id'] ?? 1;
 
-        Consultorio::findOrFail($id)->update($datos);
+        $consultorio = Consultorio::findOrFail($id);
+        $consultorio->update($datos);
 
-        return response()->json(['message' => 'Consultorio actualizado correctamente']);
+        return response()->json([
+            'message'     => 'Consultorio actualizado correctamente',
+            'consultorio' => $this->presentar($consultorio->fresh(), $this->medicosEnConsulta()),
+        ]);
     }
 
     public function destroy($id)
@@ -104,24 +115,42 @@ class ConsultorioController extends Controller
      */
     public function estados()
     {
-        $enCurso = Cita::with('personal')
-            ->where('estado', 'En curso')
-            ->get()
-            ->keyBy('consultorio_id');
+        $medicos = $this->medicosEnConsulta();
 
-        $lista = Consultorio::all()->map(function ($c) use ($enCurso) {
-            $cita = $enCurso->get($c->id);
-            $medico = $cita
-                ? (data_get($cita, 'personal.nombre_completo') ?: data_get($cita, 'personal.nombre'))
-                : null;
-
-            return [
-                'id'          => $c->id,
-                'estado'      => $c->estado,
-                'ocupado_por' => $c->estado === 'Ocupado' ? $medico : null,
-            ];
-        })->values();
+        $lista = Consultorio::all()->map(fn ($c) => [
+            'id'          => $c->id,
+            'estado'      => $c->estado,
+            'ocupado_por' => $c->estado === 'Ocupado' ? $medicos->get($c->id) : null,
+        ])->values();
 
         return response()->json($lista);
+    }
+
+    /** Médico que atiende en cada consultorio con una consulta en curso: [consultorio_id => nombre]. */
+    private function medicosEnConsulta()
+    {
+        return Cita::with('personal')
+            ->where('estado', 'En curso')
+            ->get()
+            ->keyBy('consultorio_id')
+            ->map(fn ($cita) => data_get($cita, 'personal.nombre_completo') ?: data_get($cita, 'personal.nombre'));
+    }
+
+    /** Datos del consultorio para la vista. */
+    private function presentar(Consultorio $c, $medicos = null): array
+    {
+        $estado = in_array($c->estado, ['Disponible', 'Ocupado', 'Mantenimiento'], true) ? $c->estado : null;
+
+        return [
+            'id'         => $c->id,
+            'clinica_id' => $c->clinica_id,
+            'nombre'     => $c->nombre,
+            'piso'       => (string) ($c->piso ?? ''),
+            'estado'     => $estado ? mb_strtolower($estado) : 'desconocido',
+            'ocupadoPor' => $estado === 'Ocupado' && $medicos ? $medicos->get($c->id) : null,
+            'x'          => $c->pos_x,
+            'y'          => $c->pos_y,
+            'creado'     => $c->created_at ? $c->created_at->locale('es')->translatedFormat('j M Y') : null,
+        ];
     }
 }
