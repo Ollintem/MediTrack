@@ -19,37 +19,61 @@
                 </p>
             </div>
             
-            <div class="flex flex-wrap items-center gap-3">
+            <div class="flex items-center gap-3">
                 <!-- BOTÓN HISTORIAL DE TICKETS GENERADOS -->
                 <button type="button" 
-                        @click="openHistorialModal = true" 
-                        class="px-5 py-3 bg-white/15 hover:bg-white/25 text-white font-black rounded-2xl text-xs backdrop-blur-md border border-white/20 shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer">
-                    <i class="bi bi-receipt-cutoff text-amber-300 text-base"></i>
+                        @click="openHistorialModal = true"
+                        class="px-4 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-2xl text-xs font-black uppercase flex items-center gap-2 backdrop-blur-md border border-white/20 transition-all shadow-sm cursor-pointer active:scale-95">
+                    <i class="bi bi-receipt-cutoff text-amber-300"></i>
                     <span>CONSULTAR TICKETS GENERADOS</span>
                 </button>
 
-                <div class="flex items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/20">
-                    <div class="w-10 h-10 rounded-xl bg-amber-400/20 text-amber-300 flex items-center justify-center font-black text-lg">
+                <div class="flex items-center gap-3 bg-white/10 backdrop-blur-md p-2.5 px-4 rounded-2xl border border-white/20">
+                    <div class="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-300 flex items-center justify-center font-black text-sm">
                         <i class="bi bi-clock-history"></i>
                     </div>
                     <div>
-                        <span class="block text-[10px] font-bold text-teal-200 uppercase">RESERVA DE STOCK</span>
-                        <span class="text-xs font-black uppercase text-amber-300">25 MINUTOS DE VIGENCIA</span>
+                        <span class="block text-[9px] font-bold text-teal-200 uppercase">RESERVA DE STOCK</span>
+                        <span class="text-[11px] font-black uppercase text-amber-300">25 MINUTOS DE VIGENCIA</span>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- SECCIÓN DE PEDIDOS POR ENTREGAR (TICKETS PAGADOS PENDIENTES DE DESPACHO) -->
+    <!-- SECCIÓN DE PEDIDOS POR ENTREGAR CON BUSCADOR RÁPIDO TCK- Y BOTÓN ENTREGAR -->
     <div x-show="obtenerTicketsPorEntregar().length > 0" x-cloak class="bg-gradient-to-r from-emerald-50 via-teal-50 to-white border border-emerald-200 p-5 rounded-3xl shadow-xs space-y-3">
-        <div class="flex items-center justify-between border-b border-emerald-200/60 pb-2">
+        <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-emerald-200/60 pb-3 gap-3">
             <h3 class="text-xs font-black text-emerald-900 uppercase flex items-center gap-2">
                 <i class="bi bi-box-seam-fill text-emerald-600 text-sm"></i> 
                 <span>PEDIDOS POR ENTREGAR (PAGADOS)</span>
                 <span class="bg-emerald-200 text-emerald-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full" x-text="`${obtenerTicketsPorEntregar().length} LISTOS`"></span>
             </h3>
-            <span class="text-[10px] font-bold text-emerald-700 uppercase">SURTIR Y ENTREGAR MEDICAMENTO AL CLIENTE</span>
+
+            <!-- BUSCADOR CON PREFIJO TCK- Y ACCIÓN DE ENTREGA -->
+            <div class="flex items-center gap-2">
+                <div class="relative flex items-center bg-white border border-emerald-300 rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500 transition-all shadow-xs">
+                    <span class="bg-emerald-100 text-emerald-900 font-black text-xs px-3 py-2 select-none border-r border-emerald-200">
+                        TCK-
+                    </span>
+                    <input type="text" 
+                           x-model="codigoRapidoIngresado" 
+                           @keydown.enter.prevent.stop="entregarPorCodigoRapido()"
+                           maxlength="10"
+                           placeholder="XOFNZS..." 
+                           class="w-32 sm:w-36 bg-transparent px-3 py-1.5 text-xs font-black text-gray-900 uppercase focus:outline-none placeholder:text-gray-400">
+                </div>
+
+                <button type="button" 
+                        @click.prevent.stop="entregarPorCodigoRapido()"
+                        :disabled="!codigoRapidoIngresado.trim() || procesandoEntrega"
+                        class="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:bg-gray-300 text-white font-extrabold text-[10px] uppercase rounded-2xl shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer">
+                    <i class="bi bi-box-arrow-right text-xs"></i>
+                    <span x-text="procesandoEntrega ? 'SURTIENDO...' : 'ENTREGAR'"></span>
+                </button>
+            </div>
+
+            <span class="text-[10px] font-bold text-emerald-700 uppercase hidden lg:inline">SURTIR Y ENTREGAR MEDICAMENTO AL CLIENTE</span>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[220px] overflow-y-auto pr-1">
@@ -57,15 +81,15 @@
                 <div class="p-3 bg-white rounded-2xl border border-emerald-100 shadow-xs flex items-center justify-between gap-2">
                     <div class="space-y-0.5 min-w-0">
                         <div class="flex items-center gap-1.5">
-                            <span class="font-black text-emerald-800 text-xs truncate" x-text="tck.codigo_ticket"></span>
+                            <span class="font-black text-emerald-800 text-xs truncate" x-text="tck.codigo_ticket || tck.codigo"></span>
                             <span class="text-[9px] font-black bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md uppercase">PAGADO</span>
                         </div>
                         <p class="text-[10px] font-semibold text-gray-500 uppercase truncate" x-text="`PACIENTE: ${tck.paciente ? (tck.paciente.nombre_completo || tck.paciente.primer_nombre) : 'PÚBLICO GENERAL'}`"></p>
-                        <p class="text-[10px] font-black text-teal-800" x-text="`$${parseFloat(tck.monto_total).toFixed(2)}`"></p>
+                        <p class="text-[10px] font-black text-teal-800" x-text="`$${parseFloat(tck.monto_total || 0).toFixed(2)}`"></p>
                     </div>
 
                     <button type="button" 
-                            @click="marcarComoEntregado(tck)" 
+                            @click.prevent.stop="marcarComoEntregado(tck)" 
                             :disabled="procesandoEntregado === tck.id"
                             class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white font-extrabold rounded-xl text-[10px] uppercase transition-all shadow-xs active:scale-95 flex items-center gap-1 cursor-pointer shrink-0">
                         <i class="bi bi-check2-circle text-xs"></i>
@@ -76,235 +100,220 @@
         </div>
     </div>
 
-    <!-- PANEL PRINCIPAL DEL POS (2 COLUMNAS) -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+    <!-- PANEL PRINCIPAL POS (CATÁLOGO + CARRITO) -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-        <!-- COLUMNA IZQUIERDA: CATÁLOGO Y BÚSQUEDA (7 COLS) -->
+        <!-- CATÁLOGO Y BUSCADOR (COLUMNA IZQUIERDA - 7 COLS) -->
         <div class="lg:col-span-7 space-y-4">
-            
-            <!-- BUSCADOR PRINCIPAL -->
-            <div class="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm space-y-3">
-                <label class="block text-[11px] font-extrabold text-gray-700 uppercase">BUSCAR MEDICAMENTO (NOMBRE O CÓDIGO DE BARRAS)</label>
+            <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-4">
+                
+                <!-- BUSCADOR CON LECTOR EAN-13 / NOMBRE -->
                 <div class="relative">
-                    <i class="bi bi-search absolute left-4 top-3 text-gray-400 text-sm"></i>
+                    <i class="bi bi-search absolute left-4 top-3.5 text-gray-400 text-xs"></i>
                     <input type="text" 
                            x-model="searchQuery" 
-                           @input="filtrarProductos()"
                            @keydown.enter.prevent="buscarPorCodigoExacto()"
-                           placeholder="ESCRIBE NOMBRE O ESCANEA CÓDIGO DE BARRAS..." 
-                           class="w-full pl-11 pr-4 py-2.5 rounded-2xl border border-gray-200 text-xs font-bold uppercase focus:ring-2 focus:ring-teal-500 focus:outline-none transition-all">
+                           placeholder="ESCANEAR CÓDIGO DE BARRAS O BUSCAR MEDICAMENTO..." 
+                           class="w-full bg-slate-50 border border-gray-200 focus:border-teal-500 focus:bg-white text-xs font-bold rounded-2xl pl-10 pr-4 py-3 focus:outline-none uppercase placeholder:text-gray-400 transition-all">
                 </div>
-            </div>
 
-            <!-- GRILLA DE PRODUCTOS -->
-            <div class="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm min-h-[420px] flex flex-col justify-between">
+                <!-- LISTA DE PRODUCTOS -->
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-1">
-                    <template x-for="prod in productosFiltrados" :key="prod.id">
-                        <div @click="agregarAlCarrito(prod)" 
-                             class="p-3.5 rounded-2xl border border-gray-100 hover:border-teal-300 hover:bg-teal-50/40 transition-all cursor-pointer group flex flex-col justify-between space-y-2 relative overflow-hidden bg-white shadow-xs">
-                            
-                            <!-- ENCABEZADO Y NOMBRE -->
-                            <div class="space-y-1">
-                                <div class="flex justify-between items-start gap-1">
-                                    <span class="text-[9px] font-black uppercase text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md truncate max-w-[120px]" 
-                                          x-text="prod.categoria ? prod.categoria.nombre : 'MEDICAMENTO'"></span>
-                                    <span class="text-[10px] font-extrabold uppercase text-gray-400" x-text="prod.codigo || prod.codigo_barras || 'S/C'"></span>
-                                </div>
-                                <h4 class="text-xs font-black text-gray-800 uppercase leading-snug group-hover:text-teal-700 transition-colors" x-text="prod.nombre"></h4>
+                    @foreach($productos as $prod)
+                    <div x-show="cumpleFiltro('{{ strtoupper($prod->codigo ?? $prod->codigo_barras ?? '') }}', '{{ strtoupper($prod->nombre) }}')"
+                         @click="agregarAlCarrito({{ json_encode($prod) }})"
+                         class="p-4 rounded-2xl border transition-all flex flex-col justify-between space-y-2 select-none {{ ($prod->stock_disponible ?? $prod->stock_actual) <= 0 ? 'bg-gray-100/70 border-gray-200 opacity-60 cursor-not-allowed' : 'bg-slate-50/50 hover:bg-teal-50/50 hover:border-teal-200 border-gray-100 cursor-pointer' }}">
+                        <div>
+                            <div class="flex justify-between items-start gap-1">
+                                <span class="text-[10px] font-extrabold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-100">
+                                    {{ strtoupper($prod->codigo ?? $prod->codigo_barras ?? 'S/C') }}
+                                </span>
+                                <span class="text-xs font-black text-gray-800">
+                                    ${{ number_format($prod->precio_venta, 2) }}
+                                </span>
                             </div>
+                            <h4 class="text-xs font-extrabold text-gray-800 uppercase mt-2 line-clamp-2">
+                                {{ strtoupper($prod->nombre) }}
+                            </h4>
+                        </div>
 
-                            <!-- INFORMACIÓN DE STOCK -->
-                            <div class="pt-2 border-t border-gray-100 space-y-1.5">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <span class="block text-[9px] font-bold text-gray-400 uppercase">DISPONIBLE:</span>
-                                        <span class="text-xs font-black" 
-                                              :class="obtenerStockDisponible(prod) > 5 ? 'text-emerald-600' : 'text-rose-600'" 
-                                              x-text="`${obtenerStockDisponible(prod)} PZAS.`"></span>
-                                        
-                                        <span class="text-[9px] font-extrabold text-gray-400/80 block" 
-                                              x-text="`(${prod.stock_actual || 0} TOTAL)`"></span>
-                                    </div>
-
-                                    <span class="text-sm font-black text-teal-800" x-text="`$${parseFloat(prod.precio_venta).toFixed(2)}`"></span>
-                                </div>
+                        <!-- REPRESENTACIÓN DE STOCK -->
+                        <div class="flex items-center justify-between pt-2 border-t border-gray-200/60 text-xs">
+                            <span class="text-[10px] font-bold text-gray-400">DISPONIBLE:</span>
+                            <div class="flex items-baseline gap-1">
+                                @if(($prod->stock_disponible ?? $prod->stock_actual) <= 0)
+                                    <span class="text-[9px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200 uppercase">AGOTADO</span>
+                                @else
+                                    <span class="font-black text-gray-800">
+                                        {{ $prod->stock_disponible ?? $prod->stock_actual }} PZAS.
+                                    </span>
+                                    <span class="text-[10px] font-semibold text-gray-400/80">
+                                        ({{ $prod->stock_actual }} REAL)
+                                    </span>
+                                @endif
                             </div>
                         </div>
-                    </template>
-
-                    <template x-if="productosFiltrados.length === 0">
-                        <div class="col-span-2 py-12 text-center text-gray-400 space-y-2">
-                            <i class="bi bi-box-seam text-3xl block text-gray-300"></i>
-                            <p class="text-xs font-extrabold uppercase">NO SE ENCONTRARON MEDICAMENTOS DISPONIBLES</p>
-                        </div>
-                    </template>
+                    </div>
+                    @endforeach
                 </div>
             </div>
         </div>
 
-        <!-- COLUMNA DERECHA: SELECCIÓN DE PACIENTE Y CARRITO (5 COLS) -->
+        <!-- CARRITO DE COMPRA (COLUMNA DERECHA - 5 COLS) -->
         <div class="lg:col-span-5 space-y-4">
-            
-            <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-4">
-                
-                <!-- SELECCIÓN DE PACIENTE -->
-                <div class="space-y-1">
-                    <label class="block text-[11px] font-extrabold text-gray-700 uppercase">PACIENTE / CLIENTE *</label>
-                    <select x-model="pacienteId" class="w-full p-2.5 rounded-2xl border border-gray-200 text-xs font-bold uppercase focus:ring-2 focus:ring-teal-500 focus:outline-none">
-                        <option value="">PÚBLICO GENERAL</option>
-                        @foreach($pacientes as $pac)
+            <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col justify-between min-h-[500px]">
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+                        <h3 class="text-sm font-extrabold text-gray-800 uppercase flex items-center gap-2">
+                            <i class="bi bi-cart-fill text-teal-600"></i> RESUMEN DE PEDIDO
+                        </h3>
+                        <button @click="vaciarCarrito()" class="text-[10px] font-extrabold text-rose-500 hover:text-rose-700 uppercase cursor-pointer">
+                            VACIAR
+                        </button>
+                    </div>
+
+                    <!-- PACIENTE OPCIONAL -->
+                    <div>
+                        <label class="block text-[10px] font-extrabold text-gray-500 uppercase mb-1">PACIENTE (OPCIONAL):</label>
+                        <select x-model="pacienteId" class="w-full bg-slate-50 border border-gray-200 text-xs font-bold rounded-2xl px-3 py-2.5 uppercase focus:outline-none focus:border-teal-500">
+                            <option value="">PÚBLICO GENERAL</option>
+                            @foreach($pacientes as $pac)
                             <option value="{{ $pac->id }}">{{ strtoupper($pac->nombre_completo ?? ($pac->primer_nombre . ' ' .$pac->apellido_paterno)) }}</option>
-                        @endforeach
-                    </select>
-                </div>
+                            @endforeach
+                        </select>
+                    </div>
 
-                <!-- TABLA DEL CARRITO DE COMPRAS -->
-                <div class="border-t border-b border-gray-100 py-3 space-y-2">
-                    <h3 class="text-xs font-black text-gray-800 uppercase flex items-center justify-between">
-                        <span>DETALLE DEL TICKET</span>
-                        <span class="text-teal-700 font-extrabold" x-text="`${carrito.length} ITEMS`"></span>
-                    </h3>
-
-                    <div class="max-h-[260px] overflow-y-auto space-y-2 pr-1">
+                    <!-- ÍTEMS DEL CARRITO -->
+                    <div class="space-y-2 max-h-[260px] overflow-y-auto pr-1">
                         <template x-for="(item, index) in carrito" :key="item.id">
-                            <div class="p-2.5 bg-gray-50/80 rounded-2xl flex items-center justify-between gap-2 text-xs">
-                                <div class="min-w-0 flex-1">
-                                    <p class="font-extrabold text-gray-800 uppercase truncate" x-text="item.nombre"></p>
-                                    <p class="text-[10px] text-gray-400 font-bold" x-text="`$${parseFloat(item.precio_venta).toFixed(2)} C/U`"></p>
+                            <div class="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-gray-100 text-xs">
+                                <div class="space-y-0.5 max-w-[160px]">
+                                    <p class="font-extrabold text-gray-800 uppercase line-clamp-1" x-text="item.nombre"></p>
+                                    <p class="text-[10px] font-bold text-teal-700" x-text="`$${item.precio.toFixed(2)}`"></p>
                                 </div>
-
-                                <div class="flex items-center gap-1.5">
-                                    <button type="button" @click="disminuirCantidad(index)" class="w-6 h-6 rounded-lg bg-white border border-gray-200 font-black text-gray-600 hover:bg-gray-100 flex items-center justify-center cursor-pointer">-</button>
-                                    <span class="font-black text-xs w-6 text-center" x-text="item.cantidad"></span>
-                                    <button type="button" @click="aumentarCantidad(index)" class="w-6 h-6 rounded-lg bg-white border border-gray-200 font-black text-gray-600 hover:bg-gray-100 flex items-center justify-center cursor-pointer">+</button>
-                                </div>
-
-                                <div class="text-right pl-2">
-                                    <span class="font-black text-teal-800 block" x-text="`$${(item.precio_venta * item.cantidad).toFixed(2)}`"></span>
-                                    <button type="button" @click="eliminarDelCarrito(index)" class="text-[10px] text-rose-500 font-bold hover:underline cursor-pointer">QUITAR</button>
+                                <div class="flex items-center gap-2">
+                                    <button @click="cambiarCantidad(index, -1)" class="w-6 h-6 bg-white border border-gray-200 rounded-lg text-xs font-bold hover:bg-gray-100 cursor-pointer">-</button>
+                                    <span class="font-black text-gray-800 text-xs" x-text="item.cantidad"></span>
+                                    <button @click="cambiarCantidad(index, 1)" class="w-6 h-6 bg-white border border-gray-200 rounded-lg text-xs font-bold hover:bg-gray-100 cursor-pointer">+</button>
+                                    <button @click="removerItem(index)" class="text-rose-500 hover:text-rose-700 ml-1 cursor-pointer">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
                                 </div>
                             </div>
                         </template>
 
-                        <template x-if="carrito.length === 0">
-                            <div class="py-8 text-center text-gray-400">
-                                <i class="bi bi-cart-x text-2xl block mb-1"></i>
-                                <span class="text-[11px] font-extrabold uppercase">CARRITO VACÍO</span>
-                            </div>
-                        </template>
+                        <div x-show="carrito.length === 0" class="text-center py-12 text-gray-400">
+                            <i class="bi bi-cart-x text-3xl"></i>
+                            <p class="text-xs font-bold uppercase mt-2">CARRITO VACÍO</p>
+                        </div>
                     </div>
                 </div>
 
-                <!-- RESUMEN DE MONTO Y GENERAR TICKET -->
-                <div class="space-y-3 pt-1">
+                <!-- TOTAL Y ACCIÓN -->
+                <div class="border-t border-gray-100 pt-4 space-y-4">
                     <div class="flex justify-between items-baseline">
-                        <span class="text-xs font-black text-gray-700 uppercase">TOTAL A PAGAR:</span>
-                        <span class="text-2xl font-black text-teal-800" x-text="`$${calcularTotal().toFixed(2)}`"></span>
+                        <span class="text-xs font-extrabold text-gray-400 uppercase">TOTAL A PAGAR:</span>
+                        <span class="text-2xl font-black text-teal-700" x-text="`$${calcularTotal().toFixed(2)}`"></span>
                     </div>
 
-                    <button type="button" 
-                            @click="generarTicket()" 
-                            :disabled="carrito.length === 0 || procesando"
-                            class="w-full py-3.5 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 text-white font-black text-xs uppercase rounded-2xl shadow-lg shadow-teal-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer">
-                        <i class="bi bi-receipt" x-show="!procesando"></i>
-                        <span x-text="procesando ? 'GENERANDO COMPROBANTE...' : 'GENERAR TICKET DE FILTRO'"></span>
+                    <button @click="generarTicket()" 
+                            :disabled="carrito.length === 0 || cargando"
+                            class="w-full py-3.5 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 text-white font-black rounded-2xl text-xs uppercase shadow-lg shadow-teal-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer">
+                        <i class="bi bi-ticket-perforated-fill text-base"></i>
+                        <span x-text="cargando ? 'GENERANDO...' : 'GENERAR TICKET (25 MIN)'"></span>
                     </button>
                 </div>
-
             </div>
-
         </div>
 
     </div>
 
-    <!-- MODAL DE TICKETS GENERADOS / HISTORIAL -->
+    <!-- MODAL HISTORIAL DE TICKETS GENERADOS -->
     <template x-teleport="body">
-        <div x-show="openHistorialModal" x-cloak class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-            <div @click.outside="openHistorialModal = false" class="bg-white rounded-3xl max-w-3xl w-full p-6 shadow-2xl space-y-4">
-                
-                <div class="flex justify-between items-center border-b border-gray-100 pb-3">
-                    <h3 class="text-sm font-black text-gray-800 uppercase flex items-center gap-2">
-                        <i class="bi bi-receipt-cutoff text-teal-600 text-base"></i> HISTORIAL DE TICKETS GENERADOS
-                    </h3>
-                    <button type="button" @click="openHistorialModal = false" class="text-gray-400 hover:text-gray-600 font-bold focus:outline-none cursor-pointer">
-                        <i class="bi bi-x-lg"></i>
-                    </button>
-                </div>
+        <div x-show="openHistorialModal" class="fixed inset-0 z-50 overflow-y-auto" x-cloak>
+            <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+                <div x-show="openHistorialModal" class="fixed inset-0 transition-opacity bg-slate-900/60 backdrop-blur-xs" @click="openHistorialModal = false"></div>
 
-                <!-- BUSCADOR Y FILTROS DEL HISTORIAL -->
-                <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                    <div class="sm:col-span-8 relative">
-                        <i class="bi bi-search absolute left-3.5 top-3 text-gray-400 text-xs"></i>
-                        <input type="text" x-model="searchTicketQuery" placeholder="BUSCAR POR FOLIO (TCK-...) O PACIENTE..." 
-                               class="w-full bg-slate-50 border border-gray-200 text-xs font-bold rounded-2xl pl-9 pr-3 py-2.5 uppercase focus:outline-none focus:border-teal-500">
+                <div x-show="openHistorialModal" class="inline-block w-full max-w-3xl my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-2xl rounded-3xl border border-gray-100 p-6 space-y-4">
+                    <div class="flex justify-between items-center border-b border-gray-100 pb-3">
+                        <h3 class="text-sm font-black text-gray-800 uppercase flex items-center gap-2">
+                            <i class="bi bi-receipt text-teal-600"></i> HISTORIAL DE TICKETS GENERADOS
+                        </h3>
+                        <button type="button" @click="openHistorialModal = false" class="text-gray-400 hover:text-gray-600 font-bold focus:outline-none cursor-pointer">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
                     </div>
-                    <div class="sm:col-span-4">
-                        <select x-model="filtroEstatus" class="w-full bg-slate-50 border border-gray-200 text-xs font-bold rounded-2xl px-3 py-2.5 uppercase focus:outline-none focus:border-teal-500">
-                            <option value="">TODOS LOS ESTADOS</option>
-                            <option value="pendiente">PENDIENTES</option>
-                            <option value="pagado">PAGADOS</option>
-                            <option value="entregado">ENTREGADOS</option>
-                            <option value="expirado">EXPIRADOS / CANCELADOS</option>
-                        </select>
-                    </div>
-                </div>
 
-                <!-- LISTADO DE TICKETS RECIENTES -->
-                <div class="max-h-[380px] overflow-y-auto pr-1 space-y-2">
-                    <template x-for="tck in ticketsFiltrados()" :key="tck.id">
-                        <div class="p-3 bg-slate-50 hover:bg-teal-50/30 transition-all rounded-2xl border border-gray-100 flex items-center justify-between gap-3 text-xs">
-                            <div class="space-y-0.5">
-                                <div class="flex items-center gap-2">
-                                    <span class="font-black text-teal-800" x-text="tck.codigo_ticket"></span>
-                                    
-                                    <!-- BADGE ESTADO -->
-                                    <span class="text-[9px] font-black px-2 py-0.5 rounded-md uppercase"
-                                          :class="{
-                                              'bg-amber-100 text-amber-800 border border-amber-200': obtenerEstadoTicket(tck) === 'pendiente',
-                                              'bg-emerald-100 text-emerald-800 border border-emerald-200': obtenerEstadoTicket(tck) === 'pagado',
-                                              'bg-blue-100 text-blue-800 border border-blue-200': obtenerEstadoTicket(tck) === 'entregado',
-                                              'bg-rose-100 text-rose-800 border border-rose-200': obtenerEstadoTicket(tck) === 'expirado' || obtenerEstadoTicket(tck) === 'cancelado'
-                                          }" x-text="obtenerEstadoTicket(tck)"></span>
+                    <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                        <div class="sm:col-span-8 relative">
+                            <i class="bi bi-search absolute left-3.5 top-3 text-gray-400 text-xs"></i>
+                            <input type="text" x-model="searchTicketQuery" placeholder="BUSCAR POR FOLIO (TCK-...) O PACIENTE..." 
+                                   class="w-full bg-slate-50 border border-gray-200 text-xs font-bold rounded-2xl pl-9 pr-3 py-2.5 uppercase focus:outline-none focus:border-teal-500">
+                        </div>
+                        <div class="sm:col-span-4">
+                            <select x-model="filtroEstatus" class="w-full bg-slate-50 border border-gray-200 text-xs font-bold rounded-2xl px-3 py-2.5 uppercase focus:outline-none focus:border-teal-500">
+                                <option value="">TODOS LOS ESTADOS</option>
+                                <option value="pendiente">PENDIENTES</option>
+                                <option value="pagado">PAGADOS</option>
+                                <option value="entregado">ENTREGADOS</option>
+                                <option value="expirado">EXPIRADOS</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="max-h-[400px] overflow-y-auto pr-1 space-y-2">
+                        <template x-for="tck in ticketsFiltrados()" :key="tck.id">
+                            <div class="p-3.5 bg-slate-50 rounded-2xl border border-gray-100 flex items-center justify-between gap-3 text-xs">
+                                <div class="space-y-0.5 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-black text-teal-800 text-xs" x-text="tck.codigo_ticket || tck.codigo"></span>
+                                        <span class="text-[9px] font-extrabold px-2 py-0.5 rounded-md uppercase"
+                                              :class="{
+                                                  'bg-amber-100 text-amber-800': tck.status === 'pendiente',
+                                                  'bg-emerald-100 text-emerald-800': tck.status === 'pagado',
+                                                  'bg-teal-100 text-teal-800': tck.status === 'entregado',
+                                                  'bg-rose-100 text-rose-800': tck.status === 'expirado'
+                                              }"
+                                              x-text="tck.status"></span>
+                                    </div>
+                                    <p class="text-[10px] font-bold text-gray-600 uppercase truncate" x-text="`PACIENTE: ${tck.paciente ? (tck.paciente.nombre_completo || tck.paciente.primer_nombre) : 'PÚBLICO GENERAL'}`"></p>
                                 </div>
-                                <p class="text-[10px] font-semibold text-gray-500 uppercase" x-text="`PACIENTE: ${tck.paciente ? (tck.paciente.nombre_completo || tck.paciente.primer_nombre) : 'PÚBLICO GENERAL'}`"></p>
-                            </div>
 
-                            <div class="flex items-center gap-2">
-                                <span class="font-black text-gray-800 mr-2" x-text="`$${parseFloat(tck.monto_total).toFixed(2)}`"></span>
-                                
-                                <!-- BOTÓN ENTREGAR -->
-                                <template x-if="obtenerEstadoTicket(tck) === 'pagado'">
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <span class="font-black text-gray-900 text-xs mr-1" x-text="`$${parseFloat(tck.monto_total || 0).toFixed(2)}`"></span>
+                                    
+                                    <!-- BOTÓN ENTREGAR EN EL MODAL (SOLO VISIBLE SI ESTÁ PAGADO) -->
+                                    <template x-if="tck.status === 'pagado'">
+                                        <button type="button" 
+                                                @click.prevent.stop="marcarComoEntregado(tck)" 
+                                                :disabled="procesandoEntregado === tck.id"
+                                                class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-[10px] uppercase cursor-pointer flex items-center gap-1 shadow-xs transition-all">
+                                            <i class="bi bi-box-arrow-right"></i>
+                                            <span x-text="procesandoEntregado === tck.id ? 'SURTIENDO...' : 'ENTREGAR'"></span>
+                                        </button>
+                                    </template>
+
+                                    <!-- BOTÓN VER / REIMPRIMIR -->
                                     <button type="button" 
-                                            @click="marcarComoEntregado(tck)" 
-                                            :disabled="procesandoEntregado === tck.id"
-                                            class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white font-extrabold rounded-xl text-[10px] uppercase transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1">
-                                        <i class="bi bi-box-seam"></i>
-                                        <span x-text="procesandoEntregado === tck.id ? 'SURTIENDO...' : 'ENTREGAR'"></span>
+                                            @click.prevent.stop="verDetalleTicket(tck)" 
+                                            class="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-extrabold rounded-xl text-[10px] uppercase cursor-pointer transition-all shadow-xs">
+                                        VER
                                     </button>
-                                </template>
-
-                                <button type="button" 
-                                        @click="verDetalleTicket(tck)" 
-                                        class="px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white font-extrabold rounded-xl text-[10px] uppercase transition-all shadow-xs active:scale-95 cursor-pointer">
-                                    VER / REIMPRIMIR
-                                </button>
+                                </div>
                             </div>
-                        </div>
-                    </template>
+                        </template>
 
-                    <template x-if="ticketsFiltrados().length === 0">
-                        <div class="text-center py-10 text-gray-400">
-                            <i class="bi bi-inbox text-3xl block mb-1"></i>
-                            <span class="text-xs font-bold uppercase">NO SE ENCONTRARON TICKETS EN EL HISTORIAL</span>
-                        </div>
-                    </template>
+                        <template x-if="ticketsFiltrados().length === 0">
+                            <div class="py-10 text-center text-gray-400 font-bold text-xs uppercase">
+                                NO SE ENCONTRARON TICKETS REGISTRADOS
+                            </div>
+                        </template>
+                    </div>
                 </div>
-
             </div>
         </div>
     </template>
 
-    <!-- INCLUSIÓN MODULAR DEL MODAL DE VISTA PREVIA E IMPRESIÓN DE TICKET -->
     @include('pos.modalTicket')
 
 </div>
@@ -315,48 +324,57 @@ function posApp() {
         searchQuery: '',
         searchTicketQuery: '',
         filtroEstatus: '',
+        codigoRapidoIngresado: '',
         pacienteId: '',
         carrito: [],
-        productos: @json($productos),
-        productosFiltrados: [],
-        listaTickets: @json($ticketsRecientes ?? []),
-        openTicketModal: false,
-        openHistorialModal: false,
-        ticketGenerado: null,
-        procesando: false,
+        cargando: false,
+        procesandoEntrega: false,
         procesandoEntregado: null,
+        openHistorialModal: false,
+        openTicketModal: false,
+        ticketGenerado: null,
 
-        init() {
-            this.productosFiltrados = this.productos;
-        },
-
-        obtenerEstadoTicket(tck) {
-            const st = (tck.status || '').toLowerCase();
-            if (st === 'pendiente' && tck.expires_at) {
-                const ahora = new Date().getTime();
-                const fechaExpiracion = new Date(tck.expires_at).getTime();
-                if (ahora > fechaExpiracion) {
-                    return 'expirado';
-                }
-            }
-            return st;
-        },
+        tickets: @json($ticketsRecientes ?? $tickets ?? []),
 
         obtenerTicketsPorEntregar() {
-            return this.listaTickets.filter(t => this.obtenerEstadoTicket(t) === 'pagado');
+            return this.tickets.filter(t => t.status === 'pagado');
         },
 
-        async marcarComoEntregado(ticket) {
-            if (!confirm(`¿CONFIRMAR SURTIDO Y ENTREGA DEL TICKET ${ticket.codigo_ticket}? SE DESCONTARÁ EL STOCK DEFINITIVO.`)) {
-                return;
+        ticketsFiltrados() {
+            let lista = this.tickets;
+            const q = this.searchTicketQuery.trim().toUpperCase();
+            const e = this.filtroEstatus.trim().toLowerCase();
+
+            if (e !== '') {
+                lista = lista.filter(t => (t.status || '').toLowerCase() === e);
             }
 
-            this.procesandoEntregado = ticket.id;
+            if (q !== '') {
+                lista = lista.filter(t => {
+                    const cod = (t.codigo_ticket || t.codigo || '').toUpperCase();
+                    const pac = t.paciente ? (t.paciente.nombre_completo || t.paciente.primer_nombre || '').toUpperCase() : 'PÚBLICO GENERAL';
+                    return cod.includes(q) || pac.includes(q);
+                });
+            }
+
+            return lista;
+        },
+
+        cumpleFiltro(codigo, nombre) {
+            const q = this.searchQuery.trim().toUpperCase();
+            if (!q) return true;
+            return codigo.includes(q) || nombre.includes(q);
+        },
+
+        async entregarPorCodigoRapido() {
+            let sufijo = this.codigoRapidoIngresado.trim().toUpperCase();
+            if (!sufijo) return;
+
+            const codigoCompleto = sufijo.startsWith('TCK-') ? sufijo : `TCK-${sufijo}`;
+            this.procesandoEntrega = true;
 
             try {
-                // RUTA CORRECTA APUNTANDO A POS CONTROLLER
-                const url = `{{ url('/pos/marcar-entregado') }}/${ticket.id}`;
-                const response = await fetch(url, {
+                const response = await fetch(`{{ url('/pos/entregar-ticket') }}/${codigoCompleto}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -367,175 +385,91 @@ function posApp() {
 
                 const data = await response.json();
 
-                if (data.status === 'success') {
-                    // Actualizar el estado localmente
-                    ticket.status = 'entregado';
+                if (response.ok && data.status === 'success') {
+                    this.codigoRapidoIngresado = '';
                     
-                    // Descontar del stock local en pantalla
-                    if (ticket.detalles && ticket.detalles.length > 0) {
-                        ticket.detalles.forEach(det => {
-                            const prod = this.productos.find(p => p.id === det.producto_id);
-                            if (prod) {
-                                prod.stock_actual = Math.max(0, (prod.stock_actual || 0) - det.cantidad);
-                                if (prod.stock_disponible !== undefined) {
-                                    prod.stock_disponible = Math.max(0, (prod.stock_disponible || 0) - det.cantidad);
-                                }
-                            }
-                        });
-                    }
-                    this.filtrarProductos();
+                    // Actualizar estado local inmediatamente
+                    const tck = this.tickets.find(t => (t.codigo_ticket || t.codigo) === codigoCompleto);
+                    if (tck) tck.status = 'entregado';
 
-                    // NOTIFICACIÓN TOAST DE MEDITRACK
                     if (typeof window.notificar === 'function') {
-                        window.notificar(data.message || `TICKET ${ticket.codigo_ticket} ENTREGADO.`, 'success');
+                        window.notificar(data.message || `TICKET ${codigoCompleto} ENTREGADO Y SURTIDO CON ÉXITO`, 'success');
+                    } else {
+                        alert(data.message || `TICKET ${codigoCompleto} ENTREGADO`);
                     }
                 } else {
                     if (typeof window.notificar === 'function') {
-                        window.notificar(data.message || 'OCURRIÓ UN ERROR AL ENTREGAR', 'error');
+                        window.notificar(data.message || 'TICKET NO ENCONTRADO O NO ESTÁ PAGADO', 'error');
+                    } else {
+                        alert(data.message || 'ERROR AL ENTREGAR TICKET');
                     }
                 }
             } catch (e) {
                 console.error(e);
                 if (typeof window.notificar === 'function') {
-                    window.notificar('ERROR DE CONEXIÓN CON EL SERVIDOR', 'error');
+                    window.notificar('ERROR AL PROCESAR LA ENTREGA EN EL SERVIDOR', 'error');
+                } else {
+                    alert('ERROR DE CONEXIÓN CON EL SERVIDOR');
                 }
             } finally {
-                this.procesandoEntregado = null;
+                this.procesandoEntrega = false;
             }
         },
 
-        obtenerStockDisponible(prod) {
-            if (prod.stock_disponible !== undefined && prod.stock_disponible !== null) {
-                return prod.stock_disponible;
-            }
-            return prod.stock_actual || 0;
-        },
-
-        filtrarProductos() {
-            const q = this.searchQuery.trim().toUpperCase();
-            if (q === '') {
-                this.productosFiltrados = this.productos;
-                return;
-            }
-            this.productosFiltrados = this.productos.filter(p => 
-                (p.nombre && p.nombre.toUpperCase().includes(q)) || 
-                (p.codigo && p.codigo.toUpperCase().includes(q)) ||
-                (p.codigo_barras && p.codigo_barras.toUpperCase().includes(q))
-            );
-        },
-
-        buscarPorCodigoExacto() {
-            const q = this.searchQuery.trim().toUpperCase();
-            if (!q) return;
-
-            const prod = this.productos.find(p => 
-                String(p.codigo || p.codigo_barras || '').toUpperCase() === q
-            );
-
-            if (prod) {
-                this.agregarAlCarrito(prod);
-                this.searchQuery = '';
-                this.filtrarProductos();
-            } else {
-                if (typeof window.notificar === 'function') {
-                    window.notificar('PRODUCTO NO ENCONTRADO CON ESE CÓDIGO', 'warning');
-                }
-            }
-        },
-
-        ticketsFiltrados() {
-            const q = this.searchTicketQuery.trim().toUpperCase();
-            const estatus = this.filtroEstatus.trim().toLowerCase();
-
-            return this.listaTickets.filter(t => {
-                const cod = (t.codigo_ticket || '').toUpperCase();
-                const pac = t.paciente ? (t.paciente.nombre_completo || t.paciente.primer_nombre || '').toUpperCase() : 'PÚBLICO GENERAL';
-                const st = this.obtenerEstadoTicket(t);
-
-                const coincideTexto = !q || cod.includes(q) || pac.includes(q);
-                const coincideEstatus = !estatus || st === estatus;
-
-                return coincideTexto && coincideEstatus;
-            });
-        },
-
-        agregarAlCarrito(producto) {
-            const stockDisponible = this.obtenerStockDisponible(producto);
+        async marcarComoEntregado(tck) {
+            if (!tck) return;
+            this.procesandoEntregado = tck.id;
+            const codigo = tck.codigo_ticket || tck.codigo || '';
             
-            if (stockDisponible <= 0) {
-                if (typeof window.notificar === 'function') {
-                    window.notificar('MEDICAMENTO SIN STOCK DISPONIBLE', 'error');
-                }
-                return;
-            }
+            this.codigoRapidoIngresado = codigo.replace('TCK-', '');
+            await this.entregarPorCodigoRapido();
+            this.procesandoEntregado = null;
+        },
 
-            const itemExistente = this.carrito.find(item => item.id === producto.id);
-            if (itemExistente) {
-                if (itemExistente.cantidad + 1 > stockDisponible) {
-                    if (typeof window.notificar === 'function') {
-                        window.notificar(`SOLO TIENE ${stockDisponible} PZAS. DISPONIBLES.`, 'warning');
-                    }
-                    return;
-                }
-                itemExistente.cantidad++;
+        agregarAlCarrito(prod) {
+            const stockDisponible = prod.stock_disponible ?? prod.stock_actual ?? 0;
+            if (stockDisponible <= 0) return;
+
+            const item = this.carrito.find(i => i.id === prod.id);
+            if (item) {
+                if (item.cantidad + 1 <= stockDisponible) item.cantidad++;
             } else {
                 this.carrito.push({
-                    id: producto.id,
-                    nombre: producto.nombre,
-                    precio_venta: parseFloat(producto.precio_venta),
+                    id: prod.id,
+                    nombre: prod.nombre,
+                    precio: parseFloat(prod.precio_venta),
                     cantidad: 1,
-                    productoRef: producto
+                    stock_disponible: stockDisponible
                 });
             }
         },
 
-        aumentarCantidad(index) {
-            const item = this.carrito[index];
-            const stockDisponible = this.obtenerStockDisponible(item.productoRef);
-            
-            if (item.cantidad + 1 > stockDisponible) {
-                if (typeof window.notificar === 'function') {
-                    window.notificar(`SOLO TIENE ${stockDisponible} PZAS. DISPONIBLES PARA AGREGAR.`, 'warning');
+        cambiarCantidad(index, diff) {
+            if (this.carrito[index].cantidad + diff > 0) {
+                if (diff > 0 && this.carrito[index].cantidad + diff > this.carrito[index].stock_disponible) {
+                    return;
                 }
-                return;
-            }
-            item.cantidad++;
-        },
-
-        disminuirCantidad(index) {
-            if (this.carrito[index].cantidad > 1) {
-                this.carrito[index].cantidad--;
+                this.carrito[index].cantidad += diff;
             } else {
-                this.eliminarDelCarrito(index);
+                this.removerItem(index);
             }
         },
 
-        eliminarDelCarrito(index) {
+        removerItem(index) {
             this.carrito.splice(index, 1);
         },
 
-        calcularTotal() {
-            return this.carrito.reduce((acc, item) => acc + (item.precio_venta * item.cantidad), 0);
+        vaciarCarrito() {
+            this.carrito = [];
         },
 
-        formatearHoraExpiracion(fechaStr) {
-            if (!fechaStr) return 'N/A';
-            const f = new Date(fechaStr);
-            return f.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true });
+        calcularTotal() {
+            return this.carrito.reduce((sum, i) => sum + (i.precio * i.cantidad), 0);
         },
 
         async generarTicket() {
             if (this.carrito.length === 0) return;
-
-            this.procesando = true;
-
-            const payload = {
-                paciente_id: this.pacienteId || null,
-                carrito: this.carrito.map(item => ({
-                    id: item.id,
-                    cantidad: item.cantidad
-                }))
-            };
+            this.cargando = true;
 
             try {
                 const response = await fetch("{{ route('pos.generar-ticket') }}", {
@@ -545,45 +479,30 @@ function posApp() {
                         'Accept': 'application/json',
                         'X-CSRF-TOKEN': '{{ csrf_token() }}'
                     },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({
+                        paciente_id: this.pacienteId || null,
+                        carrito: this.carrito
+                    })
                 });
 
                 const data = await response.json();
-
                 if (data.status === 'success') {
                     this.ticketGenerado = data.ticket;
-                    this.listaTickets.unshift(data.ticket);
+                    this.tickets.unshift(data.ticket);
+                    this.vaciarCarrito();
                     this.openTicketModal = true;
-                    this.carrito = [];
-                    this.pacienteId = '';
-                    this.filtrarProductos();
-
-                    if (typeof window.notificar === 'function') {
-                        window.notificar('TICKET DE FILTRO GENERADO CON ÉXITO', 'success');
-                    }
-                } else {
-                    if (typeof window.notificar === 'function') {
-                        window.notificar(data.message || 'ERROR AL GENERAR TICKET', 'error');
-                    }
                 }
-            } catch (error) {
-                console.error(error);
-                if (typeof window.notificar === 'function') {
-                    window.notificar('OCURRIÓ UN ERROR EN EL SERVIDOR', 'error');
-                }
+            } catch (e) {
+                console.error(e);
             } finally {
-                this.procesando = false;
+                this.cargando = false;
             }
         },
 
-        verDetalleTicket(tck) {
-            this.ticketGenerado = tck;
+        verDetalleTicket(ticket) {
+            this.ticketGenerado = ticket;
             this.openHistorialModal = false;
-            this.openTicketModal = true;
-        },
-
-        imprimirTicketModal() {
-            window.print();
+            setTimeout(() => { this.openTicketModal = true; }, 100);
         }
     }
 }

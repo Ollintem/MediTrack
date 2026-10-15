@@ -1,95 +1,95 @@
 @extends('layouts.admin')
 
+@section('title', 'Caja Central y Cobros - MediTrack')
+
 @section('content')
-<div class="space-y-6 w-full" x-data="cajaApp()">
-    
-    <!-- BANNER CAJA CENTRAL -->
-    <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-800 via-teal-700 to-teal-600 p-6 text-white shadow-xl">
+<div class="space-y-6 w-full block" x-data="cajaApp()">
+
+    <!-- BANNER HERO PRINCIPAL -->
+    <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-teal-800 via-teal-700 to-emerald-600 p-6 text-white shadow-xl shadow-teal-900/10">
+        <div class="absolute -right-10 -bottom-10 w-60 h-60 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
         <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/15 text-white border border-white/20 uppercase tracking-wider mb-2">
-                    <i class="bi bi-cash-coin"></i> FINANZAS Y COBROS
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold bg-white/20 text-white backdrop-blur-md uppercase tracking-wider mb-2">
+                    <i class="bi bi-wallet2"></i> FINANZAS Y COBROS
                 </span>
-                <h1 class="text-2xl font-extrabold uppercase tracking-tight">CAJA CENTRAL Y COBROS PENDIENTES</h1>
-                <p class="text-teal-100 text-xs font-semibold mt-0.5">RECEPCIÓN DE PAGOS, EMISIÓN DE COMPROBANTES Y ENVÍO A DESPACHO.</p>
+                <h1 class="text-2xl font-black uppercase tracking-tight">CAJA CENTRAL Y COBROS PENDIENTES</h1>
+                <p class="text-xs text-teal-100 font-medium mt-1">
+                    RECEPCIÓN DE PAGOS, EMISIÓN DE COMPROBANTES Y ENVÍO A DESPACHO.
+                </p>
             </div>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        <!-- LISTA DE COBROS PENDIENTES (8 COLS) -->
+    <!-- ESTRUCTURA PRINCIPAL DE CAJA (2 COLUMNAS) -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+        <!-- COLUMNA IZQUIERDA: COBROS Y BÚSQUEDA (8 COLS) -->
         <div class="lg:col-span-8 space-y-4">
 
-            <!-- LECTOR DE CÓDIGO DE BARRAS -->
-            <!-- El lector actúa como teclado: escribe el folio y manda ENTER solo -->
-            <div class="bg-white p-5 rounded-3xl border-2 border-teal-200 shadow-sm space-y-2">
+            <!-- ESCÁNER Y BÚSQUEDA RÁPIDA DE COMPROBANTES -->
+            <div class="bg-white p-5 rounded-3xl border-2 border-teal-200 shadow-sm space-y-3">
                 <label class="block text-[11px] font-extrabold text-gray-700 uppercase flex items-center gap-1.5">
                     <i class="bi bi-upc-scan text-teal-600 text-base"></i> ESCANEAR COMPROBANTE
                 </label>
+                
                 <div class="relative">
                     <i class="bi bi-upc absolute left-4 top-3.5 text-gray-400 text-sm"></i>
-                    <input type="text"
-                           x-ref="scan"
-                           x-model="codigoEscaneado"
-                           @keydown.enter.prevent="escanearTicket()"
-                           :disabled="buscandoTicket"
-                           autocomplete="off"
-                           placeholder="PASE EL LECTOR SOBRE EL CÓDIGO DE BARRAS (TCK-...)"
+                    <input type="text" 
+                           x-ref="scanInput" 
+                           x-model="codigoEscaneado" 
+                           @keydown.enter.prevent="buscarPorCodigo()" 
+                           :disabled="buscando"
+                           placeholder="PASE EL LECTOR SOBRE EL CÓDIGO DE BARRAS (TCK-...)" 
                            class="w-full pl-11 pr-4 py-3 rounded-2xl border border-gray-200 text-sm font-black uppercase tracking-wider focus:ring-2 focus:ring-teal-500 focus:outline-none placeholder:text-gray-400 placeholder:font-bold placeholder:text-xs">
                 </div>
-                <!-- CÁMARA DEL TELÉFONO + COBRO AUTOMÁTICO -->
-                <div class="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
-                    <button type="button" @click="camaraActiva ? detenerCamara() : iniciarCamara()"
-                            class="px-4 py-2.5 rounded-2xl text-xs font-black uppercase flex items-center justify-center gap-2 cursor-pointer transition-all"
-                            :class="camaraActiva ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-teal-600 hover:bg-teal-700 text-white'">
-                        <i class="bi" :class="camaraActiva ? 'bi-camera-video-off' : 'bi-camera'"></i>
-                        <span x-text="camaraActiva ? 'DETENER CÁMARA' : 'ESCANEAR CON CÁMARA'"></span>
-                    </button>
 
-                    <label class="flex items-center gap-2 text-[11px] font-extrabold text-gray-700 uppercase cursor-pointer select-none">
-                        <input type="checkbox" x-model="cobroAutomatico" class="w-4 h-4 accent-teal-600">
-                        COBRAR AL ESCANEAR
-                    </label>
+                <!-- OPCIONES DE COBRO CON CÁMARA Y MÉTODO -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                    <div class="flex items-center gap-3">
+                        <!-- BOTÓN DE ACTIVAR CÁMARA -->
+                        <button type="button" 
+                                @click="camaraActiva ? detenerCamara() : iniciarCamara()" 
+                                class="px-4 py-2.5 rounded-2xl text-xs font-black uppercase flex items-center justify-center gap-2 cursor-pointer transition-all shadow-xs active:scale-95"
+                                :class="camaraActiva ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-teal-600 hover:bg-teal-700 text-white'">
+                            <i class="bi" :class="camaraActiva ? 'bi-camera-video-off' : 'bi-camera-fill'"></i>
+                            <span x-text="camaraActiva ? 'DETENER CÁMARA' : 'ESCANEAR CON CÁMARA'"></span>
+                        </button>
+
+                        <label class="flex items-center gap-2 text-[11px] font-extrabold text-gray-700 uppercase cursor-pointer select-none">
+                            <input type="checkbox" x-model="cobroAutomatico" class="w-4 h-4 accent-teal-600 rounded-md">
+                            <span>COBRAR AL ESCANEAR</span>
+                        </label>
+                    </div>
+
+                    <div class="flex items-center gap-1.5">
+                        <template x-for="m in ['Efectivo', 'Tarjeta', 'Transferencia']" :key="m">
+                            <button type="button" 
+                                    @click="metodoPago = m" 
+                                    class="px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase transition-all cursor-pointer"
+                                    :class="metodoPago === m ? 'bg-teal-600 border-teal-600 text-white shadow-xs' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'" 
+                                    x-text="m"></button>
+                        </template>
+                    </div>
                 </div>
 
-                <!-- MÉTODO QUE SE USA EN EL COBRO AUTOMÁTICO -->
-                <div x-show="cobroAutomatico" class="grid grid-cols-3 gap-2">
-                    <template x-for="m in ['Efectivo','Tarjeta','Transferencia']" :key="m">
-                        <button type="button" @click="metodoPago = m"
-                                class="py-2 rounded-xl border text-[10px] font-black uppercase cursor-pointer transition-all"
-                                :class="metodoPago === m ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white border-gray-200 text-gray-600'"
-                                x-text="m"></button>
-                    </template>
-                </div>
-
-                <!-- VISTA DE LA CÁMARA -->
-                <div x-show="camaraActiva" x-cloak class="rounded-2xl overflow-hidden border border-gray-200 bg-black">
-                    <div id="lector-camara" class="w-full"></div>
-                </div>
-
-                <p x-show="buscandoTicket || cargando" class="text-[11px] font-bold text-teal-700 uppercase">PROCESANDO TICKET...</p>
-                <p x-show="errorEscaneo" x-cloak class="text-[11px] font-extrabold text-rose-600 uppercase flex items-center gap-1.5">
-                    <i class="bi bi-exclamation-triangle-fill"></i><span x-text="errorEscaneo"></span>
-                </p>
-                <div x-show="ultimoCobro" x-cloak class="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-extrabold uppercase flex items-center justify-between gap-2">
-                    <span class="flex items-center gap-1.5"><i class="bi bi-check-circle-fill"></i> <span x-text="ultimoCobro"></span></span>
-                    <button type="button" x-show="ticketCobrado" @click="openTicketPagadoModal = true"
-                            class="text-[10px] underline cursor-pointer">VER COMPROBANTE</button>
+                <!-- CONTENEDOR DE LA CÁMARA WEB / MOVIL -->
+                <div x-show="camaraActiva" x-cloak class="mt-3 rounded-2xl overflow-hidden border border-gray-200 bg-slate-900 p-2">
+                    <div id="lector-camara-caja" class="w-full max-h-64 rounded-xl overflow-hidden"></div>
                 </div>
             </div>
 
+            <!-- LISTADO DE TICKETS PENDIENTES POR COBRAR -->
             <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
                 <div class="flex items-center justify-between border-b border-gray-100 pb-3">
                     <h3 class="text-sm font-extrabold text-gray-800 uppercase flex items-center gap-2">
                         <i class="bi bi-clock-history text-amber-500"></i> TICKETS PENDIENTES POR COBRAR
                     </h3>
-                    <span class="text-xs font-bold text-gray-400 bg-gray-50 px-3 py-1 rounded-full border">
-                        {{ $ticketsPendientes->count() }} PENDIENTES
-                    </span>
+                    <span class="text-xs font-bold text-gray-500 bg-gray-50 px-3 py-1 rounded-full border border-gray-200"
+                          x-text="`${ticketsPendientes.length} PENDIENTES`"></span>
                 </div>
 
-                <!-- BUSCADOR RÁPIDO DE TICKET -->
+                <!-- BUSCADOR INTERNO EN LISTA -->
                 <div class="relative">
                     <i class="bi bi-search absolute left-4 top-3.5 text-gray-400 text-xs"></i>
                     <input type="text" 
@@ -98,305 +98,269 @@
                            class="w-full bg-slate-50 border border-gray-200 focus:border-teal-500 focus:bg-white text-xs font-bold rounded-2xl pl-10 pr-4 py-3 focus:outline-none uppercase placeholder:text-gray-400 transition-all">
                 </div>
 
-                <!-- CARDS DE TICKETS PENDIENTES -->
-                <div class="space-y-3 max-h-[550px] overflow-y-auto pr-1">
-                    @forelse($ticketsPendientes as $tck)
-                    <div x-show="!pagados.includes({{ $tck->id }}) && cumpleFiltro('{{ strtoupper($tck->codigo_ticket) }}', '{{ strtoupper($tck->paciente ? $tck->paciente->nombre_completo : 'PÚBLICO GENERAL') }}')"
-                         class="p-4 rounded-2xl border border-gray-100 bg-slate-50/50 hover:border-teal-200 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        
-                        <div class="space-y-1">
-                            <div class="flex items-center gap-2">
-                                <span class="text-xs font-black text-teal-800 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-200">
-                                    {{ $tck->codigo_ticket }}
-                                </span>
-                                <!-- BADGE DE TIEMPO / VIGENCIA -->
-                                <span class="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                                    <i class="bi bi-hourglass-split"></i> EXPIRA: {{ $tck->expires_at ? $tck->expires_at->format('H:i') : 'N/A' }}
-                                </span>
-                            </div>
-                            <p class="text-xs font-extrabold text-gray-800 uppercase mt-1">
-                                PACIENTE: {{ $tck->paciente ? strtoupper($tck->paciente->nombre_completo) : 'PÚBLICO GENERAL' }}
-                            </p>
-                            <p class="text-[10px] font-bold text-gray-400 uppercase">
-                                MEDICAMENTOS: {{ $tck->detalles->count() }} PZAS.
-                            </p>
-                        </div>
-
-                        <div class="flex items-center gap-4 justify-between md:justify-end">
-                            <div class="text-right">
-                                <span class="block text-[10px] font-bold text-gray-400 uppercase">TOTAL</span>
-                                <span class="text-lg font-black text-teal-700">${{ number_format($tck->monto_total, 2) }}</span>
+                <!-- GRILLA DE TICKETS PENDIENTES -->
+                <div class="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+                    <template x-for="tck in ticketsFiltrados()" :key="tck.id">
+                        <div class="p-4 rounded-2xl border border-gray-100 bg-slate-50/50 hover:bg-teal-50/30 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-black text-teal-800 text-xs" x-text="tck.codigo_ticket"></span>
+                                    <span class="text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-md uppercase flex items-center gap-1">
+                                        <i class="bi bi-hourglass-split"></i> EXPIRA: <span x-text="formatearHoraExpiracion(tck.expires_at)"></span>
+                                    </span>
+                                </div>
+                                <p class="text-xs font-black text-gray-800 uppercase" x-text="`PACIENTE: ${tck.paciente ? (tck.paciente.nombre_completo || tck.paciente.primer_nombre) : 'PÚBLICO GENERAL'}`"></p>
+                                <p class="text-[10px] font-semibold text-gray-400 uppercase" x-text="`MEDICAMENTOS: ${tck.detalles ? tck.detalles.length : 0} PZAS.`"></p>
                             </div>
 
-                            <button @click="abrirModalCobro({{ json_encode($tck) }})"
-                                    class="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-black rounded-xl text-xs uppercase shadow-md shadow-teal-600/20 transition-all flex items-center gap-1.5">
-                                <i class="bi bi-wallet2"></i> COBRAR
-                            </button>
+                            <div class="flex items-center justify-between sm:justify-end gap-3 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0">
+                                <div class="text-right">
+                                    <span class="block text-[9px] font-extrabold text-gray-400 uppercase">TOTAL</span>
+                                    <span class="text-lg font-black text-teal-800" x-text="`$${parseFloat(tck.monto_total).toFixed(2)}`"></span>
+                                </div>
+
+                                <button type="button" 
+                                        @click="abrirModalCobro(tck)" 
+                                        class="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-extrabold rounded-xl text-xs uppercase shadow-md shadow-teal-600/20 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer">
+                                    <i class="bi bi-wallet2"></i> COBRAR
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                    @empty
-                    <div class="text-center py-16 text-gray-400">
-                        <i class="bi bi-check-circle text-3xl"></i>
-                        <p class="text-xs font-bold uppercase mt-2">NO HAY COBROS PENDIENTES</p>
-                    </div>
-                    @endforelse
+                    </template>
+
+                    <template x-if="ticketsFiltrados().length === 0">
+                        <div class="py-10 text-center text-gray-400 space-y-1">
+                            <i class="bi bi-inbox text-3xl block text-gray-300"></i>
+                            <p class="text-xs font-extrabold uppercase">NO HAY TICKETS PENDIENTES DE PAGO</p>
+                        </div>
+                    </template>
                 </div>
             </div>
+
         </div>
 
-        <!-- RESUMEN DE MOVIMIENTOS DEL DÍA (4 COLS) -->
+        <!-- COLUMNA DERECHA: HISTORIAL DE COBROS DE HOY (4 COLS) -->
         <div class="lg:col-span-4 space-y-4">
-            <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
-                <h3 class="text-sm font-extrabold text-gray-800 uppercase border-b border-gray-100 pb-3 flex items-center gap-2">
-                    <i class="bi bi-receipt text-teal-600"></i> COBROS REALIZADOS HOY
-                </h3>
+            <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+                    <h3 class="text-xs font-black text-gray-800 uppercase flex items-center gap-2">
+                        <i class="bi bi-receipt text-emerald-600 text-base"></i> COBROS REALIZADOS HOY
+                    </h3>
+                </div>
 
-                <div class="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                    @forelse($cobrosHoy as $mov)
-                    <div class="p-3 bg-slate-50 rounded-2xl border border-gray-100 text-xs space-y-1">
-                        <div class="flex justify-between items-center">
-                            <span class="font-extrabold text-teal-700">{{ $mov->ticket->codigo_ticket ?? 'S/N' }}</span>
-                            <span class="font-black text-gray-800">${{ number_format($mov->monto, 2) }}</span>
+                <!-- LISTADO DE COBROS RECIENTES -->
+                <div class="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                    <template x-for="cobro in cobrosHoy" :key="cobro.id">
+                        <div class="p-3 bg-slate-50 rounded-2xl border border-gray-100 flex items-center justify-between gap-2 text-xs hover:border-teal-200 transition-all group">
+                            <div class="space-y-0.5 min-w-0">
+                                <span class="font-black text-teal-800 block truncate" x-text="cobro.ticket ? cobro.ticket.codigo_ticket : 'TICKET'"></span>
+                                <p class="text-[10px] font-bold text-gray-500 uppercase truncate" x-text="cobro.concepto"></p>
+                                <p class="text-[9px] font-extrabold text-gray-400 uppercase" x-text="`MÉSTATIC: ${cobro.metodo_pago}`"></p>
+                            </div>
+
+                            <div class="text-right shrink-0">
+                                <span class="font-black text-gray-900 block" x-text="`$${parseFloat(cobro.monto).toFixed(2)}`"></span>
+                                
+                                <!-- BOTÓN REIMPRIMIR FUNCIONAL -->
+                                <button type="button" 
+                                        @click="reimprimirComprobante(cobro)" 
+                                        class="text-[9px] font-extrabold text-teal-600 hover:text-teal-800 uppercase underline flex items-center justify-end gap-1 mt-1 cursor-pointer">
+                                    <i class="bi bi-printer"></i> REIMPRIMIR
+                                </button>
+                            </div>
                         </div>
-                        <p class="text-[10px] font-bold text-gray-500 uppercase">{{ $mov->concepto }}</p>
-                        <div class="flex justify-between text-[9px] font-semibold text-gray-400 pt-1">
-                            <span>MÉTODO: {{ strtoupper($mov->metodo_pago) }}</span>
-                            <span>{{ $mov->created_at->format('H:i A') }}</span>
+                    </template>
+
+                    <template x-if="cobrosHoy.length === 0">
+                        <div class="py-8 text-center text-gray-400 space-y-1">
+                            <i class="bi bi-wallet-2 text-2xl block text-gray-300"></i>
+                            <p class="text-[11px] font-extrabold uppercase">NO SE HAN REGISTRADO COBROS HOY</p>
                         </div>
-                    </div>
-                    @empty
-                    <p class="text-center py-10 text-xs font-bold text-gray-400 uppercase">SIN MOVIMIENTOS REGISTRADOS HOY</p>
-                    @endforelse
+                    </template>
                 </div>
             </div>
         </div>
 
     </div>
 
-    <!-- INCLUSIÓN MODULAR DE MODALES DE COBRO Y COMPROBANTE OFICIAL -->
+    <!-- INCLUSIÓN MODULAR DEL MODAL DE COBRO E IMPRESIÓN -->
     @include('caja.modalCobroTicket')
 
 </div>
 
-<!-- LECTOR DE CÓDIGOS CON LA CÁMARA (CODE128) -->
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<!-- LIBRERÍA HTML5-QRCODE PARA LECTURA POR CÁMARA -->
+<script src="https://unpkg.com/html5-qrcode"></script>
 
 <script>
 function cajaApp() {
     return {
         searchQuery: '',
-        openModal: false,
-        openTicketPagadoModal: false,
-        ticketSeleccionado: {},
-        ticketCobrado: null,
-        metodoPago: 'Efectivo',
-        cargando: false,
-
-        // --- LECTOR DE CÓDIGO DE BARRAS (PISTOLA O CÁMARA DEL TELÉFONO) ---
         codigoEscaneado: '',
-        buscandoTicket: false,
-        errorEscaneo: '',
-        ultimoCobro: '',
-        cobroAutomatico: true,
+        cobroAutomatico: false,
+        metodoPago: 'Efectivo',
+        buscando: false,
+        procesandoPago: false,
         camaraActiva: false,
-        lectorCamara: null,
-        ultimoFolioLeido: '',
-        ultimaLecturaMs: 0,
-        pagados: [],
-        // Rutas relativas (false): funcionan igual en localhost que por el túnel https
-        urlBuscarTicket: "{{ route('caja.buscar-ticket', '__FOLIO__', false) }}",
-        urlPagar: "{{ route('caja.procesar-pago', '__ID__', false) }}",
+        html5QrcodeScanner: null,
+        
+        ticketsPendientes: @json($ticketsPendientes ?? []),
+        cobrosHoy: @json($cobrosHoy ?? []),
 
-        // Convierte la respuesta a JSON; si el servidor regresó HTML (error 500,
-        // página de login, 404...) lanza un error con el código para mostrarlo
-        async leerRespuesta(res) {
-            const tipo = res.headers.get('content-type') || '';
-            if (tipo.includes('application/json')) return res.json();
-            if (res.status === 401 || res.status === 419 || res.redirected) {
-                throw new Error('LA SESIÓN EXPIRÓ. RECARGUE LA PÁGINA E INICIE SESIÓN DE NUEVO.');
-            }
-            throw new Error(`EL SERVIDOR RESPONDIÓ CON ERROR (HTTP ${res.status}). REVISE storage/logs/laravel.log`);
-        },
+        openCobroModal: false,
+        ticketSeleccionado: null,
 
         init() {
-            this.enfocarLector();
-
-            // Al cerrar cualquiera de los modales, el cursor regresa al lector
-            this.$watch('openModal', abierto => { if (!abierto) this.enfocarLector(); });
-            this.$watch('openTicketPagadoModal', abierto => { if (!abierto) this.enfocarLector(); });
+            this.$nextTick(() => {
+                if (this.$refs.scanInput) this.$refs.scanInput.focus();
+            });
         },
 
-        enfocarLector() {
-            // En el teléfono no se enfoca el campo para que no salga el teclado
-            if (this.camaraActiva) return;
-            this.$nextTick(() => this.$refs.scan && this.$refs.scan.focus());
-        },
-
-        normalizarFolio(valor) {
-            // Lector en inglés + teclado en español => el guion llega como apóstrofo
-            return (valor || '').trim().toUpperCase().replace(/'/g, '-');
-        },
-
-        // Lectura con pistola (teclado + ENTER)
-        escanearTicket() {
-            const folio = this.normalizarFolio(this.codigoEscaneado);
-            this.codigoEscaneado = '';
-            this.procesarFolio(folio);
-        },
-
-        // Flujo común: buscar ticket y cobrarlo automáticamente o abrir el modal
-        async procesarFolio(folio) {
-            if (!folio || this.buscandoTicket || this.cargando) return;
-
-            this.errorEscaneo = '';
-            this.ultimoCobro = '';
-            this.buscandoTicket = true;
-
-            try {
-                const res = await fetch(this.urlBuscarTicket.replace('__FOLIO__', encodeURIComponent(folio)), {
-                    headers: { 'Accept': 'application/json' }
-                });
-                const data = await this.leerRespuesta(res);
-
-                if (data.status !== 'success') {
-                    this.mostrarError(data.message || 'NO SE PUDO LEER EL TICKET.');
-                    return;
-                }
-
-                if (this.cobroAutomatico) {
-                    this.ticketSeleccionado = data.ticket;
-                    this.buscandoTicket = false;
-                    // En automático no se abre el comprobante, para seguir escaneando sin tocar la pantalla
-                    await this.confirmarPago({ mostrarComprobante: !this.camaraActiva });
-                } else {
-                    this.abrirModalCobro(data.ticket);
-                }
-            } catch (e) {
-                console.error(e);
-                this.mostrarError(e.message && !e.message.startsWith('Failed') ? e.message : 'SIN CONEXIÓN CON EL SERVIDOR AL BUSCAR EL TICKET.');
-            } finally {
-                this.buscandoTicket = false;
-            }
-        },
-
-        mostrarError(mensaje) {
-            this.errorEscaneo = mensaje;
-            if (window.notificar) window.notificar(mensaje, 'error');
-            if (navigator.vibrate) navigator.vibrate([100, 60, 100]);
-            this.enfocarLector();
-        },
-
-        // --- CÁMARA DEL TELÉFONO ---
-        async iniciarCamara() {
-            this.errorEscaneo = '';
-
-            if (!window.isSecureContext) {
-                this.mostrarError('LA CÁMARA SOLO FUNCIONA CON HTTPS. ABRA EL SISTEMA CON UNA DIRECCIÓN https://');
-                return;
-            }
-            if (typeof Html5Qrcode === 'undefined') {
-                this.mostrarError('NO SE CARGÓ LA LIBRERÍA DEL LECTOR. REVISE LA CONEXIÓN A INTERNET.');
-                return;
-            }
-
+        iniciarCamara() {
             this.camaraActiva = true;
-            await this.$nextTick();
-
-            try {
-                this.lectorCamara = new Html5Qrcode('lector-camara', {
-                    formatsToSupport: [Html5QrcodeSupportedFormats.CODE_128],
-                    verbose: false
-                });
-
-                await this.lectorCamara.start(
-                    { facingMode: 'environment' }, // cámara trasera
-                    {
-                        fps: 10,
-                        // Recuadro ancho y bajo: es la forma de un código de barras
-                        qrbox: (w, h) => ({ width: Math.floor(w * 0.9), height: Math.floor(Math.min(h, w) * 0.35) })
+            this.$nextTick(() => {
+                this.html5QrcodeScanner = new Html5Qrcode("lector-camara-caja");
+                this.html5QrcodeScanner.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: { width: 250, height: 150 } },
+                    (decodedText) => {
+                        this.codigoEscaneado = decodedText;
+                        this.detenerCamara();
+                        this.buscarPorCodigo();
                     },
-                    texto => this.alLeerConCamara(texto),
-                    () => {} // cuadros sin código: se ignoran
-                );
-            } catch (e) {
-                console.error(e);
+                    (errorMessage) => { /* Silenciar lectura fallida */ }
+                ).catch(err => {
+                    console.error("Error al iniciar cámara: ", err);
+                    this.camaraActiva = false;
+                    if (typeof window.notificar === 'function') {
+                        window.notificar('NO SE PUDO ACCEDER A LA CÁMARA', 'error');
+                    }
+                });
+            });
+        },
+
+        detenerCamara() {
+            if (this.html5QrcodeScanner) {
+                this.html5QrcodeScanner.stop().then(() => {
+                    this.html5QrcodeScanner.clear();
+                    this.camaraActiva = false;
+                }).catch(err => {
+                    this.camaraActiva = false;
+                });
+            } else {
                 this.camaraActiva = false;
-                this.lectorCamara = null;
-                this.mostrarError('NO SE PUDO ABRIR LA CÁMARA. REVISE QUE EL NAVEGADOR TENGA PERMISO.');
             }
         },
 
-        async detenerCamara() {
-            if (this.lectorCamara) {
-                try { await this.lectorCamara.stop(); this.lectorCamara.clear(); } catch (e) {}
-            }
-            this.lectorCamara = null;
-            this.camaraActiva = false;
-            this.enfocarLector();
-        },
-
-        alLeerConCamara(texto) {
-            const folio = this.normalizarFolio(texto);
-            const ahora = Date.now();
-
-            // La cámara lee el mismo código varias veces por segundo: se ignora
-            // el mismo folio durante 4 s para no mandarlo repetido
-            if (folio === this.ultimoFolioLeido && ahora - this.ultimaLecturaMs < 4000) return;
-
-            this.ultimoFolioLeido = folio;
-            this.ultimaLecturaMs = ahora;
-            if (navigator.vibrate) navigator.vibrate(80);
-
-            this.procesarFolio(folio);
-        },
-
-        cumpleFiltro(codigo, paciente) {
+        ticketsFiltrados() {
             const q = this.searchQuery.trim().toUpperCase();
-            return !q || codigo.includes(q) || paciente.includes(q);
+            if (!q) return this.ticketsPendientes;
+            return this.ticketsPendientes.filter(t => {
+                const cod = (t.codigo_ticket || '').toUpperCase();
+                const pac = t.paciente ? (t.paciente.nombre_completo || t.paciente.primer_nombre || '').toUpperCase() : 'PÚBLICO GENERAL';
+                return cod.includes(q) || pac.includes(q);
+            });
+        },
+
+        formatearHoraExpiracion(fechaStr) {
+            if (!fechaStr) return 'N/A';
+            const f = new Date(fechaStr);
+            return f.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true });
         },
 
         abrirModalCobro(ticket) {
             this.ticketSeleccionado = ticket;
-            this.errorEscaneo = '';
-            this.openModal = true;
+            this.openCobroModal = true;
         },
 
-        async confirmarPago({ mostrarComprobante = true } = {}) {
-            if (!this.ticketSeleccionado.id || this.cargando) return;
-            this.cargando = true;
+        async buscarPorCodigo() {
+            const codigo = this.codigoEscaneado.trim();
+            if (!codigo) return;
+
+            this.buscando = true;
 
             try {
-                const res = await fetch(this.urlPagar.replace('__ID__', this.ticketSeleccionado.id), {
+                const response = await fetch(`{{ url('/caja/buscar-codigo') }}/${codigo}`);
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    this.ticketSeleccionado = data.ticket;
+                    this.codigoEscaneado = '';
+
+                    if (this.cobroAutomatico) {
+                        await this.procesarCobroDirecto(data.ticket.id, this.metodoPago);
+                    } else {
+                        this.openCobroModal = true;
+                    }
+                } else {
+                    if (typeof window.notificar === 'function') {
+                        window.notificar(data.message || 'TICKET NO ENCONTRADO O EXPIRADO', 'error');
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+                if (typeof window.notificar === 'function') {
+                    window.notificar('ERROR AL BUSCAR CÓDIGO', 'error');
+                }
+            } finally {
+                this.buscando = false;
+            }
+        },
+
+        async procesarCobroDirecto(ticketId, metodo) {
+            this.procesandoPago = true;
+
+            try {
+                const response = await fetch(`{{ url('/caja/procesar-pago') }}/${ticketId}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
                         'X-CSRF-TOKEN': '{{ csrf_token() }}'
                     },
-                    body: JSON.stringify({ metodo_pago: this.metodoPago })
+                    body: JSON.stringify({ metodo_pago: metodo })
                 });
-                const data = await this.leerRespuesta(res);
+
+                const data = await response.json();
 
                 if (data.status === 'success') {
-                    if (window.notificar) window.notificar(data.message, 'success');
-                    this.openModal = false;
+                    this.ticketSeleccionado = data.ticket;
+                    this.openCobroModal = true;
+                    
+                    this.ticketsPendientes = this.ticketsPendientes.filter(t => t.id !== ticketId);
+                    this.cobrosHoy.unshift({
+                        id: Date.now(),
+                        monto: data.ticket.monto_total,
+                        metodo_pago: metodo,
+                        concepto: `PAGO DE TICKET DE FARMACIA: ${data.ticket.codigo_ticket}`,
+                        ticket: data.ticket
+                    });
 
-                    this.ticketCobrado = data.ticket;
-                    this.pagados.push(data.ticket.id);
-                    this.ultimoCobro = `${data.ticket.codigo_ticket} COBRADO · $${parseFloat(data.ticket.monto_total).toFixed(2)} · ${this.metodoPago.toUpperCase()}`;
-                    if (navigator.vibrate) navigator.vibrate(200);
-
-                    // Mostrar el modal con el ticket oficial pagado
-                    if (mostrarComprobante) this.openTicketPagadoModal = true;
-                    else this.enfocarLector();
+                    if (typeof window.notificar === 'function') {
+                        window.notificar('PAGO REGISTRADO CON ÉXITO', 'success');
+                    }
                 } else {
-                    this.mostrarError(data.message || 'NO SE PUDO REGISTRAR EL COBRO.');
+                    if (typeof window.notificar === 'function') {
+                        window.notificar(data.message || 'OCURRIÓ UN ERROR AL COBRAR', 'error');
+                    }
                 }
             } catch (e) {
                 console.error(e);
-                this.mostrarError(e.message && !e.message.startsWith('Failed') ? e.message : 'SIN CONEXIÓN CON EL SERVIDOR AL PROCESAR EL PAGO.');
+                if (typeof window.notificar === 'function') {
+                    window.notificar('ERROR DE CONEXIÓN CON EL SERVIDOR', 'error');
+                }
             } finally {
-                this.cargando = false;
+                this.procesandoPago = false;
+            }
+        },
+
+        reimprimirComprobante(cobro) {
+            if (cobro && cobro.ticket) {
+                this.ticketSeleccionado = cobro.ticket;
+                this.openCobroModal = true;
+            } else {
+                if (typeof window.notificar === 'function') {
+                    window.notificar('NO SE ENCONTRÓ EL DETALLE DEL TICKET PARA REIMPRIMIR', 'warning');
+                }
             }
         },
 

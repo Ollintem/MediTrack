@@ -67,7 +67,7 @@
                                             <td class="p-3.5 font-bold text-gray-800">
                                                 <div class="flex items-center gap-2">
                                                     <span class="w-2 h-2 rounded-full bg-teal-500"></span>
-                                                    {{ $mod->nombre }}
+                                                    {{ $mod->nombre === 'POS' ? 'Terminal POS' : $mod->nombre }}
                                                 </div>
                                             </td>
                                             
@@ -132,10 +132,6 @@
     function guardarRolModal(e) {
         const select = document.getElementById('selectRolId') || document.getElementById('select_rol_id') || document.getElementById('select_rol_profesional');
         
-        if (!select) {
-            return true;
-        }
-
         e.preventDefault();
         const nombreInput = document.getElementById('modal_rol_nombre');
         const errorSpan = document.getElementById('error_rol_nombre');
@@ -182,8 +178,10 @@
                 const rolId = data.rol?.id || data.rol_id || data.id;
                 const rolNombre = data.rol?.nombre || nombreInput.value;
                 
-                const option = new Option(rolNombre, rolId, true, true);
-                select.add(option);
+                if (select) {
+                    const option = new Option(rolNombre, rolId, true, true);
+                    select.add(option);
+                }
 
                 nombreInput.value = '';
                 document.querySelectorAll('#formModalNuevoRol .permiso-checkbox').forEach(cb => cb.checked = false);
@@ -195,8 +193,11 @@
                         Alpine.$data(el).openCreateModal = false;
                     }
                 }
-                if (typeof Swal !== 'undefined') {
-                    Swal.fire('¡Éxito!', 'El rol fue creado y asignado.', 'success');
+
+                if (window.notificar) {
+                    window.notificar('El rol fue creado correctamente.', 'success');
+                } else if (typeof Swal !== 'undefined') {
+                    Swal.fire('¡Éxito!', 'El rol fue creado correctamente.', 'success');
                 }
             }
         })
@@ -204,6 +205,8 @@
             if (errorSpan) {
                 errorSpan.textContent = err.message;
                 errorSpan.classList.remove('hidden');
+            } else if (window.notificar) {
+                window.notificar(err.message, 'error');
             } else {
                 alert(err.message);
             }

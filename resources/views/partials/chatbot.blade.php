@@ -7,8 +7,8 @@
 
 <style>
     #mt-chat {
-        --mt-teal: #0f9488;
-        --mt-teal-oscuro: #0b7a70;
+        --mt-teal: #0b5a54;
+        --mt-teal-oscuro: #073f3b;
         --mt-teal-suave: #e6f5f3;
         --mt-borde: #e3ecea;
         --mt-texto: #16302c;
@@ -26,7 +26,7 @@
         position: fixed; right: 28px; bottom: 28px; z-index: 9999;
         width: 60px; height: 60px; border-radius: 18px; border: none;
         background: var(--mt-teal); color: #fff; cursor: pointer;
-        box-shadow: 0 8px 24px rgba(15, 148, 136, .35);
+        box-shadow: 0 10px 24px -6px rgba(7, 63, 59, .45);
         display: flex; align-items: center; justify-content: center;
         transition: transform .2s ease, background .2s ease;
     }
@@ -39,6 +39,31 @@
         background: #22c55e; border: 3px solid #fff; border-radius: 50%;
     }
     #mt-chat.abierto #mt-chat-boton .mt-punto { display: none; }
+
+    /* ---------- Ocultar el botón (queda una pestaña en el borde) ---------- */
+    #mt-chat-boton { transition: transform .2s ease, background .2s ease, translate .26s cubic-bezier(.2,.8,.2,1), opacity .2s ease; }
+    #mt-chat-ocultar {
+        position: fixed; right: 76px; bottom: 74px; z-index: 10000;
+        width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--mt-borde);
+        background: #fff; color: var(--mt-gris); cursor: pointer; display: grid; place-items: center;
+        box-shadow: 0 4px 10px rgba(22, 48, 44, .18);
+        opacity: 0; scale: .7; pointer-events: none; transition: opacity .15s ease, scale .15s ease;
+    }
+    #mt-chat-ocultar:hover { color: var(--mt-texto); }
+    #mt-chat:not(.abierto):not(.oculto):hover #mt-chat-ocultar,
+    #mt-chat:not(.abierto):not(.oculto):focus-within #mt-chat-ocultar,
+    #mt-chat-ocultar:focus-visible { opacity: 1; scale: 1; pointer-events: auto; }
+    #mt-chat.oculto #mt-chat-boton { translate: 110px 0; opacity: 0; pointer-events: none; }
+    #mt-chat-pestana {
+        position: fixed; right: 0; bottom: 40px; z-index: 9999;
+        width: 26px; height: 46px; border: 0; border-radius: 12px 0 0 12px;
+        background: var(--mt-teal); color: #fff; cursor: pointer; display: grid; place-items: center;
+        box-shadow: -4px 6px 16px rgba(11, 90, 84, .3);
+        translate: 30px 0; transition: translate .26s cubic-bezier(.2,.8,.2,1), width .15s ease;
+    }
+    #mt-chat-pestana:hover, #mt-chat-pestana:focus-visible { width: 34px; }
+    #mt-chat.oculto #mt-chat-pestana { translate: 0 0; transition-delay: .12s; }
+    @media (prefers-reduced-motion: reduce) { #mt-chat-boton, #mt-chat-pestana, #mt-chat-ocultar { transition: none !important; } }
 
     /* ---------- Panel ---------- */
     #mt-chat-panel {
@@ -159,6 +184,7 @@
     @media (max-width: 480px) {
         #mt-chat-panel { right: 16px; bottom: 90px; height: calc(100vh - 110px); }
         #mt-chat-boton { right: 16px; bottom: 16px; }
+        #mt-chat-ocultar { right: 64px; bottom: 62px; opacity: 1; scale: 1; pointer-events: auto; }
     }
 </style>
 
@@ -172,6 +198,13 @@
         <svg class="mt-icono-cerrar" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
             <path d="M18 6 6 18M6 6l12 12"/>
         </svg>
+    </button>
+
+    <button id="mt-chat-ocultar" type="button" aria-label="Ocultar el asistente" title="Ocultar el asistente">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <button id="mt-chat-pestana" type="button" aria-label="Mostrar el asistente" title="Mostrar el asistente">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
     </button>
 
     <div id="mt-chat-panel" role="dialog" aria-label="Asistente MediTrack">
@@ -242,6 +275,17 @@
         if (raiz.classList.contains('abierto')) setTimeout(() => texto.focus(), 150);
     }
     document.getElementById('mt-chat-boton').addEventListener('click', () => alternar());
+
+    /* ---------- Ocultar / mostrar el botón (se recuerda en este navegador) ---------- */
+    function ocultar(si) {
+        raiz.classList.toggle('oculto', si);
+        if (si) alternar(false);
+        try { localStorage.setItem('mt-chat-oculto', si ? '1' : '0'); } catch (e) {}
+    }
+    try { if (localStorage.getItem('mt-chat-oculto') === '1') raiz.classList.add('oculto'); } catch (e) {}
+    document.getElementById('mt-chat-ocultar').addEventListener('click', (e) => { e.stopPropagation(); ocultar(true); });
+    document.getElementById('mt-chat-pestana').addEventListener('click', () => ocultar(false));
+    window.mtAsistente = { ocultar: () => ocultar(true), mostrar: () => ocultar(false) };
     document.getElementById('mt-chat-cerrar').addEventListener('click', () => alternar(false));
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') alternar(false); });
 

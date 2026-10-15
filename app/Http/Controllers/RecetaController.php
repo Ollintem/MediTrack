@@ -10,6 +10,8 @@ use App\Models\Modulo;
 use App\Models\Consulta;
 use App\Models\Clinica;       // Modelo de Clinica importado
 use App\Models\Configuracion;  // Modelo de Configuracion importado
+use App\Models\ProductoInventario;
+use App\Models\SignosVitales;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -32,11 +34,11 @@ class RecetaController extends Controller
             }
         }
 
-        $recetas = Receta::with(['detalles', 'paciente', 'personal'])
+        $recetas = Receta::with(['detalles', 'paciente.alergias', 'personal'])
             ->orderBy('created_at', 'desc')
             ->get();
 
-        $pacientes = Paciente::all();
+        $pacientes = Paciente::with('alergias')->get();
         $modulos = Modulo::all();
 
         // Carga de datos de la clínica y configuraciones globales
@@ -51,7 +53,34 @@ class RecetaController extends Controller
             $doctores = Personal::all();
         }
 
-        return view('recetas.index', compact('recetas', 'pacientes', 'modulos', 'doctores', 'clinica', 'config', 'prefill'));
+        // Datos que consume la vista (lista, hoja de receta y formulario)
+        $datosRecetas = [
+            'recetas'   => $recetas->map(fn ($r) => $this->presentar($r))->values(),
+            'pacientes' => $pacientes->map(fn ($p) => [
+                'id'       => $p->id,
+                'nombre'   => $p->nombre ?: 'Paciente',
+                'curp'     => $p->rut,
+                'edad'     => $this->edad($p),
+                'alergias' => $p->alergias->pluck('descripcion')->filter()->values(),
+            ])->sortBy('nombre', SORT_NATURAL | SORT_FLAG_CASE)->values(),
+            'medicos'   => $doctores->map(fn ($m) => [
+                'id' => $m->id, 'nombre' => $m->nombre_completo, 'especialidad' => $m->especialidad_principal,
+            ])->sortBy('nombre', SORT_NATURAL | SORT_FLAG_CASE)->values(),
+            // Sugerencias de medicamentos tomadas del inventario
+            'productos' => class_exists(ProductoInventario::class)
+                ? ProductoInventario::query()->orderBy('nombre')->get(['id', 'nombre', 'stock_actual', 'estado'])
+                    ->map(fn ($p) => ['nombre' => $p->nombre, 'stock' => (int) $p->stock_actual])->values()
+                : [],
+            'medicoActual' => auth()->user()->personal->id ?? null,
+            'prefill'   => $prefill,
+            'clinica'   => [
+                'nombre'    => $clinica->nombre ?? ($config['nombre_clinica'] ?? 'MediTrack'),
+                'direccion' => $clinica->direccion ?? null,
+                'telefono'  => $clinica->telefono ?? null,
+            ],
+        ];
+
+        return view('recetas.index', compact('recetas', 'pacientes', 'modulos', 'doctores', 'clinica', 'config', 'prefill', 'datosRecetas'));
     }
 
     /**
@@ -130,10 +159,26 @@ class RecetaController extends Controller
     {
         $request->validate([
             'paciente_id' => 'required|exists:pacientes,id',
-            'diagnostico' => 'required|string',
+            'personal_id' => 'nullable|exists:personals,id',
+            'diagnostico' => 'required|string|max:2000',
+            'indicaciones_generales' => 'nullable|string|max:3000',
             'medicamentos' => 'required|array|min:1',
             'consulta_id' => 'nullable|integer|exists:consultas,id',
+        ], [
+            'paciente_id.required'  => 'Elige al paciente.',
+            'diagnostico.required'  => 'Escribe el diagnóstico.',
+            'medicamentos.required' => 'Agrega al menos un medicamento.',
+            'medicamentos.min'      => 'Agrega al menos un medicamento.',
         ]);
+
+        // Una consulta solo puede tener una receta
+        if ($request->filled('consulta_id') && Schema::hasColumn('recetas', 'consulta_id')
+            && Receta::where('consulta_id', $request->consulta_id)->exists()) {
+            $mensaje = 'Esta consulta ya tiene una receta.';
+            return $request->wantsJson()
+                ? response()->json(['message' => $mensaje, 'errors' => ['consulta_id' => [$mensaje]]], 422)
+                : redirect()->route('recetas.index')->with('error', $mensaje);
+        }
 
         $personalId = $request->personal_id ?? (auth()->user()->personal->id ?? null);
 
@@ -176,19 +221,70 @@ class RecetaController extends Controller
             }
         }
 
+        if ($request->wantsJson()) {
+            return response()->json([
+                'message' => 'Receta emitida correctamente.',
+                'receta'  => $this->presentar($receta->fresh(['detalles', 'paciente.alergias', 'personal'])),
+            ], 201);
+        }
+
         return redirect()->route('recetas.index')->with('success', 'Receta médica registrada correctamente.');
+    }
+
+    /** Datos de una receta para la vista. */
+    private function presentar(Receta $r): array
+    {
+        $p = $r->paciente;
+        $m = $r->personal;
+
+        return [
+            'id'           => $r->id,
+            'folio'        => str_pad($r->id, 5, '0', STR_PAD_LEFT),
+            'fecha'        => Carbon::parse($r->fecha_emision ?? $r->created_at)->format('Y-m-d'),
+            'hora'         => $r->created_at ? $r->created_at->format('H:i') : null,
+            'paciente_id'  => $r->paciente_id,
+            'paciente'     => $p?->nombre ?: 'Paciente',
+            'edad'         => $p ? $this->edad($p) : null,
+            'alergias'     => $p ? $p->alergias->pluck('descripcion')->filter()->values() : [],
+            'personal_id'  => $r->personal_id,
+            'medico'       => $m?->nombre_completo,
+            'cedula'       => $m?->numero_registro ?: $m?->rut,
+            'diagnostico'  => $r->diagnostico,
+            'indicaciones' => $r->indicaciones_generales,
+            'consulta_id'  => $r->consulta_id ?? null,
+            'detalles'     => $r->detalles->map(fn ($d) => [
+                'medicamento' => $d->medicamento, 'dosis' => $d->dosis, 'frecuencia' => $d->frecuencia, 'duracion' => $d->duracion,
+            ])->values(),
+            'pdf'          => route('recetas.pdf', $r->id),
+        ];
+    }
+
+    private function edad($p): ?int
+    {
+        try {
+            return $p && $p->fecha_nacimiento ? Carbon::parse($p->fecha_nacimiento)->age : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     public function pdf($id)
     {
-        $receta = Receta::with(['detalles', 'paciente', 'personal'])->findOrFail($id);
+        $receta = Receta::with(['detalles', 'paciente.alergias', 'personal'])->findOrFail($id);
+
+        // Signos vitales: los de la consulta de esta receta o, si no hay, los más recientes del paciente
+        $signos = null;
+        if (!empty($receta->consulta_id)) {
+            $signos = SignosVitales::where('consulta_id', $receta->consulta_id)->latest('id')->first();
+        }
+        $signos = $signos ?: SignosVitales::where('paciente_id', $receta->paciente_id)->latest('fecha_registro')->first();
 
         // Obtener la información de la clínica y configuraciones globales
         $clinica = Clinica::first();
         $config = Configuracion::pluck('valor', 'clave')->toArray();
 
         // Enviar $clinica y $config a la vista de PDF
-        $pdf = Pdf::loadView('recetas.pdf', compact('receta', 'clinica', 'config'));
+        $pdf = Pdf::loadView('recetas.pdf', compact('receta', 'clinica', 'config', 'signos'));
         return $pdf->stream('Receta-N' . str_pad($receta->id, 5, '0', STR_PAD_LEFT) . '.pdf');
     }
 

@@ -139,9 +139,9 @@
   function seleccionar(p){
     if(editando||!p||p===actual)return;
     const t=$('#cvTilt');
-    const cambiar=()=>{actual=p;pintarFrente(p);pintarCartera();pintarLista();t.classList.remove('swap-out');t.classList.add('swap-in');setTimeout(()=>t.classList.remove('swap-in'),460)};
+    const cambiar=()=>{actual=p;pintarFrente(p);pintarCartera();pintarLista();t.classList.remove('swap-out');t.classList.add('swap-in');setTimeout(()=>t.classList.remove('swap-in'),280)};
     if(reduce)return cambiar();
-    t.classList.add('swap-out');setTimeout(cambiar,200);
+    t.classList.add('swap-out');setTimeout(cambiar,120);
   }
 
   /* ---------- Edición (reverso) ---------- */
@@ -159,11 +159,11 @@
     $('#cvSaveTxt').textContent=p.id?'Guardar cambios':'Emitir credencial';
     pintarListas();irA(tab||'id');validarVivo();
     editando=true;root.classList.add('editing');
-    setTimeout(()=>{const el=$('.cv-panel.on input:not([type=checkbox])')||$('.cv-panel.on input');el&&el.focus({preventScroll:true})},reduce?0:520);
+    setTimeout(()=>{const el=$('.cv-panel.on input:not([type=checkbox])')||$('.cv-panel.on input');el&&el.focus({preventScroll:true})},reduce?0:320);
   }
   function cerrarEdicion(){
     editando=false;root.classList.remove('editing');
-    setTimeout(()=>{const b=$('#cvEditar');b&&b.focus({preventScroll:true})},reduce?0:600);
+    setTimeout(()=>{const b=$('#cvEditar');b&&b.focus({preventScroll:true})},reduce?0:340);
   }
   function irA(t){pestana=t;$$('.cv-tab').forEach(b=>{const on=b.dataset.tab===t;b.setAttribute('aria-selected',on);b.tabIndex=on?0:-1});$$('.cv-panel').forEach(p=>p.classList.toggle('on',p.dataset.panel===t))}
   function pintarListas(){
@@ -237,7 +237,7 @@
       if(esNuevo){P.push(nuevo)}else{const i=P.findIndex(x=>x.id===nuevo.id);cambios=CAMPOS.concat(['alergias']).filter(k=>JSON.stringify(P[i][k])!==JSON.stringify(nuevo[k]));P[i]=nuevo}
       actual=nuevo;pintarFrente(actual,cambios);cerrarEdicion();
       const d=new Date(),hm=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-      setTimeout(()=>{const s=$('#cvStampTxt');if(s){s.innerHTML=(esNuevo?'EMITIDA':'ACTUALIZADA')+'<br>'+hm;$('#cvStamp').classList.add('on')}pintarTodo({nuevo:esNuevo?nuevo.id:null,tick:esNuevo})},reduce?0:720);
+      setTimeout(()=>{const s=$('#cvStampTxt');if(s){s.innerHTML=(esNuevo?'EMITIDA':'ACTUALIZADA')+'<br>'+hm;$('#cvStamp').classList.add('on')}pintarTodo({nuevo:esNuevo?nuevo.id:null,tick:esNuevo})},reduce?0:420);
       avisar(data.message||(esNuevo?'Paciente registrado.':'Expediente actualizado.'));
       $('#cvQ').value='';
     }catch(err){
@@ -252,7 +252,7 @@
     const ci=curpInfo(draft.curp);if(ci){draft.fnac=ci.iso;draft.genero=ci.genero}
     const t=$('#cvTilt');
     const ir=()=>{pintarFrente(Object.assign({},draft,{id:0,codigo:'Credencial nueva',paterno:draft.paterno||'PACIENTE',nombres:draft.nombres||'NUEVO',hoy:false,alta:'en proceso'}));t.classList.remove('swap-out');t.classList.add('swap-in');setTimeout(()=>{t.classList.remove('swap-in');abrirEdicion(draft)},reduce?0:380)};
-    if(reduce)return ir();t.classList.add('swap-out');setTimeout(ir,200);
+    if(reduce)return ir();t.classList.add('swap-out');setTimeout(ir,120);
   }
   function agregar(l,inp){
     const v=String(inp.value||'').trim().toUpperCase().replace(/\s+/g,' ');
@@ -278,7 +278,7 @@
   $('#cvNuevo')&&($('#cvNuevo').onclick=e=>{e.preventDefault();nuevo()});
   $('#cvEliminar')&&($('#cvEliminar').onclick=eliminar);
   $('#cvImprimir').onclick=()=>window.print();
-  $('#cvCancel').onclick=()=>{const eraNuevo=borrador&&!borrador.id;cerrarEdicion();if(eraNuevo)setTimeout(()=>pintarFrente(actual),reduce?0:700)};
+  $('#cvCancel').onclick=()=>{const eraNuevo=borrador&&!borrador.id;cerrarEdicion();if(eraNuevo)setTimeout(()=>pintarFrente(actual),reduce?0:420)};
   $('#cvBack').addEventListener('submit',e=>{e.preventDefault();guardar()});
   $$('.cv-tab').forEach(b=>{b.onclick=()=>irA(b.dataset.tab);b.onkeydown=e=>{if(!['ArrowRight','ArrowLeft'].includes(e.key))return;const tabs=$$('.cv-tab'),i=tabs.indexOf(b),n=tabs[(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length];irA(n.dataset.tab);n.focus()}});
   $('#cvBack').addEventListener('input',e=>{const k=e.target.dataset.k;if(!k||!borrador)return;let v=e.target.type==='checkbox'?e.target.checked:e.target.value;
@@ -300,7 +300,7 @@
     const b=e.target.closest('[data-id]'),sig=e.target.closest('#cvSig');
     const p=b?P.find(x=>x.id==b.dataset.id):sig?[...P].sort((a,c)=>c.creado-a.creado).find(x=>faltan(x).length):null;if(!p||!PUEDE.editar)return;
     const tab=!curpInfo(p.curp)?'id':!(p.cel||p.tel)?'ct':'av';
-    if(p!==actual){seleccionar(p);setTimeout(()=>abrirEdicion(p,tab),reduce?0:520)}else abrirEdicion(p,tab);
+    if(p!==actual){seleccionar(p);setTimeout(()=>abrirEdicion(p,tab),reduce?0:300)}else abrirEdicion(p,tab);
   };
   $$('.cv [data-f]').forEach(b=>b.onclick=()=>{filtro=filtro===b.dataset.f&&b.closest('.cv-ind')?'todos':b.dataset.f;limite=30;$$('.cv [data-f]').forEach(x=>x.setAttribute('aria-pressed',x.dataset.f===filtro));pintarLista()});
   $('#cvQ').addEventListener('input',()=>{limite=30;pintarLista()});

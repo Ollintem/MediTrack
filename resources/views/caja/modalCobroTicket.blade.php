@@ -1,104 +1,137 @@
-<!-- MODAL 1: SELECCIÓN Y CONFIRMACIÓN DEL MÉTODO DE PAGO -->
-<div x-show="openModal" x-cloak class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div @click.outside="openModal = false" class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
-        <div class="flex justify-between items-center border-b border-gray-100 pb-3">
-            <h3 class="text-sm font-black text-gray-800 uppercase">PROCESAR COBRO: <span class="text-teal-600" x-text="ticketSeleccionado.codigo_ticket"></span></h3>
-            <button @click="openModal = false" class="text-gray-400 hover:text-gray-600"><i class="bi bi-x-lg"></i></button>
-        </div>
+<!-- MODAL DE COBRO / RECIBO OFICIAL PAGADO -->
+<template x-teleport="body">
+    <div x-show="openCobroModal" class="fixed inset-0 z-50 overflow-y-auto" x-cloak>
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            
+            <div x-show="openCobroModal" 
+                 x-transition:enter="ease-out duration-300" 
+                 x-transition:enter-start="opacity-0" 
+                 x-transition:enter-end="opacity-100" 
+                 x-transition:leave="ease-in duration-200" 
+                 x-transition:leave-start="opacity-100" 
+                 x-transition:leave-end="opacity-0" 
+                 class="fixed inset-0 transition-opacity bg-slate-900/60 backdrop-blur-xs" 
+                 @click="openCobroModal = false"></div>
 
-        <div class="space-y-3">
-            <div class="p-4 bg-slate-50 rounded-2xl space-y-2">
-                <p class="text-xs font-extrabold text-gray-700 uppercase" x-text="`PACIENTE: ${ticketSeleccionado.paciente ? ticketSeleccionado.paciente.nombre_completo : 'PÚBLICO GENERAL'}`"></p>
-                <div class="flex justify-between items-baseline pt-2 border-t border-gray-200">
-                    <span class="text-xs font-bold text-gray-400 uppercase">TOTAL A COBRAR:</span>
-                    <span class="text-2xl font-black text-teal-700" x-text="`$${parseFloat(ticketSeleccionado.monto_total || 0).toFixed(2)}`"></span>
+            <div x-show="openCobroModal" 
+                 x-transition:enter="ease-out duration-300" 
+                 x-transition:enter-start="opacity-0 scale-95" 
+                 x-transition:enter-end="opacity-100 scale-100" 
+                 x-transition:leave="ease-in duration-200" 
+                 x-transition:leave-start="opacity-100 scale-100" 
+                 x-transition:leave-end="opacity-0 scale-95" 
+                 class="inline-block w-full max-w-sm my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-2xl rounded-3xl border border-gray-100 p-6 space-y-4">
+                
+                <div class="flex items-center justify-between border-b border-gray-100 pb-3 print:hidden">
+                    <div class="flex items-center gap-2 font-black text-xs text-teal-800 uppercase">
+                        <i class="bi bi-receipt text-base"></i>
+                        <span>RECIBO OFICIAL DE PAGO</span>
+                    </div>
+                    <button type="button" @click="openCobroModal = false" class="text-gray-400 hover:text-gray-600 font-bold focus:outline-none cursor-pointer">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
                 </div>
-            </div>
 
-            <div>
-                <label class="block text-[10px] font-extrabold text-gray-500 uppercase mb-1">MÉTODO DE PAGO *</label>
-                <select x-model="metodoPago" class="w-full bg-slate-50 border border-gray-200 text-xs font-bold rounded-2xl px-3 py-3 uppercase focus:outline-none focus:border-teal-500">
-                    <option value="Efectivo">EFECTIVO</option>
-                    <option value="Tarjeta">TARJETA DE DÉBITO / CRÉDITO</option>
-                    <option value="Transferencia">TRANSFERENCIA BANCARIA</option>
-                </select>
-            </div>
-        </div>
+                <!-- CONTENIDO DEL COMPROBANTE TÉRMICO -->
+                <div id="seccion-recibo-imprimible" class="p-4 border border-dashed border-teal-300 bg-teal-50/40 rounded-2xl space-y-3 font-mono text-xs text-gray-800">
+                    
+                    <div class="text-center">
+                        <h2 class="font-black text-teal-950 text-sm tracking-wider uppercase">MEDITRACK CLÍNICA</h2>
+                        <p class="text-[9px] font-bold text-teal-700 uppercase">COMPROBANTE OFICIAL DE PAGO</p>
+                    </div>
 
-        <div class="flex gap-3 pt-2">
-            <button @click="openModal = false" class="w-1/2 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-extrabold rounded-2xl text-xs uppercase">
-                CANCELAR
-            </button>
-            <button @click="confirmarPago()" :disabled="cargando" class="w-1/2 py-3 bg-teal-600 hover:bg-teal-700 text-white font-extrabold rounded-2xl text-xs uppercase shadow-lg shadow-teal-600/20">
-                <span x-text="cargando ? 'PROCESANDO...' : 'CONFIRMAR PAGO'"></span>
-            </button>
-        </div>
-    </div>
-</div>
+                    <div class="space-y-1 text-[11px] pt-1">
+                        <div class="flex justify-between">
+                            <span class="font-bold text-teal-900">FOLIO:</span>
+                            <span class="font-black text-teal-800" x-text="ticketSeleccionado?.codigo_ticket"></span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="font-bold text-teal-900">PACIENTE:</span>
+                            <span class="font-extrabold uppercase text-gray-700 truncate max-w-[170px]" 
+                                  x-text="ticketSeleccionado?.paciente ? (ticketSeleccionado.paciente.nombre_completo || ticketSeleccionado.paciente.primer_nombre) : 'PÚBLICO GENERAL'"></span>
+                        </div>
+                    </div>
 
-<!-- MODAL 2: COMPROBANTE OFICIAL DE PAGO DEFINITIVO -->
-<div x-show="openTicketPagadoModal" x-cloak class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-center">
-        
-        <div id="comprobante-oficial-pago" class="font-mono text-xs text-gray-800 space-y-2 text-left">
-            <div class="text-center border-b border-dashed border-gray-300 pb-2">
-                <h2 class="text-sm font-black uppercase text-teal-800">CLÍNICA MEDITRACK</h2>
-                <p class="text-[9px] font-bold text-gray-400">COMPROBANTE OFICIAL DE PAGO</p>
-                <span class="inline-block mt-1 px-3 py-0.5 bg-emerald-100 text-emerald-800 font-black text-xs rounded-lg border border-emerald-300" x-text="`PAGADO: ${ticketCobrado?.codigo_ticket}`"></span>
-            </div>
+                    <!-- SELLO DE ESTADO PAGADO -->
+                    <div class="bg-emerald-100 border border-emerald-200 p-2 rounded-xl text-center">
+                        <span class="block text-xs font-black text-emerald-900 uppercase">*** PAGADO ***</span>
+                        <span class="text-[9px] font-bold text-emerald-700 uppercase" x-text="`MÉTODO: ${metodoPago}`"></span>
+                    </div>
 
-            <div class="text-[10px] space-y-0.5">
-                <p><strong>PACIENTE:</strong> <span x-text="ticketCobrado?.paciente ? ticketCobrado.paciente.nombre_completo : 'PÚBLICO GENERAL'"></span></p>
-                <p><strong>FECHA DE PAGO:</strong> <span x-text="new Date().toLocaleString('es-MX')"></span></p>
-                <p><strong>MÉTODO DE PAGO:</strong> <span class="uppercase font-bold text-teal-700" x-text="metodoPago"></span></p>
-            </div>
+                    <!-- DESGLOSE DE PRODUCTOS -->
+                    <table class="w-full text-left text-[11px] border-y border-dashed border-teal-200 py-2">
+                        <thead>
+                            <tr class="font-bold text-teal-900 border-b border-teal-200">
+                                <th class="pb-1">CANT</th>
+                                <th class="pb-1">CONCEPTO</th>
+                                <th class="pb-1 text-right">TOTAL</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-teal-100">
+                            <template x-for="det in ticketSeleccionado?.detalles" :key="det.id">
+                                <tr>
+                                    <td class="py-1 font-bold" x-text="`${det.cantidad}x`"></td>
+                                    <td class="py-1 uppercase truncate max-w-[130px]" x-text="det.producto ? det.producto.nombre : 'MEDICAMENTO'"></td>
+                                    <td class="py-1 text-right font-bold text-gray-900" x-text="`$${parseFloat(det.subtotal).toFixed(2)}`"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
 
-            <!-- DESGLOSE CONCEPTO/PRODUCTOS -->
-            <table class="w-full text-left text-[10px] border-y border-dashed border-gray-300 py-1.5 my-2">
-                <thead>
-                    <tr class="font-bold border-b border-gray-200">
-                        <th>CANT</th>
-                        <th>CONCEPTO</th>
-                        <th class="text-right">TOTAL</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <template x-for="det in ticketCobrado?.detalles" :key="det.id">
-                        <tr>
-                            <td class="font-bold" x-text="det.cantidad"></td>
-                            <td class="uppercase truncate max-w-[100px]" x-text="det.producto ? det.producto.nombre : 'MEDICAMENTO'"></td>
-                            <td class="text-right font-bold" x-text="`$${parseFloat(det.subtotal).toFixed(2)}`"></td>
-                        </tr>
+                    <div class="flex justify-between items-baseline pt-1">
+                        <span class="font-black text-teal-950 text-xs">TOTAL PAGADO:</span>
+                        <span class="text-base font-black text-teal-800" x-text="`$${parseFloat(ticketSeleccionado?.monto_total || 0).toFixed(2)}`"></span>
+                    </div>
+
+                    <div class="pt-2 text-center">
+                        <p class="text-[9px] font-extrabold text-teal-800 uppercase">
+                            PRESENTAR EN VENTANILLA DE FARMACIA PARA RECOGER SU MEDICAMENTO
+                        </p>
+                    </div>
+                </div>
+
+                <!-- BOTONES DE ACCIÓN -->
+                <div class="flex gap-2 pt-2 border-t border-gray-100 print:hidden">
+                    <template x-if="ticketSeleccionado?.status === 'pendiente'">
+                        <button type="button" 
+                                @click="procesarCobroDirecto(ticketSeleccionado.id, metodoPago)" 
+                                :disabled="procesandoPago"
+                                class="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white font-black text-xs uppercase rounded-2xl shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer">
+                            <i class="bi bi-wallet2"></i>
+                            <span x-text="procesandoPago ? 'PROCESANDO PAGO...' : 'CONFIRMAR COBRO'"></span>
+                        </button>
                     </template>
-                </tbody>
-            </table>
 
-            <div class="flex justify-between items-baseline pt-1">
-                <span class="text-xs font-bold">MONTO LIQUIDADO:</span>
-                <span class="text-base font-black text-emerald-700" x-text="`$${parseFloat(ticketCobrado?.monto_total || 0).toFixed(2)}`"></span>
+                    <template x-if="ticketSeleccionado?.status !== 'pendiente'">
+                        <div class="flex gap-2 w-full">
+                            <button type="button" @click="openCobroModal = false" 
+                                    class="w-1/2 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-extrabold rounded-2xl text-xs uppercase transition-all cursor-pointer">
+                                CERRAR
+                            </button>
+                            <button type="button" @click="imprimirComprobante()" 
+                                    class="w-1/2 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-extrabold rounded-2xl text-xs uppercase shadow-md shadow-teal-600/20 flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer">
+                                <i class="bi bi-printer-fill"></i> IMPRIMIR
+                            </button>
+                        </div>
+                    </template>
+                </div>
+
             </div>
-
-            <p class="text-[9px] text-center text-gray-500 font-sans uppercase pt-2">PRESENTA ESTE TICKET EN FARMACIA PARA EL SURTIDO DE TU MEDICAMENTO.</p>
         </div>
-
-        <div class="flex gap-2 pt-3 border-t border-gray-100 print:hidden">
-            <button type="button" @click="openTicketPagadoModal = false; location.reload();" 
-                    class="w-1/2 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-extrabold rounded-xl text-xs uppercase">
-                CERRAR
-            </button>
-            <button type="button" @click="imprimirComprobante()" 
-                    class="w-1/2 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-extrabold rounded-xl text-xs uppercase shadow-md shadow-teal-600/20 flex items-center justify-center gap-1">
-                <i class="bi bi-printer-fill"></i> IMPRIMIR
-            </button>
-        </div>
-
     </div>
-</div>
+</template>
 
 <style>
 @media print {
     body * { visibility: hidden; }
-    #comprobante-oficial-pago, #comprobante-oficial-pago * { visibility: visible; }
-    #comprobante-oficial-pago { position: absolute; left: 0; top: 0; width: 100%; }
+    #seccion-recibo-imprimible, #seccion-recibo-imprimible * { visibility: visible; }
+    #seccion-recibo-imprimible { 
+        position: absolute; 
+        left: 0; 
+        top: 0; 
+        width: 100%; 
+        border: none !important;
+        background: transparent !important;
+    }
 }
 </style>

@@ -1,278 +1,188 @@
 @extends('layouts.admin')
 
+{{--
+    ROLES Y PERMISOS · MediTrack
+    A la izquierda los roles; a la derecha la matriz de permisos del rol elegido, agrupada como el menú.
+    Editar y crear se hacen en la misma matriz y se guardan por AJAX (RolController responde JSON).
+    La vista «Comparar» pone todos los roles lado a lado.
+--}}
+
 @section('content')
-@php
-    $roles   = $roles ?? collect();
-    $modulos = $modulos ?? collect();
-    if ($roles instanceof \Illuminate\Database\Eloquent\Collection) {
-        $roles->loadMissing('permisos');
-    }
+<div class="rl" x-data="modRoles()" x-cloak :class="{ 'editando': editando }" @keydown.window="tecla($event)">
 
-    $puedeCrear    = auth()->user()->tienePermiso('Roles', 'crear');
-    $puedeEditar   = auth()->user()->tienePermiso('Roles', 'editar');
-    $puedeEliminar = auth()->user()->tienePermiso('Roles', 'eliminar');
+    <!-- BÚSQUEDA Y ALTA -->
+    <header class="rl-top">
+        <label class="rl-cmd">
+            <i class="bi bi-search" aria-hidden="true"></i>
+            <span class="rl-sr">Buscar</span>
+            <input type="search" x-ref="buscar" x-model.debounce.150ms="q" autocomplete="off" placeholder="Busca un rol o un módulo">
+            <kbd aria-hidden="true">/</kbd>
+        </label>
+        <a class="rl-btn" x-show="R.personal" :href="R.personal"><i class="bi bi-person-badge"></i> Ver personal</a>
+        <button type="button" class="rl-dark" x-show="PUEDE.crear" @click="nuevo()">Nuevo rol <kbd>N</kbd></button>
+    </header>
 
-    // Mapeo con los 12 módulos activos de MediTrack (incluye Configuración)
-    $iconos = [
-        'Pacientes'     => 'bi-people-fill',
-        'Citas'         => 'bi-calendar-event-fill',
-        'Consultas'     => 'bi-clipboard2-pulse-fill',
-        'Consultorios'  => 'bi-hospital-fill',
-        'Recetas'       => 'bi-file-earmark-medical-fill',
-        'POS'           => 'bi-shop',
-        'Caja'          => 'bi-cash-coin',
-        'Inventario'    => 'bi-box-seam-fill',
-        'Personal'      => 'bi-person-badge-fill',
-        'Roles'         => 'bi-shield-lock-fill',
-        'Configuración' => 'bi-gear-fill',          // <--- Ícono del módulo
-        'Bitácora'      => 'bi-journal-text',
-    ];
-
-    $modulosJs = $modulos->map(fn ($m) => [
-        'id'     => $m->id,
-        'nombre' => $m->nombre,
-        'icono'  => $iconos[$m->nombre] ?? 'bi-app-indicator',
-    ])->values();
-
-    // Rol del usuario actual
-    $miRolId = data_get(auth()->user(), 'rol_id') ?? data_get(auth()->user(), 'role_id') ?? data_get(auth()->user(), 'rol.id');
-    $moduloRolesId = optional($modulos->firstWhere('nombre', 'Roles'))->id;
-
-    $rolesJs = $roles->map(function ($rol) use ($modulos) {
-        $permisos = [];
-        foreach ($modulos as $m) {
-            $p = $rol->permisos->firstWhere('modulo_id', $m->id);
-            $permisos[$m->id] = [
-                'ver'      => (bool) ($p->puede_ver ?? false),
-                'crear'    => (bool) ($p->puede_crear ?? false),
-                'editar'   => (bool) ($p->puede_editar ?? false),
-                'eliminar' => (bool) ($p->puede_eliminar ?? false),
-            ];
-        }
-
-        $usuarios = $rol->usuarios_count ?? $rol->users_count ?? null;
-        if ($usuarios === null) {
-            foreach (['usuarios', 'users'] as $rel) {
-                if (method_exists($rol, $rel)) {
-                    try { $usuarios = $rol->{$rel}()->count(); } catch (\Throwable $e) {}
-                    break;
-                }
-            }
-        }
-
-        return ['id' => $rol->id, 'nombre' => $rol->nombre, 'permisos' => $permisos, 'usuarios' => $usuarios];
-    })->values();
-
-    $acciones = [
-        ['ver',      'Ver',      'bi-eye-fill',    'bg-teal-100 text-teal-800 border-teal-200'],
-        ['crear',    'Crear',    'bi-plus-lg',     'bg-emerald-100 text-emerald-800 border-emerald-200'],
-        ['editar',   'Editar',   'bi-pencil-fill', 'bg-amber-100 text-amber-800 border-amber-200'],
-        ['eliminar', 'Eliminar', 'bi-trash-fill',  'bg-rose-100 text-rose-800 border-rose-200'],
-    ];
-@endphp
-
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
-<div class="space-y-6 w-full block" x-data="moduloRoles()">
-
-    {{-- ===================== ENCABEZADO ===================== --}}
-    <div class="aparece relative overflow-hidden rounded-3xl bg-gradient-to-br from-teal-900 via-teal-800 to-emerald-700 text-white shadow-xl shadow-teal-900/20">
-        <div class="flotar absolute -right-16 -top-20 w-64 h-64 rounded-full bg-white/5"></div>
-        <div class="flotar absolute right-48 -bottom-24 w-56 h-56 rounded-full bg-emerald-400/10" style="animation-delay:-2.5s"></div>
-        <svg class="absolute inset-x-0 bottom-2 w-full h-12 opacity-25 pointer-events-none" viewBox="0 0 800 40" preserveAspectRatio="none" fill="none" aria-hidden="true">
-            <path class="ecg-linea" d="M0 20 H300 L315 20 L325 6 L338 34 L350 2 L364 38 L374 20 H520 L532 13 L544 20 H800" stroke="#6ee7b7" stroke-width="2" stroke-linejoin="round"/>
-        </svg>
-        <i class="bi bi-shield-lock-fill escudo absolute right-12 top-4 text-[110px] leading-none text-white/10 pointer-events-none hidden md:block"></i>
-
-        <div class="relative p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div class="space-y-2 min-w-0">
-                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-[11px] font-bold uppercase tracking-wide text-emerald-300 backdrop-blur-md">
-                    <i class="bi bi-heart-pulse-fill latido-lento"></i> Seguridad y accesos
-                </div>
-                <h1 class="text-2xl sm:text-3xl font-black tracking-tight flex items-center gap-3">
-                    Roles y permisos <i class="bi bi-heart-pulse-fill text-emerald-300 text-2xl latido-lento"></i>
-                </h1>
-                <p class="text-xs text-teal-100/80 font-medium max-w-xl leading-relaxed">
-                    Define qué puede ver, crear, editar y eliminar cada cargo dentro de los módulos de MediTrack.
-                </p>
-            </div>
-            <div class="flex items-center gap-2.5 flex-wrap shrink-0">
-                @if (Route::has('personal.index'))
-                    <a href="{{ route('personal.index') }}"
-                       class="bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-2.5 rounded-2xl text-xs border border-white/20 backdrop-blur-md transition-all hover:-translate-y-0.5 flex items-center gap-2">
-                        <i class="bi bi-people-fill text-emerald-300"></i> Ver personal
-                    </a>
-                @endif
-                @if ($puedeCrear)
-                    <button @click="openCreateModal = true" type="button"
-                            class="group bg-white text-teal-900 hover:bg-emerald-50 font-black px-5 py-2.5 rounded-2xl text-xs shadow-lg shadow-teal-950/25 transition-all hover:-translate-y-0.5 active:scale-95 flex items-center gap-2 cursor-pointer">
-                        <i class="bi bi-plus-lg text-sm text-teal-700 transition-transform duration-300 group-hover:rotate-90"></i> Nuevo rol
-                    </button>
-                @endif
-            </div>
+    <!-- CABECERA -->
+    <section class="rl-cab">
+        <div class="rl-g">
+            <b class="t" x-text="roles.length"></b>
+            <span><em x-text="roles.length === 1 ? 'rol en la clínica' : 'roles en la clínica'"></em><span x-text="MOD.length + ' módulos · ' + totalPersonas + (totalPersonas === 1 ? ' persona con rol' : ' personas con rol')"></span></span>
         </div>
-    </div>
-
-    {{-- ===================== RESUMEN ===================== --}}
-    @php
-        $tarjetas = [
-            ['Roles',               'roles',     'bi-person-badge-fill',   'bg-teal-50 text-teal-600'],
-            ['Módulos',             'modulos',   'bi-grid-3x3-gap-fill',   'bg-sky-50 text-sky-600'],
-            ['Permisos otorgados',  'permisos',  'bi-key-fill',            'bg-amber-50 text-amber-600'],
-            ['Cobertura promedio',  'cobertura', 'bi-pie-chart-fill',      'bg-emerald-50 text-emerald-600'],
-        ];
-    @endphp
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        @foreach ($tarjetas as $i => [$titulo, $clave, $icono, $color])
-            <div class="tarjeta-stat group bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center justify-between gap-3 transition-all hover:shadow-md hover:-translate-y-1 hover:border-slate-200"
-                 style="animation-delay: {{ $i * 70 }}ms">
-                <div>
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{{ $titulo }}</p>
-                    <p class="text-2xl font-black text-slate-800 mt-1 tabular-nums" x-text="resumenMostrado.{{ $clave }} + ('{{ $clave }}' === 'cobertura' ? '%' : '')">0</p>
-                </div>
-                <span class="w-11 h-11 rounded-2xl flex items-center justify-center text-lg shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6 {{ $color }}">
-                    <i class="bi {{ $icono }}"></i>
-                </span>
-            </div>
-        @endforeach
-    </div>
-
-    {{-- ===================== BARRA DE HERRAMIENTAS ===================== --}}
-    <div class="aparece flex flex-col sm:flex-row sm:items-center gap-3" style="--d: 200ms">
-        <div class="relative flex-1 sm:max-w-sm">
-            <i class="bi bi-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-            <input type="search" x-model.debounce.150ms="busqueda" placeholder="Buscar rol…"
-                   class="w-full pl-9 pr-4 py-2.5 rounded-2xl border border-slate-200 bg-white text-xs font-semibold focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all">
+        <ul class="rl-ley" aria-label="Acciones">
+            <template x-for="a in ACC" :key="'l' + a.k"><li :class="'a-' + a.k"><i class="bi" :class="a.i"></i><span x-text="a.t"></span></li></template>
+        </ul>
+        <div class="rl-seg" role="group" aria-label="Vista">
+            <button type="button" :aria-pressed="(vista === 'rol').toString()" @click="vista = 'rol'"><i class="bi bi-shield-lock"></i> Por rol</button>
+            <button type="button" :aria-pressed="(vista === 'comparar').toString()" @click="if (!editando) vista = 'comparar'" :disabled="editando"><i class="bi bi-layout-three-columns"></i> Comparar</button>
         </div>
-        <div class="sm:ml-auto flex items-center gap-3">
-            <div class="hidden md:flex items-center gap-2 text-[10px] font-bold text-slate-400">
-                @foreach ($acciones as [$clave, $texto, $icono, $colorActivo])
-                    <span class="flex items-center gap-1"><span class="w-5 h-5 rounded-md border flex items-center justify-center {{ $colorActivo }}"><i class="bi {{ $icono }} text-[9px]"></i></span>{{ $texto }}</span>
-                @endforeach
-            </div>
-            <div class="relative flex bg-slate-100 p-1 rounded-2xl shrink-0 text-[11px] font-bold">
-                <span class="absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl bg-white shadow-sm transition-all duration-300" :style="vista === 'tarjetas' ? 'left:4px' : 'left:50%'"></span>
-                <button type="button" @click="cambiarVista('tarjetas')" class="relative z-10 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors" :class="vista === 'tarjetas' ? 'text-teal-700' : 'text-slate-500'">
-                    <i class="bi bi-grid-fill"></i> Tarjetas
+    </section>
+
+    <!-- VISTA POR ROL -->
+    <section class="rl-esc mt-aparece" x-show="vista === 'rol'">
+        <!-- Lista de roles -->
+        <aside class="rl-lista" aria-label="Roles">
+            <template x-for="r in rolesFiltrados" :key="'r' + r.id">
+                <button type="button" class="rl-rol" :class="{ 'sel': sel && sel.id === r.id }" @click="elegir(r)">
+                    <svg class="rl-anillo" viewBox="0 0 40 40" aria-hidden="true">
+                        <circle cx="20" cy="20" r="16" class="pista"/>
+                        <circle cx="20" cy="20" r="16" class="valor" :style="'stroke-dashoffset:' + (100.5 - 100.5 * cobertura(r) / 100)"/>
+                    </svg>
+                    <span class="rl-rol-n">
+                        <b x-text="r.nombre"></b>
+                        <small x-text="(r.total ? 'Acceso total' : modulosCon(r) + ' de ' + MOD.length + ' módulos') + ' · ' + r.usuarios + (r.usuarios === 1 ? ' persona' : ' personas')"></small>
+                    </span>
+                    <em x-show="esMio(r)">Tu rol</em>
                 </button>
-                <button type="button" @click="cambiarVista('matriz')" class="relative z-10 px-3 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors" :class="vista === 'matriz' ? 'text-teal-700' : 'text-slate-500'">
-                    <i class="bi bi-table"></i> Comparar
-                </button>
-            </div>
-        </div>
-    </div>
+            </template>
+            <p class="rl-vacio" x-show="!rolesFiltrados.length" x-text="roles.length ? 'Ningún rol coincide.' : 'Aún no hay roles.'"></p>
+        </aside>
 
-    {{-- ===================== VISTA: TARJETAS ===================== --}}
-    <div x-show="vista === 'tarjetas'" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 items-start">
-        <template x-for="(rol, i) in rolesFiltrados" :key="rol.id">
-            <div class="fila-in group bg-white rounded-3xl border border-slate-200/70 shadow-sm hover:shadow-xl hover:shadow-teal-900/5 hover:border-teal-300 transition-all duration-300 overflow-hidden"
-                 :style="'--d:' + Math.min(i * 70, 500) + 'ms'" :class="rol._saliendo && 'fila-sale'">
-
-                {{-- Encabezado de la tarjeta --}}
-                <div class="p-5 border-b border-slate-100 bg-gradient-to-br from-slate-50 via-white to-teal-50/40 flex items-center gap-4">
-                    {{-- Anillo de cobertura --}}
-                    <div class="relative w-14 h-14 shrink-0" :title="'Cobertura: ' + cobertura(rol) + '% de los permisos posibles'">
-                        <svg class="w-14 h-14 -rotate-90" viewBox="0 0 56 56" aria-hidden="true">
-                            <circle cx="28" cy="28" r="23" fill="none" stroke="#e2e8f0" stroke-width="5"/>
-                            <circle cx="28" cy="28" r="23" fill="none" stroke-width="5" stroke-linecap="round"
-                                    :stroke="colorCobertura(cobertura(rol))" stroke-dasharray="144.5"
-                                    :stroke-dashoffset="144.5 - (144.5 * cobertura(rol) / 100)"
-                                    style="transition: stroke-dashoffset 1s cubic-bezier(.16,1,.3,1)"/>
-                        </svg>
-                        <span class="absolute inset-0 flex items-center justify-center text-[11px] font-black text-slate-700 tabular-nums" x-text="cobertura(rol) + '%'"></span>
-                    </div>
-                    <div class="min-w-0 flex-1">
-                        <h3 class="font-black text-slate-800 text-base leading-snug truncate group-hover:text-teal-700 transition-colors" x-text="rol.nombre"></h3>
-                        <div class="flex flex-wrap items-center gap-1.5 mt-1">
-                            <span class="text-[10px] font-bold text-teal-700 bg-teal-50 border border-teal-100 rounded-md px-2 py-0.5"
-                                  x-text="modulosConAcceso(rol) + ' de ' + modulos.length + ' módulos'"></span>
-                            <span x-show="rol.usuarios !== null" class="text-[10px] font-bold text-slate-500 bg-slate-100 rounded-md px-2 py-0.5 flex items-center gap-1">
-                                <i class="bi bi-people-fill"></i><span x-text="rol.usuarios + (rol.usuarios === 1 ? ' usuario' : ' usuarios')"></span>
-                            </span>
-                            <span x-show="esMiRol(rol)" class="text-[10px] font-black text-sky-700 bg-sky-50 border border-sky-100 rounded-md px-2 py-0.5">Tu rol</span>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-1.5 shrink-0">
-                        @if ($puedeEditar)
-                            <button type="button" @click="cargarEdicion(rol)" title="Editar permisos"
-                                    class="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 hover:bg-sky-100 hover:scale-110 active:scale-95 flex items-center justify-center transition-all cursor-pointer">
-                                <i class="bi bi-pencil-fill text-xs"></i>
-                            </button>
-                        @endif
-                        @if ($puedeEliminar)
-                            <button type="button" @click="eliminar(rol)" :disabled="esMiRol(rol)"
-                                    :title="esMiRol(rol) ? 'No puedes eliminar tu propio rol' : 'Eliminar rol'"
-                                    class="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 hover:scale-110 active:scale-95 flex items-center justify-center transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:scale-100">
-                                <i class="bi bi-trash-fill text-xs"></i>
-                            </button>
-                        @endif
-                    </div>
-                </div>
-
-                {{-- Módulos --}}
-                <div class="p-5 space-y-2">
-                    <template x-for="mod in modulosOrdenados(rol).slice(0, rol._verTodo ? 999 : Math.max(modulosConAcceso(rol), 3))" :key="mod.id">
-                        <div class="p-2.5 rounded-2xl border flex items-center justify-between gap-2 transition-all"
-                             :class="tieneAcceso(rol, mod.id) ? 'bg-slate-50/70 border-slate-200/80 hover:border-teal-200 hover:bg-teal-50/30' : 'bg-white border-dashed border-slate-200 opacity-60'">
-                            <span class="text-xs font-bold flex items-center gap-2.5 min-w-0" :class="tieneAcceso(rol, mod.id) ? 'text-slate-800' : 'text-slate-400'">
-                                <i class="bi text-sm" :class="[mod.icono, tieneAcceso(rol, mod.id) ? 'text-teal-600' : 'text-slate-300']"></i>
-                                <span class="truncate" x-text="mod.nombre"></span>
-                            </span>
-                            <div class="flex gap-1 shrink-0">
-                                @foreach ($acciones as [$clave, $texto, $icono, $colorActivo])
-                                    <span class="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] border transition-all"
-                                          :class="rol.permisos[mod.id]?.{{ $clave }} ? '{{ $colorActivo }}' : 'bg-slate-100 text-slate-300 border-transparent'" title="{{ $texto }}">
-                                        <i class="bi {{ $icono }}"></i>
-                                    </span>
-                                @endforeach
-                            </div>
-                        </div>
+        <!-- Rol elegido y su matriz -->
+        <div class="rl-panel" x-show="sel || editando">
+            <header class="rl-ph">
+                <div class="rl-ph-a">
+                    <p class="rl-k" x-text="editando ? (form.id ? 'Editando rol' : 'Rol nuevo') : 'Rol'"></p>
+                    <template x-if="!editando">
+                        <h2 x-text="sel ? sel.nombre : ''"></h2>
                     </template>
+                    <template x-if="editando">
+                        <label class="rl-nombre" :class="{ 'mal': errorNombre }">
+                            <span class="rl-sr">Nombre del rol</span>
+                            <input type="text" x-ref="campoNombre" x-model="form.nombre" maxlength="100" placeholder="Nombre del rol, por ejemplo Recepcionista" @input="errorNombre = ''">
+                            <small x-show="errorNombre" x-text="errorNombre"></small>
+                        </label>
+                    </template>
+                    <div class="rl-gente" x-show="!editando && sel">
+                        <template x-for="p in (sel ? sel.personas.slice(0, 6) : [])" :key="'pp' + p.nombre">
+                            <a :href="p.personal_id && R.personal ? R.personal + '?p=' + p.personal_id : null" :class="{ 'sin': !p.personal_id }"><span x-html="roseta(p.nombre, 22)"></span><span x-text="p.nombre"></span></a>
+                        </template>
+                        <span x-show="sel && sel.personas.length > 6" class="rl-mas t" x-text="'+' + (sel ? sel.personas.length - 6 : 0)"></span>
+                        <span x-show="sel && !sel.personas.length" class="rl-nadie">Nadie tiene este rol todavía.</span>
+                    </div>
+                </div>
+                <div class="rl-ph-b" x-show="!editando && sel">
+                    <button type="button" class="rl-btn rl-prim" x-show="PUEDE.editar && sel && !sel.total" @click="editar(sel)"><i class="bi bi-pencil"></i> Editar permisos <kbd>E</kbd></button>
+                    <button type="button" class="rl-btn" x-show="PUEDE.crear" @click="duplicar(sel)"><i class="bi bi-copy"></i> Duplicar</button>
+                    <button type="button" class="rl-btn rl-ico" x-show="PUEDE.editar && sel && sel.total" @click="editar(sel)" title="Cambiar el nombre" aria-label="Cambiar el nombre"><i class="bi bi-pencil"></i></button>
+                    <button type="button" class="rl-btn rl-ico rl-borrar" x-show="PUEDE.eliminar" @click="eliminar(sel)" :disabled="sel && esMio(sel)" :title="sel && esMio(sel) ? 'No puedes eliminar tu propio rol' : 'Eliminar rol'" aria-label="Eliminar rol"><i class="bi bi-trash3"></i></button>
+                </div>
+            </header>
 
-                    <button type="button" x-show="modulos.length > Math.max(modulosConAcceso(rol), 3)"
-                            @click="rol._verTodo = !rol._verTodo"
-                            class="w-full text-[11px] font-black text-slate-400 hover:text-teal-700 py-1.5 rounded-xl hover:bg-slate-50 transition-all cursor-pointer flex items-center justify-center gap-1">
-                        <i class="bi" :class="rol._verTodo ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
-                        <span x-text="rol._verTodo ? 'Ocultar módulos sin acceso' : '+' + (modulos.length - Math.max(modulosConAcceso(rol), 3)) + ' módulos sin acceso'"></span>
-                    </button>
-                    <p x-show="!modulos.length" class="text-xs text-slate-400 italic text-center py-4">No hay módulos configurados.</p>
+            <!-- Medidor de permisos -->
+            <div class="rl-medidor" x-show="!(sel && sel.total && !editando)">
+                <div class="rl-barra"><i :style="'width:' + porcentajeActual + '%'"></i></div>
+                <span class="t" x-text="permisosActuales + ' de ' + (MOD.length * 4) + ' permisos · ' + modulosActuales + ' de ' + MOD.length + ' módulos'"></span>
+            </div>
+            <p class="rl-total" x-show="sel && sel.total && !editando">
+                <i class="bi bi-shield-fill-check"></i>
+                <span><b>Acceso total automático.</b> El sistema deja entrar a este rol a todos los módulos sin revisar la tabla de permisos.</span>
+            </p>
+
+            <!-- Atajos al editar -->
+            <div class="rl-atajos" x-show="editando">
+                <span>Empezar desde</span>
+                <button type="button" @click="plantilla('todo')"><i class="bi bi-check2-all"></i> Acceso total</button>
+                <button type="button" @click="plantilla('lectura')"><i class="bi bi-eye"></i> Solo ver</button>
+                <button type="button" @click="plantilla('nada')"><i class="bi bi-x-lg"></i> Nada</button>
+                <div class="rl-copiar" @click.outside="popCopiar = false">
+                    <button type="button" @click="popCopiar = !popCopiar" :aria-expanded="popCopiar.toString()"><i class="bi bi-copy"></i> Copiar de… <i class="bi bi-chevron-down"></i></button>
+                    <div class="rl-pop" x-show="popCopiar" x-cloak>
+                        <template x-for="r in roles.filter(x => x.id !== form.id)" :key="'cp' + r.id">
+                            <button type="button" @click="copiarDe(r)"><b x-text="r.nombre"></b><small x-text="r.total ? 'Acceso total' : modulosCon(r) + ' módulos'"></small></button>
+                        </template>
+                    </div>
                 </div>
             </div>
-        </template>
-    </div>
+            <p class="rl-aviso" x-show="editando && seQuitaRoles"><i class="bi bi-exclamation-triangle-fill"></i> Es tu rol: sin «Ver» en Roles ya no podrás entrar a esta pantalla.</p>
 
-    {{-- ===================== VISTA: MATRIZ PARA COMPARAR ===================== --}}
-    <div x-show="vista === 'matriz'" x-cloak class="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="w-full text-xs">
+            <!-- Matriz -->
+            <div class="rl-matriz" :class="{ 'lectura': !editando }">
+                <div class="rl-mh">
+                    <span>Módulo</span>
+                    <template x-for="a in ACC" :key="'h' + a.k">
+                        <button type="button" :class="'a-' + a.k" @click="columna(a.k)" :disabled="!editando" :title="editando ? 'Marcar o quitar toda la columna' : ''" x-text="a.t"></button>
+                    </template>
+                </div>
+                <template x-for="g in gruposVisibles" :key="'g' + g.nombre">
+                    <div class="rl-grupo">
+                        <button type="button" class="rl-gh" @click="grupo(g)" :disabled="!editando">
+                            <span x-text="g.nombre"></span>
+                            <small class="t" x-text="g.mods.filter(m => tieneAcceso(m.id)).length + ' de ' + g.mods.length"></small>
+                        </button>
+                        <template x-for="m in g.mods" :key="'m' + m.id">
+                            <div class="rl-fila" :class="{ 'on': tieneAcceso(m.id) }">
+                                <button type="button" class="rl-mod" @click="fila(m.id)" :disabled="!editando" :title="editando ? 'Marcar o quitar todo el módulo' : ''">
+                                    <i class="bi" :class="m.icono"></i>
+                                    <span><b x-text="m.nombre === 'POS' ? 'Terminal POS' : m.nombre"></b><small x-text="m.desc"></small></span>
+                                </button>
+                                <template x-for="a in ACC" :key="'c' + m.id + a.k">
+                                    <button type="button" class="rl-p" :class="'a-' + a.k" :aria-pressed="valor(m.id, a.k).toString()" :disabled="!editando"
+                                            @click="alternar(m.id, a.k)" :aria-label="a.t + ' en ' + m.nombre"><i class="bi" :class="a.i"></i></button>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+                <p class="rl-vacio" x-show="!gruposVisibles.length">Ningún módulo coincide con la búsqueda.</p>
+            </div>
+
+            <!-- Barra para guardar -->
+            <footer class="rl-pie" x-show="editando">
+                <span class="rl-msg" :class="{ 'mal': mensajeMal }" x-text="mensaje"></span>
+                <button type="button" class="rl-btn" @click="cancelar()">Cancelar</button>
+                <button type="button" class="rl-btn rl-prim" @click="guardar()" :disabled="guardando" x-text="guardando ? 'Guardando…' : (form.id ? 'Guardar permisos' : 'Crear rol')"></button>
+            </footer>
+        </div>
+
+        <div class="rl-panel rl-panel-vacio" x-show="!sel && !editando">
+            <b>Sin roles todavía</b>
+            <p>Crea el primer rol para dar permisos al personal.</p>
+        </div>
+    </section>
+
+    <!-- VISTA COMPARAR -->
+    <section class="rl-comp mt-aparece" x-show="vista === 'comparar'" x-cloak>
+        <div class="rl-comp-in">
+            <table>
                 <thead>
-                    <tr class="bg-slate-50 border-b border-slate-100">
-                        <th class="sticky left-0 z-10 bg-slate-50 text-left py-3.5 px-5 text-[10px] font-black uppercase tracking-wider text-slate-400">Módulo</th>
-                        <template x-for="rol in rolesFiltrados" :key="rol.id">
-                            <th class="py-3 px-3 text-center min-w-[130px]">
-                                <button type="button" @click="{{ $puedeEditar ? 'cargarEdicion(rol)' : '' }}"
-                                        class="text-xs font-black text-slate-700 hover:text-teal-700 {{ $puedeEditar ? 'cursor-pointer' : 'cursor-default' }}" x-text="rol.nombre"></button>
-                                <p class="text-[10px] font-bold text-slate-400" x-text="cobertura(rol) + '%'"></p>
-                            </th>
+                    <tr>
+                        <th>Módulo</th>
+                        <template x-for="r in rolesFiltrados" :key="'ch' + r.id">
+                            <th><button type="button" @click="vista = 'rol'; elegir(r)" x-text="r.nombre"></button><small class="t" x-text="r.total ? 'total' : cobertura(r) + '%'"></small></th>
                         </template>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100">
-                    <template x-for="mod in modulos" :key="mod.id">
-                        <tr class="hover:bg-teal-50/20 transition-colors">
-                            <td class="sticky left-0 bg-white py-3 px-5 font-bold text-slate-700 whitespace-nowrap">
-                                <i class="bi text-teal-600 mr-2" :class="mod.icono"></i><span x-text="mod.nombre"></span>
-                            </td>
-                            <template x-for="rol in rolesFiltrados" :key="rol.id + '-' + mod.id">
-                                <td class="py-3 px-3">
-                                    <div class="flex justify-center gap-1">
-                                        @foreach ($acciones as [$clave, $texto, $icono, $colorActivo])
-                                            <span class="w-5 h-5 rounded-md flex items-center justify-center text-[9px] border"
-                                                  :class="rol.permisos[mod.id]?.{{ $clave }} ? '{{ $colorActivo }}' : 'bg-slate-50 text-slate-200 border-transparent'" title="{{ $texto }}">
-                                                <i class="bi {{ $icono }}"></i>
-                                            </span>
-                                        @endforeach
-                                    </div>
+                <tbody>
+                    <template x-for="m in MOD" :key="'cm' + m.id">
+                        <tr>
+                            <th><i class="bi" :class="m.icono"></i> <span x-text="m.nombre === 'POS' ? 'Terminal POS' : m.nombre"></span></th>
+                            <template x-for="r in rolesFiltrados" :key="'cc' + r.id + '-' + m.id">
+                                <td>
+                                    <span class="rl-mini">
+                                        <template x-for="a in ACC" :key="'cd' + r.id + m.id + a.k">
+                                            <i :class="['a-' + a.k, (r.total || (r.permisos[m.id] && r.permisos[m.id][a.k])) ? 'on' : ''].join(' ')" :title="a.t"></i>
+                                        </template>
+                                    </span>
                                 </td>
                             </template>
                         </tr>
@@ -280,379 +190,416 @@
                 </tbody>
             </table>
         </div>
-    </div>
-
-    {{-- Vacío --}}
-    <div x-show="!rolesFiltrados.length" x-cloak class="bg-white rounded-3xl border border-slate-100 py-16 text-center">
-        <span class="flotar inline-flex w-16 h-16 rounded-3xl bg-teal-50 text-teal-500 items-center justify-center text-3xl mb-3">
-            <i class="bi" :class="roles.length ? 'bi-search' : 'bi-shield-plus'"></i>
-        </span>
-        <p class="text-sm font-black text-slate-600" x-text="roles.length ? 'Ningún rol coincide con la búsqueda' : 'Aún no hay roles registrados'"></p>
-        @if ($puedeCrear)
-            <button type="button" x-show="!roles.length" @click="openCreateModal = true" class="mt-2 text-xs font-black text-teal-700 hover:text-teal-900 cursor-pointer">+ Crear el primero</button>
-        @endif
-    </div>
-
-    {{-- Modal para crear --}}
-    @include('personal.modalRoles')
-
-    {{-- ===================== MODAL: EDITAR ROL ===================== --}}
-    @if ($puedeEditar)
-        <template x-teleport="body">
-            <div x-show="openEditModal" x-cloak
-                 @keydown.escape.window="cerrarEdicion()"
-                 class="fixed inset-0 z-[9999] bg-slate-950/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4"
-                 x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-                 x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
-
-                <div class="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-3xl h-[92vh] sm:h-[86vh] sm:max-h-[720px] flex flex-col overflow-hidden"
-                     x-show="openEditModal" @click.outside="cerrarEdicion()"
-                     x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-10 sm:translate-y-6 sm:scale-95" x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                     x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 translate-y-10 sm:translate-y-0 sm:scale-95">
-
-                    {{-- Encabezado --}}
-                    <div class="relative px-6 py-5 bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-800 text-white shrink-0 overflow-hidden">
-                        <div class="absolute -right-8 -top-10 w-32 h-32 rounded-full bg-white/5"></div>
-                        <div class="relative flex items-center gap-4">
-                            <span class="w-12 h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center text-xl text-emerald-300 shrink-0" :class="openEditModal && 'icono-pop'">
-                                <i class="bi bi-shield-lock-fill"></i>
-                            </span>
-                            <div class="min-w-0">
-                                <p class="text-[10px] font-bold uppercase tracking-wide text-emerald-300">Editar rol</p>
-                                <h3 class="text-base font-black tracking-tight truncate" x-text="editRolNombre || 'Sin nombre'"></h3>
-                                <p class="text-[11px] font-bold text-teal-100/80" x-text="totalEdicion + ' de ' + (modulos.length * 4) + ' permisos activos'"></p>
-                            </div>
-                            <button type="button" @click="cerrarEdicion()"
-                                    class="ml-auto w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white flex items-center justify-center transition-all cursor-pointer" title="Cerrar (Esc)">
-                                <i class="bi bi-x-lg text-xs"></i>
-                            </button>
-                        </div>
-                        <div class="relative mt-4 h-1.5 rounded-full bg-white/15 overflow-hidden">
-                            <div class="h-full rounded-full bg-gradient-to-r from-emerald-300 to-teal-200 transition-all duration-500" :style="'width:' + (modulos.length ? (totalEdicion / (modulos.length * 4)) * 100 : 0) + '%'"></div>
-                        </div>
-                    </div>
-
-                    <form :action="urlRol(editRolId)" method="POST" x-ref="formEditar" @submit="guardandoEdicion = true" class="flex flex-col flex-1 overflow-hidden">
-                        @csrf
-                        @method('PUT')
-
-                        <div class="p-5 sm:p-6 space-y-4 flex-1 flex flex-col overflow-hidden">
-                            <div class="shrink-0">
-                                <label class="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5">Nombre del rol *</label>
-                                <input type="text" name="nombre" x-model="editRolNombre" required maxlength="80"
-                                       class="w-full border-2 border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all">
-                            </div>
-
-                            {{-- Atajos --}}
-                            <div class="flex flex-wrap items-center gap-2 shrink-0">
-                                <span class="text-[10px] font-black text-slate-500 uppercase tracking-wider mr-1">Permisos</span>
-                                <button type="button" @click="plantilla('todo')" class="text-[11px] bg-teal-50 text-teal-800 hover:bg-teal-100 font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1 cursor-pointer">
-                                    <i class="bi bi-check-all"></i> Acceso total
-                                </button>
-                                <button type="button" @click="plantilla('lectura')" class="text-[11px] bg-sky-50 text-sky-800 hover:bg-sky-100 font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1 cursor-pointer">
-                                    <i class="bi bi-eye"></i> Solo lectura
-                                </button>
-                                <button type="button" @click="plantilla('nada')" class="text-[11px] bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1 cursor-pointer">
-                                    <i class="bi bi-x"></i> Quitar todo
-                                </button>
-                                <span x-show="hayCambios" x-cloak class="ml-auto text-[10px] font-black text-amber-600 flex items-center gap-1">
-                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500 latido"></span> Cambios sin guardar
-                                </span>
-                            </div>
-
-                            {{-- Aviso: quitarse acceso a Roles --}}
-                            <div x-show="seQuitaAcceso" x-cloak x-transition.opacity
-                                 class="shrink-0 flex items-start gap-2 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-2xl px-3.5 py-2.5">
-                                <i class="bi bi-exclamation-triangle-fill mt-0.5"></i>
-                                <span>Este es tu rol: si le quitas "Ver" en <b>Roles</b>, ya no podrás entrar a esta pantalla.</span>
-                            </div>
-
-                            {{-- Tabla de permisos --}}
-                            <div class="border border-slate-200/80 rounded-2xl flex-1 overflow-y-auto min-h-0">
-                                <table class="w-full text-left text-xs">
-                                    <thead class="bg-slate-800 text-white sticky top-0 z-10">
-                                        <tr>
-                                            <th class="p-3 text-[10px] font-black uppercase tracking-wider">Módulo</th>
-                                            @foreach ($acciones as [$clave, $texto, $icono, $colorActivo])
-                                                <th class="p-2 text-center">
-                                                    <button type="button" @click="alternarColumna('{{ $clave }}')" title="Marcar o desmarcar toda la columna"
-                                                            class="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-lg hover:bg-white/10 transition-all cursor-pointer">{{ $texto }}</button>
-                                                </th>
-                                            @endforeach
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-slate-100 bg-white">
-                                        <template x-for="mod in modulos" :key="mod.id">
-                                            <tr class="hover:bg-teal-50/30 transition-colors">
-                                                <td class="p-3">
-                                                    <button type="button" @click="alternarFila(mod.id)" title="Marcar o desmarcar todo el módulo"
-                                                            class="flex items-center gap-2.5 font-bold text-slate-800 hover:text-teal-700 cursor-pointer text-left">
-                                                        <span class="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                                                              :class="filaActiva(mod.id) ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-400'">
-                                                            <i class="bi" :class="mod.icono"></i>
-                                                        </span>
-                                                        <span x-text="mod.nombre"></span>
-                                                    </button>
-                                                </td>
-                                                @foreach ($acciones as [$clave, $texto, $icono,$colorActivo])
-                                                    <td class="p-2 text-center">
-                                                        <label class="inline-flex items-center justify-center cursor-pointer">
-                                                            <input type="checkbox" :name="'permisos[' + mod.id + '][{{ $clave }}]'" value="1"
-                                                                   x-model="editPermisos[mod.id].{{ $clave }}" @change="ajustarDependencias(mod.id, '{{ $clave }}')" class="sr-only peer">
-                                                            <span class="w-9 h-9 rounded-2xl flex items-center justify-center text-sm border-2 border-transparent bg-slate-100 text-slate-300 transition-all duration-200 hover:scale-110 active:scale-90
-                                                                        peer-checked:{{ str_replace(' ', ' peer-checked:', $colorActivo) }} peer-focus-visible:ring-2 peer-focus-visible:ring-teal-400"
-                                                                  title="{{ $texto }}">
-                                                                <i class="bi {{ $icono }}"></i>
-                                                            </span>
-                                                        </label>
-                                                    </td>
-                                                @endforeach
-                                            </tr>
-                                        </template>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <p class="text-[10px] font-semibold text-slate-400 shrink-0">
-                                <i class="bi bi-info-circle"></i> Al activar Crear, Editar o Eliminar se activa también Ver, porque sin ver el módulo no se puede usar.
-                            </p>
-                        </div>
-
-                        <div class="flex justify-end gap-2.5 px-6 py-4 border-t border-slate-100 bg-slate-50/60 shrink-0">
-                            <button type="button" @click="cerrarEdicion()" class="px-5 py-2.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-2xl text-xs font-extrabold transition-all cursor-pointer">Cancelar</button>
-                            <button type="submit" :disabled="guardandoEdicion || !editRolNombre.trim()"
-                                    class="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl text-xs font-black shadow-lg shadow-teal-600/20 transition-all hover:-translate-y-0.5 flex items-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed">
-                                <span x-show="guardandoEdicion" class="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
-                                <i x-show="!guardandoEdicion" class="bi bi-check-lg"></i>
-                                <span x-text="guardandoEdicion ? 'Guardando…' : 'Guardar cambios'"></span>
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </template>
-    @endif
+    </section>
 </div>
 
+<script type="application/json" id="rl-datos">{!! json_encode(array_merge($datosRoles ?? [], ['csrf' => csrf_token(), 'exito' => session('success'), 'errores' => $errors->all()]), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) !!}</script>
+
+@verbatim
 <style>
-    @keyframes fadeUp   { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-    @keyframes filaIn   { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
-    @keyframes filaSale { to { opacity: 0; transform: scale(.9); } }
-    @keyframes iconoPop { 0% { transform: scale(0) rotate(-25deg); } 70% { transform: scale(1.15) rotate(6deg); } 100% { transform: scale(1) rotate(0); } }
-    @keyframes flotar   { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-    @keyframes latido   { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .6; } }
-    @keyframes latidoLento { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.2); } 30% { transform: scale(1); } 45% { transform: scale(1.12); } }
-    @keyframes ecg      { from { stroke-dashoffset: 1000; } to { stroke-dashoffset: 0; } }
-    @keyframes escudo   { 0%, 100% { transform: rotate(-6deg) translateY(0); } 50% { transform: rotate(4deg) translateY(-8px); } }
+.rl {
+    --tinta: #0b1e1c; --texto: #2c3d3a; --media: #56625f; --linea: #dbe4e1; --linea2: #edf2f1; --niebla: #eef3f1; --papel: #fff;
+    --cred: #0b5a54; --cred2: #073f3b; --foil: #a6efe2; --teal: #0e7c72; --velo: #e2efec;
+    --rosa: #c8102e; --rosav: #fdecef; --ambar: #9a5800; --ambarv: #fdf3e1; --verde: #08734f; --verdev: #e5f4ee;
+    --e: cubic-bezier(.2, .8, .2, 1);
+    --disp: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif; --ui: 'Geist', ui-sans-serif, system-ui, sans-serif; --mono: 'Geist Mono', ui-monospace, monospace;
+    container-type: inline-size; font: 450 14px/1.45 var(--ui); color: var(--texto);
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px;
+}
+.rl * { box-sizing: border-box; }
+.rl :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.rl button { cursor: pointer; font-family: var(--ui); }
+.rl button:disabled { cursor: default; }
+.rl .t { font-variant-numeric: tabular-nums; }
+.rl h2, .rl p { margin: 0; }
+.rl ul { margin: 0; padding: 0; list-style: none; }
+.rl-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.rl kbd { font: 600 11px var(--mono); border: 1px solid var(--linea); border-radius: 6px; padding: 1px 6px; color: var(--media); background: transparent; }
+[x-cloak] { display: none !important; }
 
-    .aparece      { animation: fadeUp .55s cubic-bezier(.16, 1, .3, 1) backwards; animation-delay: var(--d, 0ms); }
-    .tarjeta-stat { animation: fadeUp .55s cubic-bezier(.16, 1, .3, 1) backwards; }
-    .fila-in      { animation: filaIn .5s cubic-bezier(.16, 1, .3, 1) backwards; animation-delay: var(--d, 0ms); }
-    .fila-sale    { animation: filaSale .35s ease-in forwards !important; }
-    .icono-pop    { animation: iconoPop .55s cubic-bezier(.34, 1.56, .64, 1) backwards; }
-    .flotar       { animation: flotar 5s ease-in-out infinite; }
-    .latido       { animation: latido 1.4s ease-in-out infinite; }
-    .latido-lento { display: inline-block; animation: latidoLento 1.6s ease-in-out infinite; }
-    .ecg-linea    { stroke-dasharray: 160 840; animation: ecg 4s linear infinite; }
-    .escudo       { animation: escudo 6s ease-in-out infinite; }
+/* Colores por acción */
+.rl .a-ver { --c: var(--cred); --cv: var(--velo); }
+.rl .a-crear { --c: var(--verde); --cv: var(--verdev); }
+.rl .a-editar { --c: var(--ambar); --cv: var(--ambarv); }
+.rl .a-eliminar { --c: var(--rosa); --cv: var(--rosav); }
 
-    [x-cloak] { display: none !important; }
+/* ---------- Arriba ---------- */
+.rl-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.rl-cmd { flex: 1 1 320px; min-width: 0; max-width: 760px; height: 50px; border-radius: 14px; background: var(--papel); border: 1px solid var(--linea); box-shadow: 0 12px 30px -24px rgba(11, 30, 28, .45); display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; }
+.rl-cmd > .bi { color: var(--cred); }
+.rl-cmd input { flex: 1; min-width: 0; border: 0; outline: 0 !important; box-shadow: none !important; background: none; font: 450 15px var(--ui); color: var(--tinta); }
+.rl-cmd input::placeholder { color: var(--media); }
+.rl-dark { height: 44px; border-radius: 12px; border: 0; background: var(--tinta); color: #fff; font: 600 14px var(--ui); display: flex; align-items: center; gap: 10px; padding: 0 12px 0 16px; white-space: nowrap; }
+.rl-dark:hover { background: var(--cred2); }
+.rl-dark kbd { border-color: rgba(255, 255, 255, .25); color: #cfe; }
 
-    @media (prefers-reduced-motion: reduce) {
-        .aparece, .tarjeta-stat, .fila-in, .icono-pop, .flotar, .latido, .latido-lento, .ecg-linea, .escudo { animation: none !important; }
-    }
+/* ---------- Cabecera ---------- */
+.rl-cab { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 26px; }
+.rl-g { display: flex; align-items: flex-end; gap: 12px; margin-right: auto; }
+.rl-g > b { font: 800 84px/.8 var(--disp); font-stretch: 78%; letter-spacing: -.04em; color: var(--tinta); }
+.rl-g > span { display: flex; flex-direction: column; padding-bottom: 2px; font-size: 14px; color: var(--media); line-height: 1.25; }
+.rl-g em { font: 700 19px/1.15 var(--disp); font-style: normal; color: var(--tinta); }
+.rl-ley { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-bottom: 6px; }
+.rl-ley li { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--texto); }
+.rl-ley li .bi { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 11px; color: var(--c); background: var(--cv); }
+.rl-seg { display: inline-flex; padding: 3px; border-radius: 11px; background: var(--papel); border: 1px solid var(--linea); }
+.rl-seg button { height: 34px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; border: 0; border-radius: 8px; background: none; font: 600 13px var(--ui); color: var(--media); }
+.rl-seg button[aria-pressed=true] { background: var(--tinta); color: #fff; }
+.rl-seg button:disabled { opacity: .45; }
+@container (max-width: 759px) { .rl-g > b { font-size: 64px; } .rl-ley { display: none; } }
+
+/* ---------- Escenario ---------- */
+.rl-esc { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+@container (min-width: 900px) { .rl-esc { grid-template-columns: 290px minmax(0, 1fr); } .rl-lista { position: sticky; top: 96px; } }
+
+/* Lista de roles */
+.rl-lista { display: grid; gap: 4px; padding: 8px; background: var(--papel); border: 1px solid var(--linea); border-radius: 16px; transition: opacity .3s, filter .3s; }
+.rl-rol { width: 100%; display: flex; align-items: center; gap: 12px; padding: 9px 10px; border: 0; border-radius: 12px; background: none; text-align: left; }
+.rl-rol:hover { background: var(--niebla); }
+.rl-rol.sel { background: var(--velo); box-shadow: inset 3px 0 0 var(--cred); }
+.rl-anillo { flex: none; width: 40px; height: 40px; transform: rotate(-90deg); }
+.rl-anillo circle { fill: none; stroke-width: 5; }
+.rl-anillo .pista { stroke: var(--linea2); }
+.rl-anillo .valor { stroke: var(--cred); stroke-linecap: round; stroke-dasharray: 100.5; transition: stroke-dashoffset .8s var(--e); }
+.rl-rol-n { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.rl-rol-n b { font-size: 14.5px; font-weight: 650; color: var(--tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rl-rol-n small { font-size: 12.5px; color: var(--media); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rl-rol em { flex: none; font-style: normal; font-size: 11px; font-weight: 650; color: var(--cred); background: var(--papel); border: 1px solid #b9d6d0; border-radius: 99px; padding: 0 7px; }
+.rl-vacio { padding: 12px; font-size: 13px; color: var(--media); }
+@container (min-width: 520px) and (max-width: 899px) { .rl-lista { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Panel del rol */
+.rl-panel { position: relative; min-width: 0; background: var(--papel); border: 1px solid var(--linea); border-radius: 18px; box-shadow: 0 18px 40px -34px rgba(11, 30, 28, .5); }
+.rl-panel-vacio { padding: 50px 20px; text-align: center; }
+.rl-panel-vacio b { font: 700 19px var(--disp); color: var(--tinta); }
+.rl-panel-vacio p { margin-top: 6px; color: var(--media); }
+.rl-ph { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 14px 20px; padding: 20px 22px 14px; }
+.rl-ph-a { flex: 1 1 320px; min-width: 0; }
+.rl-k { font: 500 12px var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--cred); }
+.rl-ph h2 { margin-top: 4px; font: 780 34px/1.02 var(--disp); font-stretch: 85%; color: var(--tinta); overflow-wrap: anywhere; }
+.rl-nombre { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.rl-nombre input { width: 100%; height: 50px; border: 1px solid var(--linea); border-radius: 12px; padding: 0 14px; font: 700 22px var(--disp); color: var(--tinta); background: var(--papel); outline: 0; transition: border-color .15s, box-shadow .15s; }
+.rl-nombre input::placeholder { font: 450 16px var(--ui); color: #9aa7a4; }
+.rl-nombre input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(14, 124, 114, .15); }
+.rl-nombre.mal input { border-color: var(--rosa); }
+.rl-nombre small { font-size: 12.5px; font-weight: 500; color: var(--rosa); }
+.rl-gente { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.rl-gente a { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 4px; border-radius: 99px; background: var(--niebla); font-size: 12.5px; font-weight: 600; color: var(--tinta); text-decoration: none; max-width: 220px; }
+.rl-gente a:hover { background: var(--velo); color: var(--cred); }
+.rl-gente a.sin { pointer-events: none; }
+.rl-gente a > span:first-child { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--papel); color: #7fbcb1; }
+.rl-gente a > span:first-child svg { width: 22px; height: 22px; display: block; }
+.rl-gente a > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rl-mas { font: 500 12px var(--mono); color: var(--media); }
+.rl-nadie { font-size: 13px; color: var(--media); }
+.rl-ph-b { display: flex; flex-wrap: wrap; gap: 8px; }
+.rl-medidor { display: flex; align-items: center; gap: 12px; padding: 0 22px 14px; }
+.rl-barra { flex: 1; max-width: 340px; height: 8px; border-radius: 99px; background: var(--linea2); overflow: hidden; }
+.rl-barra i { display: block; height: 100%; border-radius: 99px; background: var(--cred); transition: width .5s var(--e); }
+.rl-medidor span { font: 500 12.5px var(--mono); color: var(--media); }
+.rl-total { display: flex; gap: 10px; margin: 0 22px 14px; padding: 12px 14px; border-radius: 12px; background: var(--velo); font-size: 13.5px; color: var(--texto); }
+.rl-total .bi { color: var(--cred); font-size: 18px; }
+.rl-total b { color: var(--tinta); }
+.rl-atajos { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 22px 12px; }
+.rl-atajos > span { margin-right: 4px; font-size: 13px; font-weight: 600; color: var(--media); }
+.rl-atajos button { height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 11px; border-radius: 9px; border: 1px solid var(--linea); background: var(--papel); font-size: 13px; font-weight: 600; color: var(--texto); }
+.rl-atajos button:hover { border-color: #b9d6d0; color: var(--cred); }
+.rl-atajos button .bi { color: var(--cred); }
+.rl-copiar { position: relative; }
+.rl-pop { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; width: 240px; max-height: 260px; overflow-y: auto; padding: 4px; background: var(--papel); border: 1px solid var(--linea); border-radius: 12px; box-shadow: 0 16px 32px -20px rgba(11, 30, 28, .55); }
+.rl-pop button { width: 100%; height: auto !important; display: flex !important; flex-direction: column; align-items: flex-start !important; gap: 0 !important; padding: 7px 10px !important; border: 0 !important; border-radius: 8px !important; text-align: left; }
+.rl-pop button:hover { background: var(--niebla); }
+.rl-pop b { font-size: 13.5px; color: var(--tinta); }
+.rl-pop small { font-size: 12px; color: var(--media); }
+.rl-aviso { display: flex; gap: 8px; margin: 0 22px 12px; padding: 10px 12px; border-radius: 10px; background: var(--rosav); color: var(--rosa); font-size: 13px; font-weight: 600; }
+
+/* Matriz */
+.rl-matriz { border-top: 1px solid var(--linea2); }
+.rl-mh, .rl-fila { display: grid; grid-template-columns: minmax(0, 1fr) repeat(4, 64px); align-items: center; gap: 0 4px; padding: 0 18px 0 22px; }
+.rl-mh { position: sticky; top: 0; z-index: 2; height: 40px; background: #fbfdfc; border-bottom: 1px solid var(--linea2); font-size: 12px; font-weight: 600; color: var(--media); }
+.rl-mh button { height: 28px; border: 0; border-radius: 7px; background: none; font-size: 12.5px; font-weight: 650; color: var(--c); }
+.rl-mh button:hover:not(:disabled) { background: var(--cv); }
+.rl-grupo + .rl-grupo { border-top: 1px solid var(--linea2); }
+.rl-gh { width: 100%; display: flex; align-items: baseline; gap: 8px; padding: 14px 22px 6px; border: 0; background: none; text-align: left; font: 700 15px var(--disp); color: var(--tinta); }
+.rl-gh small { font: 500 12px var(--mono); color: var(--media); }
+.rl-gh:hover:not(:disabled) { color: var(--cred); }
+.rl-fila { min-height: 54px; border-radius: 0; transition: background .15s; }
+.rl-fila:hover { background: #f8fbfa; }
+.rl-mod { min-width: 0; display: flex; align-items: center; gap: 12px; padding: 6px 0; border: 0; background: none; text-align: left; }
+.rl-mod > .bi { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-size: 15px; background: var(--niebla); color: var(--media); transition: background .2s, color .2s; }
+.rl-fila.on .rl-mod > .bi { background: var(--cred); color: var(--foil); }
+.rl-mod > span { min-width: 0; display: flex; flex-direction: column; }
+.rl-mod b { font-size: 14px; font-weight: 600; color: var(--tinta); }
+.rl-mod small { font-size: 12.5px; color: var(--media); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rl-fila:not(.on) .rl-mod b { color: var(--media); }
+.rl-p { justify-self: center; width: 40px; height: 36px; border-radius: 10px; border: 1px dashed #cfdad7; background: var(--papel); color: #c2ccc9; display: grid; place-items: center; font-size: 14px; transition: background .15s, color .15s, border-color .15s, transform .15s var(--e); }
+.rl-p[aria-pressed=true] { border: 1px solid var(--c); background: var(--cv); color: var(--c); }
+.rl-p:hover:not(:disabled) { border-color: var(--c); color: var(--c); }
+.rl-p:active:not(:disabled) { transform: scale(.92); }
+.rl-matriz.lectura .rl-p { border-style: solid; border-color: transparent; background: none; }
+.rl-matriz.lectura .rl-p[aria-pressed=true] { background: var(--cv); border-color: transparent; }
+.rl-matriz.lectura .rl-p:not([aria-pressed=true]) i { opacity: .35; }
+.rl-matriz .rl-vacio { padding: 18px 22px; }
+@container (max-width: 559px) {
+    .rl-mh, .rl-fila { grid-template-columns: minmax(0, 1fr) repeat(4, 40px); padding: 0 10px 0 14px; }
+    .rl-mod small { display: none; }
+    .rl-mod > .bi { display: none; }
+    .rl-p { width: 36px; }
+    .rl-mh button { font-size: 10.5px; padding: 0; }
+}
+
+/* Barra de guardado */
+.rl-pie { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: 8px; padding: 12px 18px 12px 22px; border-top: 1px solid var(--linea2); background: rgba(255, 255, 255, .96); backdrop-filter: blur(6px); border-radius: 0 0 18px 18px; }
+.rl-msg { flex: 1; min-width: 0; font-size: 12.5px; color: var(--media); }
+.rl-msg.mal { color: var(--rosa); font-weight: 600; }
+
+/* Botones */
+.rl-btn { height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; border-radius: 11px; border: 1px solid var(--linea); background: var(--papel); font: 600 14px var(--ui); color: var(--tinta); text-decoration: none; white-space: nowrap; transition: background .15s, border-color .15s; }
+.rl-btn:hover { background: #f7faf9; color: var(--tinta); }
+.rl-btn .bi { color: var(--cred); }
+.rl-prim { background: var(--cred); border-color: var(--cred); color: #fff; }
+.rl-prim .bi { color: var(--foil); }
+.rl-prim:hover { background: var(--cred2); color: #fff; }
+.rl-prim:disabled { opacity: .6; }
+.rl-prim kbd { border-color: rgba(255, 255, 255, .3); color: #cfe; }
+.rl-ico { width: 40px; padding: 0; }
+.rl-borrar { border-color: #f3c6cf; }
+.rl-borrar .bi { color: var(--rosa); }
+.rl-borrar:hover { background: var(--rosav); }
+.rl-borrar:disabled { opacity: .35; cursor: not-allowed; }
+
+/* Edición: la lista se atenúa */
+.rl.editando .rl-lista, .rl.editando .rl-cab { opacity: .35; filter: saturate(.6); pointer-events: none; }
+.rl.editando .rl-cmd input { pointer-events: auto; }
+
+/* ---------- Comparar ---------- */
+.rl-comp { background: var(--papel); border: 1px solid var(--linea); border-radius: 18px; overflow: hidden; }
+.rl-comp-in { overflow-x: auto; }
+.rl-comp table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.rl-comp thead th { position: sticky; top: 0; padding: 12px 10px; background: #fbfdfc; border-bottom: 1px solid var(--linea2); text-align: center; vertical-align: bottom; min-width: 110px; }
+.rl-comp thead th:first-child { text-align: left; padding-left: 20px; font-size: 12px; font-weight: 600; color: var(--media); }
+.rl-comp thead button { border: 0; background: none; font: 700 14px var(--disp); color: var(--tinta); }
+.rl-comp thead button:hover { color: var(--cred); text-decoration: underline; }
+.rl-comp thead small { display: block; font: 500 11.5px var(--mono); color: var(--media); }
+.rl-comp tbody th { position: sticky; left: 0; z-index: 1; padding: 10px 14px 10px 20px; background: var(--papel); text-align: left; font-weight: 600; color: var(--tinta); white-space: nowrap; }
+.rl-comp tbody th .bi { color: var(--teal); margin-right: 6px; }
+.rl-comp tbody tr + tr > * { border-top: 1px solid var(--linea2); }
+.rl-comp td { padding: 10px; text-align: center; }
+.rl-mini { display: inline-flex; gap: 3px; }
+.rl-mini i { width: 12px; height: 12px; border-radius: 3px; background: var(--linea2); }
+.rl-mini i.on { background: var(--c); }
+
+@media (prefers-reduced-motion: reduce) { .rl-anillo .valor, .rl-barra i { transition: none; } }
 </style>
 
 <script>
-    const URL_ROLES = @js(url('roles'));
-    const CSRF_ROLES = @js(csrf_token());
+function modRoles() {
+    const D = JSON.parse(document.getElementById('rl-datos').textContent || '{}');
+    const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const ACC = [
+        { k: 'ver', t: 'Ver', i: 'bi-eye' }, { k: 'crear', t: 'Crear', i: 'bi-plus-lg' },
+        { k: 'editar', t: 'Editar', i: 'bi-pencil' }, { k: 'eliminar', t: 'Eliminar', i: 'bi-trash3' },
+    ];
+    const K = ACC.map(a => a.k);
+    const aviso = (m, i) => { if (window.notificar) window.notificar(m, i || 'success'); };
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    function avisoRoles(mensaje, icono = 'success') {
-        if (typeof window.notificar === 'function') return window.notificar(mensaje, icono);
-        if (window.Swal) Swal.fire({ toast: true, position: 'top-end', timer: 3000, showConfirmButton: false, icon: icono, title: mensaje });
-    }
+    return {
+        ACC,
+        MOD: D.modulos || [],
+        roles: D.roles || [],
+        PUEDE: D.puede || {},
+        R: D.rutas || {},
+        miRolId: D.miRolId,
+        sel: null, vista: 'rol', q: '',
+        editando: false, guardando: false, popCopiar: false,
+        form: { id: null, nombre: '', permisos: {} }, inicial: '',
+        errorNombre: '', mensaje: '', mensajeMal: false,
 
-    function moduloRoles() {
-        const ACCIONES = ['ver', 'crear', 'editar', 'eliminar'];
+        init() {
+            this.$watch('sel', () => window.mtRefresca && mtRefresca('.rl-panel'));
+            const u = new URLSearchParams(location.search);
+            this.sel = this.roles.find(r => String(r.id) === u.get('r')) || this.roles.find(r => this.esMio(r)) || this.roles[0] || null;
+            if (D.exito) setTimeout(() => aviso(D.exito), 300);
+            if ((D.errores || []).length) setTimeout(() => aviso(D.errores[0], 'warning'), 300);
+            if (u.get('nuevo') && this.PUEDE.crear) this.$nextTick(() => this.nuevo());
+        },
 
-        return {
-            roles: @json($rolesJs),
-            modulos: @json($modulosJs),
-            miRolId: @js($miRolId),
-            moduloRolesId: @js($moduloRolesId),
-            mensajeExito: @js(session('success')),
-            errores: @json($errors->all()),
+        // ----- Datos -----
+        get totalPersonas() { return this.roles.reduce((n, r) => n + (r.usuarios || 0), 0); },
+        get rolesFiltrados() {
+            const q = norm(this.q);
+            if (!q || this.MOD.some(m => norm(m.nombre).includes(q))) return this.roles;
+            return this.roles.filter(r => norm(r.nombre).includes(q));
+        },
+        get grupos() {
+            const g = [];
+            this.MOD.forEach(m => { let x = g.find(y => y.nombre === m.grupo); if (!x) g.push(x = { nombre: m.grupo, mods: [] }); x.mods.push(m); });
+            return g;
+        },
+        get gruposVisibles() {
+            const q = norm(this.q);
+            if (!q || this.roles.some(r => norm(r.nombre).includes(q))) return this.grupos;
+            return this.grupos.map(g => ({ nombre: g.nombre, mods: g.mods.filter(m => norm(m.nombre + ' ' + m.desc).includes(q)) })).filter(g => g.mods.length);
+        },
+        esMio(r) { return r && this.miRolId !== null && String(r.id) === String(this.miRolId); },
+        permisosDe(r) { return r.total ? null : r.permisos; },
+        contar(p) { return Object.values(p || {}).reduce((n, x) => n + K.filter(k => x && x[k]).length, 0); },
+        modulosCon(r) { return r.total ? this.MOD.length : this.MOD.filter(m => { const x = r.permisos[m.id]; return x && K.some(k => x[k]); }).length; },
+        cobertura(r) { return r.total ? 100 : (this.MOD.length ? Math.round(this.contar(r.permisos) / (this.MOD.length * 4) * 100) : 0); },
 
-            busqueda: '',
-            vista: 'tarjetas',
-            resumenMostrado: { roles: 0, modulos: 0, permisos: 0, cobertura: 0 },
+        // Lo que muestra la matriz: el formulario al editar, si no el rol elegido
+        get actuales() { return this.editando ? this.form.permisos : (this.sel ? this.sel.permisos : {}); },
+        valor(id, k) {
+            if (!this.editando && this.sel && this.sel.total) return true;
+            const p = this.actuales[id]; return !!(p && p[k]);
+        },
+        tieneAcceso(id) { return K.some(k => this.valor(id, k)); },
+        get permisosActuales() { return this.contar(this.actuales); },
+        get modulosActuales() { return this.MOD.filter(m => this.tieneAcceso(m.id)).length; },
+        get porcentajeActual() { return this.MOD.length ? this.permisosActuales / (this.MOD.length * 4) * 100 : 0; },
 
-            openCreateModal: false,
+        elegir(r) {
+            if (this.editando) return;
+            this.sel = r;
+            history.replaceState(null, '', location.pathname + '?r=' + r.id);
+            if (window.innerWidth < 1100) this.$nextTick(() => { const p = document.querySelector('.rl-panel'); if (p) p.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }); });
+        },
 
-            openEditModal: false,
-            editRolId: null,
-            editRolNombre: '',
-            editPermisos: {},
-            _original: '',
-            guardandoEdicion: false,
-
-            init() {
-                try { this.vista = localStorage.getItem('roles_vista') || 'tarjetas'; } catch (e) {}
-                this.$nextTick(() => this.animarResumen());
-                if (this.mensajeExito) setTimeout(() => avisoRoles(this.mensajeExito, 'success'), 300);
-                if (this.errores.length) setTimeout(() => avisoRoles(this.errores[0], 'warning'), 300);
-            },
-
-            get resumen() {
-                const permisos = this.roles.reduce((n, r) => n + this.contarPermisos(r.permisos), 0);
-                const posibles = this.roles.length * this.modulos.length * 4;
-                return {
-                    roles: this.roles.length,
-                    modulos: this.modulos.length,
-                    permisos,
-                    cobertura: posibles ? Math.round((permisos / posibles) * 100) : 0
-                };
-            },
-            animarResumen() {
-                const meta = this.resumen;
-                const sinMov = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-                Object.keys(meta).forEach(k => {
-                    const destino = meta[k], origen = this.resumenMostrado[k];
-                    if (sinMov || origen === destino) { this.resumenMostrado[k] = destino; return; }
-                    const t0 = performance.now(), dur = 800;
-                    const paso = t => {
-                        const p = Math.min(1, (t - t0) / dur);
-                        this.resumenMostrado[k] = Math.round(origen + (destino - origen) * (1 - Math.pow(1 - p, 3)));
-                        if (p < 1) requestAnimationFrame(paso);
-                    };
-                    requestAnimationFrame(paso);
+        // ----- Edición -----
+        vacio() { const p = {}; this.MOD.forEach(m => { p[m.id] = { ver: false, crear: false, editar: false, eliminar: false }; }); return p; },
+        copia(r) {
+            const p = this.vacio();
+            this.MOD.forEach(m => { const o = r && !r.total ? (r.permisos[m.id] || {}) : null; K.forEach(k => { p[m.id][k] = r && r.total ? true : !!(o && o[k]); }); });
+            return p;
+        },
+        abrir(form) {
+            this.form = form; this.inicial = JSON.stringify(form);
+            this.errorNombre = ''; this.mensajeMal = false; this.popCopiar = false;
+            this.mensaje = 'Toca un permiso para darlo o quitarlo. Ctrl + Enter guarda.';
+            this.vista = 'rol'; this.editando = true;
+            this.$nextTick(() => {
+                const m = document.querySelector('.rl').closest('.overflow-y-auto');
+                if (m) m.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+                if (this.$refs.campoNombre) this.$refs.campoNombre.focus({ preventScroll: true });
+            });
+        },
+        nuevo() { if (this.PUEDE.crear && !this.editando) this.abrir({ id: null, nombre: '', permisos: this.vacio() }); },
+        editar(r) { if (r && this.PUEDE.editar && !this.editando) this.abrir({ id: r.id, nombre: r.nombre, permisos: this.copia(r) }); },
+        duplicar(r) { if (r && this.PUEDE.crear && !this.editando) this.abrir({ id: null, nombre: r.nombre + ' (copia)', permisos: this.copia(r) }); },
+        copiarDe(r) { this.form.permisos = this.copia(r); this.popCopiar = false; },
+        get hayCambios() { return this.editando && JSON.stringify(this.form) !== this.inicial; },
+        cancelar() {
+            if (!this.hayCambios || !window.Swal) { this.editando = false; return; }
+            Swal.fire({
+                title: '¿Descartar los cambios?', text: 'Los permisos que modificaste no se guardarán.', icon: 'question',
+                showCancelButton: true, reverseButtons: true, confirmButtonText: 'Descartar', cancelButtonText: 'Seguir editando',
+                confirmButtonColor: '#c8102e', cancelButtonColor: '#0b5a54',
+            }).then(r => { if (r.isConfirmed) this.editando = false; });
+        },
+        // Crear, editar o eliminar necesitan ver; quitar ver quita lo demás
+        alternar(id, k) {
+            if (!this.editando) return;
+            const p = this.form.permisos[id];
+            p[k] = !p[k];
+            if (k !== 'ver' && p[k]) p.ver = true;
+            if (k === 'ver' && !p.ver) K.forEach(x => { p[x] = false; });
+        },
+        fila(id) { if (!this.editando) return; const p = this.form.permisos[id], todo = K.every(k => p[k]); K.forEach(k => { p[k] = !todo; }); },
+        columna(k) {
+            if (!this.editando) return;
+            const todo = this.MOD.every(m => this.form.permisos[m.id][k]);
+            this.MOD.forEach(m => { const p = this.form.permisos[m.id]; p[k] = !todo; if (k !== 'ver' && p[k]) p.ver = true; if (k === 'ver' && !p.ver) K.forEach(x => { p[x] = false; }); });
+        },
+        grupo(g) {
+            if (!this.editando) return;
+            const todo = g.mods.every(m => K.every(k => this.form.permisos[m.id][k]));
+            g.mods.forEach(m => K.forEach(k => { this.form.permisos[m.id][k] = !todo; }));
+        },
+        plantilla(t) { this.MOD.forEach(m => { const p = this.form.permisos[m.id]; p.ver = t !== 'nada'; p.crear = p.editar = p.eliminar = t === 'todo'; }); },
+        get seQuitaRoles() {
+            if (!this.editando || !this.form.id || String(this.form.id) !== String(this.miRolId)) return false;
+            const m = this.MOD.find(x => norm(x.nombre) === 'roles');
+            return !!(m && !this.form.permisos[m.id].ver);
+        },
+        async guardar() {
+            if (this.guardando) return;
+            const nombre = this.form.nombre.trim().replace(/\s+/g, ' ');
+            if (!nombre) { this.errorNombre = 'Escribe el nombre del rol.'; this.mensaje = 'Falta el nombre.'; this.mensajeMal = true; window.mtSacudir && mtSacudir('.rl-nombre'); return; }
+            if (this.roles.some(r => r.id !== this.form.id && norm(r.nombre) === norm(nombre))) { this.errorNombre = 'Ya existe un rol con ese nombre.'; this.mensajeMal = true; this.mensaje = this.errorNombre; window.mtSacudir && mtSacudir('.rl-nombre'); return; }
+            this.guardando = true; this.mensajeMal = false; this.mensaje = 'Guardando…';
+            try {
+                const id = this.form.id;
+                const res = await fetch(id ? this.R.base + '/' + id : this.R.base, {
+                    method: id ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': D.csrf, 'X-Requested-With': 'XMLHttpRequest' },
+                    body: JSON.stringify({ nombre, permisos: this.form.permisos }),
                 });
-            },
+                const r = await res.json().catch(() => ({}));
+                if (res.status === 422) { this.errorNombre = (r.errors && r.errors.nombre && r.errors.nombre[0]) || r.message || 'Revisa el nombre.'; this.mensaje = this.errorNombre; this.mensajeMal = true; window.mtSacudir && mtSacudir('.rl-nombre'); return; }
+                if (!res.ok) throw new Error(res.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (r.message || 'No se pudo guardar.'));
+                const i = this.roles.findIndex(x => x.id === r.rol.id);
+                if (i >= 0) this.roles.splice(i, 1, r.rol); else this.roles.push(r.rol);
+                this.roles.sort((a, b) => a.nombre.localeCompare(b.nombre));
+                this.sel = this.roles.find(x => x.id === r.rol.id);
+                this.editando = false;
+                history.replaceState(null, '', location.pathname + '?r=' + r.rol.id);
+                aviso(r.mensaje || 'Guardado');
+                this.$nextTick(() => window.mtDestello && mtDestello('.rl-rol.sel'));
+            } catch (e) {
+                this.mensaje = e.message || 'Error de conexión.'; this.mensajeMal = true;
+            } finally { this.guardando = false; }
+        },
 
-            normalizar(s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(); },
-            get rolesFiltrados() {
-                const q = this.normalizar(this.busqueda);
-                return this.roles.filter(r => !q || this.normalizar(r.nombre).includes(q));
-            },
-            cambiarVista(v) { this.vista = v; try { localStorage.setItem('roles_vista', v); } catch (e) {} },
-            contarPermisos(permisos) {
-                return Object.values(permisos || {}).reduce((n, p) => n + ACCIONES.filter(a => p && p[a]).length, 0);
-            },
-            cobertura(rol) {
-                const posibles = this.modulos.length * 4;
-                return posibles ? Math.round((this.contarPermisos(rol.permisos) / posibles) * 100) : 0;
-            },
-            colorCobertura(pct) { return pct >= 75 ? '#0d9488' : pct >= 40 ? '#0ea5e9' : pct > 0 ? '#f59e0b' : '#cbd5e1'; },
-            tieneAcceso(rol, modId) { const p = rol.permisos[modId]; return !!(p && ACCIONES.some(a => p[a])); },
-            modulosConAcceso(rol) { return this.modulos.filter(m => this.tieneAcceso(rol, m.id)).length; },
-            modulosOrdenados(rol) {
-                return [...this.modulos].sort((a, b) => Number(this.tieneAcceso(rol, b.id)) - Number(this.tieneAcceso(rol, a.id)));
-            },
-            esMiRol(rol) { return this.miRolId !== null && String(rol.id) === String(this.miRolId); },
-            urlRol(id) { return id ? `${URL_ROLES}/${id}` : '#'; },
+        // ----- Eliminar -----
+        eliminar(r) {
+            if (!r || this.esMio(r) || !window.Swal) return;
+            Swal.fire({
+                title: '¿Eliminar el rol ' + r.nombre + '?',
+                text: (r.usuarios ? r.usuarios + (r.usuarios === 1 ? ' persona se quedará' : ' personas se quedarán') + ' sin rol y no podrán entrar a los módulos hasta que les asignes otro. ' : '') + 'Esta acción no se puede deshacer.',
+                icon: 'warning', showCancelButton: true, reverseButtons: true, focusCancel: true,
+                confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar', confirmButtonColor: '#c8102e', cancelButtonColor: '#56625f',
+                showLoaderOnConfirm: true, allowOutsideClick: () => !Swal.isLoading(),
+                preConfirm: async () => {
+                    try {
+                        const res = await fetch(this.R.base + '/' + r.id, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': D.csrf, 'Accept': 'application/json' } });
+                        const d = await res.json().catch(() => ({}));
+                        if (!res.ok || d.success === false) throw new Error(res.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (d.message || 'No se pudo eliminar.'));
+                        return d;
+                    } catch (e) { Swal.showValidationMessage(e.message || 'Error de conexión'); }
+                },
+            }).then(x => {
+                if (!x.isConfirmed) return;
+                const quitar = () => { this.roles = this.roles.filter(y => y.id !== r.id); this.sel = this.roles[0] || null; };
+                window.mtQuitar ? mtQuitar('.rl-rol.sel', quitar) : quitar();
+                aviso((x.value && x.value.message) || 'Rol eliminado.');
+            });
+        },
 
-            cargarEdicion(rol) {
-                this.editRolId = rol.id;
-                this.editRolNombre = rol.nombre;
-                const p = {};
-                this.modulos.forEach(m => {
-                    const o = rol.permisos[m.id] || {};
-                    p[m.id] = { ver: !!o.ver, crear: !!o.crear, editar: !!o.editar, eliminar: !!o.eliminar };
-                });
-                this.editPermisos = p;
-                this._original = JSON.stringify([this.editRolNombre, p]);
-                this.guardandoEdicion = false;
-                this.openEditModal = true;
-            },
-            get hayCambios() { return this.openEditModal && JSON.stringify([this.editRolNombre, this.editPermisos]) !== this._original; },
-            get totalEdicion() { return this.contarPermisos(this.editPermisos); },
-            get seQuitaAcceso() {
-                return this.miRolId !== null && String(this.editRolId) === String(this.miRolId)
-                    && this.moduloRolesId && this.editPermisos[this.moduloRolesId] && !this.editPermisos[this.moduloRolesId].ver;
-            },
-            cerrarEdicion() {
-                if (!this.openEditModal || this.guardandoEdicion) return;
-                if (this.hayCambios) {
-                    Swal.fire({
-                        title: '¿Descartar los cambios?',
-                        text: 'Los permisos que modificaste no se guardarán.',
-                        icon: 'question', showCancelButton: true, reverseButtons: true,
-                        confirmButtonText: 'Descartar', cancelButtonText: 'Seguir editando',
-                        confirmButtonColor: '#f43f5e', cancelButtonColor: '#0d9488',
-                        customClass: { container: 'z-[10050]', popup: 'rounded-3xl' }
-                    }).then(r => { if (r.isConfirmed) this.openEditModal = false; });
-                    return;
-                }
-                this.openEditModal = false;
-            },
-            ajustarDependencias(modId, accion) {
-                const p = this.editPermisos[modId];
-                if (accion !== 'ver' && p[accion]) p.ver = true;
-                if (accion === 'ver' && !p.ver) { p.crear = false; p.editar = false; p.eliminar = false; }
-            },
-            filaActiva(modId) { const p = this.editPermisos[modId]; return !!(p && ACCIONES.some(a => p[a])); },
-            alternarFila(modId) {
-                const p = this.editPermisos[modId];
-                const todo = ACCIONES.every(a => p[a]);
-                ACCIONES.forEach(a => { p[a] = !todo; });
-            },
-            alternarColumna(accion) {
-                const todo = this.modulos.every(m => this.editPermisos[m.id][accion]);
-                this.modulos.forEach(m => {
-                    this.editPermisos[m.id][accion] = !todo;
-                    this.ajustarDependencias(m.id, accion);
-                });
-            },
-            plantilla(tipo) {
-                this.modulos.forEach(m => {
-                    const p = this.editPermisos[m.id];
-                    p.ver = tipo !== 'nada';
-                    p.crear = p.editar = p.eliminar = tipo === 'todo';
-                });
-            },
+        // ----- Teclado -----
+        tecla(e) {
+            if (document.querySelector('.swal2-container')) return;
+            const escribiendo = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName);
+            if (this.editando) {
+                if (e.key === 'Escape') { e.preventDefault(); if (this.popCopiar) this.popCopiar = false; else this.cancelar(); }
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.guardar(); }
+                return;
+            }
+            if (escribiendo || e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key === '/') { e.preventDefault(); this.$refs.buscar.focus(); }
+            else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); this.nuevo(); }
+            else if ((e.key === 'e' || e.key === 'E') && this.sel) { e.preventDefault(); this.editar(this.sel); }
+            else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && this.vista === 'rol') {
+                const l = this.rolesFiltrados; if (!l.length) return;
+                e.preventDefault();
+                const i = l.findIndex(r => this.sel && r.id === this.sel.id);
+                this.elegir(l[Math.max(0, Math.min(l.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))]);
+            }
+        },
 
-            eliminar(rol) {
-                if (this.esMiRol(rol)) return;
-                const aviso = rol.usuarios ? `<br><span style="font-size:12px;color:#b45309">${rol.usuarios} ${rol.usuarios === 1 ? 'usuario tiene' : 'usuarios tienen'} este rol asignado.</span>` : '';
-                Swal.fire({
-                    title: '¿Eliminar rol?',
-                    html: `Se eliminará el rol <b>${this.escapar(rol.nombre)}</b> y todos sus permisos.${aviso}<br><span style="font-size:12px;color:#f43f5e">Esta acción no se puede deshacer.</span>`,
-                    icon: 'warning',
-                    showCancelButton: true,
-                    reverseButtons: true,
-                    confirmButtonColor: '#f43f5e',
-                    cancelButtonColor: '#64748b',
-                    confirmButtonText: 'Sí, eliminar',
-                    cancelButtonText: 'Cancelar',
-                    showLoaderOnConfirm: true,
-                    customClass: { popup: 'rounded-3xl' },
-                    preConfirm: async () => {
-                        try {
-                            const res = await fetch(`${URL_ROLES}/${rol.id}`, {
-                                method: 'DELETE',
-                                headers: { 'X-CSRF-TOKEN': CSRF_ROLES, 'Accept': 'application/json' }
-                            });
-                            const data = await res.json().catch(() => ({}));
-                            if (!res.ok || data.success === false) {
-                                throw new Error(res.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (data.message || 'No se pudo eliminar el rol.'));
-                            }
-                            return data;
-                        } catch (e) {
-                            Swal.showValidationMessage(e.message || 'Error de conexión');
-                        }
-                    },
-                    allowOutsideClick: () => !Swal.isLoading()
-                }).then(result => {
-                    if (!result.isConfirmed) return;
-                    rol._saliendo = true;
-                    setTimeout(() => {
-                        this.roles = this.roles.filter(r => r.id !== rol.id);
-                        this.animarResumen();
-                    }, 330);
-                    avisoRoles((result.value && result.value.message) || 'Rol eliminado.', 'success');
-                });
-            },
-            escapar(t) { const d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
-        };
-    }
+        roseta(seed, size) { return typeof mtRoseta === 'function' ? mtRoseta(seed, size) : ''; },
+    };
+}
 </script>
+@endverbatim
 @endsection

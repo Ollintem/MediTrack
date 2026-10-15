@@ -118,8 +118,11 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/pos/procesar-venta', [PosController::class, 'procesarVenta'])->name('pos.procesar-venta');
         Route::post('/pos/generar-ticket', [PosController::class, 'generarTicket'])->name('pos.generar-ticket');
         
-        // NUEVA RUTA: Procesar la entrega física desde el POS
+        // RUTA 1: Procesar la entrega física pasando el ID numérico
         Route::post('/pos/marcar-entregado/{id}', [PosController::class, 'marcarEntregado'])->name('pos.marcar-entregado');
+
+        // RUTA 2: Entrega rápida escaneando/ingresando el código de ticket (ej. TCK-XOFNZS)
+        Route::post('/pos/entregar-ticket/{codigo}', [PosController::class, 'entregarTicket'])->name('pos.entregar-ticket');
 
         // Rutas para ver/imprimir tickets de venta
         Route::get('/pos/ticket/{venta?}', [PosController::class, 'generarTicket'])->name('pos.generar-ticket-get');

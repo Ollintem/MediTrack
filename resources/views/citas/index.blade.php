@@ -79,7 +79,7 @@
     <section class="ci-escenario">
         <div class="ci-centro">
             <!-- TABLERO DEL DÍA -->
-            <div class="ci-tablero" x-show="vista === 'dia'">
+            <div class="ci-tablero mt-aparece" x-show="vista === 'dia'">
                 <div class="ci-tb-scroll" x-ref="tablero">
                     <div class="ci-tb-grid" :style="'grid-template-columns: 58px repeat(' + columnas.length + ', minmax(158px, 1fr))'">
                         <div class="ci-tb-esq"></div>
@@ -127,7 +127,7 @@
             </div>
 
             <!-- MES -->
-            <div class="ci-mes" x-show="vista === 'mes'" x-cloak>
+            <div class="ci-mes mt-aparece" x-show="vista === 'mes'" x-cloak>
                 <div class="ci-mes-sem">
                     <template x-for="d in ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']" :key="'s' + d"><span x-text="d"></span></template>
                 </div>
@@ -375,7 +375,7 @@
 
 /* Pase (frente y reverso) */
 .ci-pase { perspective: 1400px; }
-.ci-pase-in { position: relative; height: 410px; transform-style: preserve-3d; transition: transform .85s var(--flip), height .5s var(--e); }
+.ci-pase-in { position: relative; height: 410px; transform-style: preserve-3d; transition: transform .45s var(--flip), height .3s var(--e); }
 .ci-pase.volteado .ci-pase-in { transform: rotateY(180deg); height: 700px; }
 .ci-cara { position: absolute; inset: 0; border-radius: 22px; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
 .ci-frente { color: #eafaf6; background: linear-gradient(155deg, #0d6a63, var(--cred) 45%, var(--cred2)); box-shadow: 0 24px 44px -26px rgba(7, 63, 59, .9), inset 0 0 0 1px rgba(166, 239, 226, .18); }
@@ -469,6 +469,36 @@
 /* Edición: lo demás se atenúa */
 .ci.editando .ci-centro, .ci.editando .ci-prox, .ci.editando .ci-mini, .ci.editando .ci-cab { opacity: .35; filter: saturate(.6); pointer-events: none; }
 
+/* Columnas del formulario (en angosto se apilan como siempre) */
+.ci-rv-a, .ci-rv-b { display: contents; }
+
+/* Edición a lo ancho: como al crear un paciente, el pase ocupa toda la vista */
+@container (min-width: 640px) {
+    .ci.editando .ci-escenario { grid-template-columns: minmax(0, 1fr); }
+    .ci.editando .ci-centro, .ci.editando .ci-mini, .ci.editando .ci-prox, .ci.editando .ci-acc { display: none; }
+    .ci.editando .ci-lado { grid-template-columns: minmax(0, 1fr); }
+    .ci.editando .ci-pase, .ci.editando .ci-acc { grid-column: auto; grid-row: auto; }
+    .ci.editando .ci-top { opacity: .35; pointer-events: none; }
+    .ci-pase.volteado .ci-pase-in { height: 1000px; }
+    .ci.editando .ci-rv-k { padding: 20px 28px 10px; font-size: 13px; }
+    .ci.editando .ci-rv-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 32px; align-items: start; padding: 4px 28px 18px; }
+    .ci.editando .ci-rv-a, .ci.editando .ci-rv-b { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    .ci.editando .ci-rv-b { padding-left: 32px; margin-left: -1px; border-left: 1px solid var(--linea2); }
+    .ci.editando .ci-rv-a > *, .ci.editando .ci-rv-b > * { flex-shrink: 0; }
+    /* Calendario y reloj siempre a la vista */
+    .ci.editando .ci-rv-b .ci-pop-cal, .ci.editando .ci-rv-b .ci-pop-hora { display: block !important; margin: 0; box-shadow: none; }
+    .ci.editando .ci-rv-b .ci-pop-cal .ci-mini-g button { height: 36px; }
+    .ci.editando .ci-rv-b .ci-pick .bi-calendar3, .ci.editando .ci-rv-b .ci-pick .bi-clock { display: none; }
+    .ci.editando .ci-rv-pie { padding: 14px 28px; }
+}
+@container (min-width: 1100px) {
+    .ci.editando .ci-rv-cuerpo { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); }
+    .ci-pase.volteado .ci-pase-in { height: 690px; }
+    /* Calendario y reloj lado a lado */
+    .ci.editando .ci-rv-b { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+    .ci.editando .ci-rv-b > :not(.ci-pop-cal):not(.ci-pop-hora) { grid-column: 1 / -1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .ci-pase-in { transition: none; }
     .ci-pase.volteado .ci-pase-in { transform: none; }
@@ -517,6 +547,7 @@ function modCitas() {
             this.mesNav = this.dia.slice(0, 7);
             this.sel = this.delDia.find(c => this.minFin(c) >= this.minAhora && c.estado !== 'Cancelada') || this.delDia[0] || null;
             this.form = this.formNuevo();
+            this.$watch('sel', () => window.mtRefresca && mtRefresca('.ci-frente .ci-fr'));
 
             this.$watch('dia', v => { this.mesNav = v.slice(0, 7); this.urlSync(); this.$nextTick(() => this.enfocarTablero()); });
             this.$watch('vista', () => this.urlSync());
@@ -787,8 +818,8 @@ function modCitas() {
             if (!f.motivo) e.motivo = 'Escribe el motivo de la consulta.';
             if (!f.id && f.fecha && f.hora && new Date(f.fecha + 'T' + f.hora).getTime() < Date.now() - 5 * 60000) e.hora = 'Esa fecha y hora ya pasaron.';
             this.errores = e;
-            if (Object.keys(e).length) { this.mensajeForm = 'Revisa los datos marcados.'; return; }
-            if (this.choqueForm) return;
+            if (Object.keys(e).length) { this.mensajeForm = 'Revisa los datos marcados.'; window.mtSacudir && mtSacudir('.ci-rv-cuerpo'); return; }
+            if (this.choqueForm) { window.mtSacudir && mtSacudir('.ci-rv-pie'); return; }
 
             this.guardando = true; this.mensajeForm = 'Guardando…';
             try {
@@ -800,7 +831,7 @@ function modCitas() {
                 const d = await r.json().catch(() => ({}));
                 if (r.status === 422) {
                     Object.entries(d.errors || {}).forEach(([k, v]) => { this.errores[k] = v[0]; });
-                    this.mensajeForm = d.message || 'Revisa los datos.'; this.guardando = false; return;
+                    this.mensajeForm = d.message || 'Revisa los datos.'; this.guardando = false; window.mtSacudir && mtSacudir('.ci-rv-cuerpo'); return;
                 }
                 if (!r.ok) throw new Error(r.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (d.message || 'No se pudo guardar la cita.'));
                 if (d.cita) {
@@ -810,6 +841,7 @@ function modCitas() {
                     this.cancelar();
                     this.dia = d.cita.fecha; this.vista = 'dia';
                     avisar(d.message || 'Cita guardada.');
+                    this.$nextTick(() => window.mtDestello && mtDestello('.ci-bloque.sel'));
                 } else { avisar(d.message || 'Cita guardada.'); location.reload(); }
             } catch (err) {
                 this.guardando = false; this.mensajeForm = err.message; avisar(err.message, 'error');
@@ -852,8 +884,8 @@ function modCitas() {
             }).then(res => {
                 if (res.isDenied) { this.cambiarEstado(c, 'Cancelada'); return; }
                 if (!res.isConfirmed) return;
-                this.C.splice(this.C.findIndex(x => x.id === c.id), 1);
-                this.sel = this.delDia[0] || null;
+                const quitar = () => { this.C.splice(this.C.findIndex(x => x.id === c.id), 1); this.sel = this.delDia[0] || null; };
+                window.mtQuitar ? mtQuitar('.ci-bloque.sel', quitar) : quitar();
                 avisar((res.value && res.value.message) || 'Cita eliminada.');
             });
         },

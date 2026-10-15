@@ -26,11 +26,11 @@ class ProductoInventario extends Model
         'estado'
     ];
 
-    // Incluir stock reservado y disponible dinámicamente en respuestas JSON
+    // Incluir automáticamente las propiedades calculadas en JSON (AJAX / Alpine.js)
     protected $appends = ['stock_reservado', 'stock_disponible'];
 
     /**
-     * Relación con el modelo CategoriaInventario
+     * Relación con CategoriaInventario
      */
     public function categoria()
     {
@@ -38,20 +38,27 @@ class ProductoInventario extends Model
     }
 
     /**
-     * Calcula las piezas apartadas en tickets PENDIENTES vigentes (< 25 min)
+     * Calcula las piezas apartadas o comprometidas:
+     * - Tickets 'pendiente' dentro de la ventana de 25 minutos.
+     * - Tickets 'pagado' en espera de ser surtidos/entregados.
      */
     public function getStockReservadoAttribute()
     {
         return DB::table('ticket_detalles')
             ->join('tickets_venta', 'ticket_detalles.ticket_id', '=', 'tickets_venta.id')
             ->where('ticket_detalles.producto_id', $this->id)
-            ->where('tickets_venta.status', 'pendiente')
-            ->where('tickets_venta.expires_at', '>', now('America/Mexico_City'))
+            ->where(function ($query) {
+                $query->where(function ($q) {
+                    $q->where('tickets_venta.status', 'pendiente')
+                      ->where('tickets_venta.expires_at', '>', now('America/Mexico_City'));
+                })
+                ->orWhere('tickets_venta.status', 'pagado');
+            })
             ->sum('ticket_detalles.cantidad') ?? 0;
     }
 
     /**
-     * Stock disponible vendible en tiempo real
+     * Stock disponible real para venta inmediata (Stock Físico - Piezas Comprometidas)
      */
     public function getStockDisponibleAttribute()
     {

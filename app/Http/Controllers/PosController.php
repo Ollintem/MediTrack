@@ -33,8 +33,7 @@ class PosController extends Controller
     }
 
     /**
-     * Genera un nuevo ticket de venta con 25 minutos de vigencia.
-     * Solo reserva stock disponible dinámico; NO modifica stock_actual en la BD.
+     * Genera un nuevo ticket de venta con 25 minutos de reserva temporal.
      */
     public function generarTicket(Request $request)
     {
@@ -54,10 +53,13 @@ class PosController extends Controller
             foreach ($request->carrito as $item) {
                 $producto = ProductoInventario::findOrFail($item['id']);
                 
-                if ($item['cantidad'] > $producto->stock_disponible) {
+                // Evaluar disponibilidad estricta considerando el accesor o resta directa
+                $stockDisponible = $producto->stock_disponible ?? ($producto->stock_actual - ($producto->stock_reservado ?? 0));
+
+                if ($item['cantidad'] > $stockDisponible) {
                     return response()->json([
                         'status'  => 'error',
-                        'message' => "EL MEDICAMENTO '{$producto->nombre}' SOLO TIENE {$producto->stock_disponible} PZAS. DISPONIBLES."
+                        'message' => "EL MEDICAMENTO '{$producto->nombre}' SOLO TIENE {$stockDisponible} PZAS. DISPONIBLES."
                     ], 422);
                 }
 
@@ -110,40 +112,65 @@ class PosController extends Controller
     }
 
     /**
-     * UNICO PUNTO DONDE SE DECREMENTA EL STOCK FÍSICO REAL EN INVENTARIO.
+     * ÚNICO PUNTO DONDE SE DECREMENTA EL STOCK FÍSICO REAL (stock_actual).
+     * Al cambiar a 'entregado', las piezas salen del inventario físico y se limpia la reserva.
      */
     public function marcarEntregado($id)
     {
         try {
             DB::beginTransaction();
 
-            $ticket = TicketVenta::with('detalles')->findOrFail($id);
+            $codigoLimpio = trim(strtoupper($id));
+
+            // Permite buscar tanto por ID numérico como por 'codigo_ticket' (columna real)
+            $ticket = TicketVenta::with('detalles.producto')
+                ->where('id', $codigoLimpio)
+                ->orWhere('codigo_ticket', $codigoLimpio)
+                ->first();
+
+            if (!$ticket) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "EL TICKET '{$codigoLimpio}' NO FUE ENCONTRADO EN EL SISTEMA."
+                ], 404);
+            }
+
+            if ($ticket->status === 'entregado') {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "EL TICKET {$ticket->codigo_ticket} YA FUE ENTREGADO ANTERIORMENTE."
+                ], 422);
+            }
 
             if ($ticket->status !== 'pagado') {
                 return response()->json([
                     'status'  => 'error',
                     'message' => 'EL TICKET DEBE ESTAR EN ESTADO PAGADO PARA PODER ENTREGARSE.'
-                ], 400);
+                ], 422);
             }
 
-            // Cambiar estado a entregado
+            // 1. Cambiar estado a entregado
             $ticket->status = 'entregado';
             $ticket->save();
 
-            // Descuento único en inventario físico
-            foreach ($ticket->detalles as $detalle) {
-                $producto = ProductoInventario::find($detalle->producto_id);
+            // 2. ÚNICO DESCUENTO REAL DE STOCK FÍSICO
+            if ($ticket->detalles) {
+                foreach ($ticket->detalles as $detalle) {
+                    $producto = ProductoInventario::find($detalle->producto_id);
 
-                if ($producto) {
-                    $producto->decrement('stock_actual', $detalle->cantidad);
+                    if ($producto) {
+                        $producto->decrement('stock_actual', $detalle->cantidad);
 
-                    $stockVal = $producto->fresh()->stock_actual;
-                    if ($stockVal <= 0) {
-                        $producto->update(['estado' => 'Agotado']);
-                    } elseif ($stockVal <= $producto->stock_minimo) {
-                        $producto->update(['estado' => 'Bajo Stock']);
-                    } else {
-                        $producto->update(['estado' => 'Normal']);
+                        $stockFisico = $producto->fresh()->stock_actual;
+
+                        // Ajustar estado visual según niveles de stock
+                        if ($stockFisico <= 0) {
+                            $producto->update(['estado' => 'Agotado']);
+                        } elseif ($stockFisico <= $producto->stock_minimo) {
+                            $producto->update(['estado' => 'Bajo Stock']);
+                        } else {
+                            $producto->update(['estado' => 'Normal']);
+                        }
                     }
                 }
             }
@@ -152,7 +179,8 @@ class PosController extends Controller
 
             return response()->json([
                 'status'  => 'success',
-                'message' => "TICKET {$ticket->codigo_ticket} ENTREGADO Y DESPACHADO CON ÉXITO."
+                'message' => "TICKET {$ticket->codigo_ticket} ENTREGADO Y SURTIDO CON ÉXITO.",
+                'ticket'  => $ticket
             ]);
 
         } catch (\Exception $e) {
@@ -164,12 +192,26 @@ class PosController extends Controller
         }
     }
 
+    /**
+     * Alias / Ruta rápida para entregar ticket por parámetro de código en URL.
+     */
+    public function entregarTicket($codigo)
+    {
+        return $this->marcarEntregado($codigo);
+    }
+
+    /**
+     * Obtiene los datos detallados de un ticket en formato JSON.
+     */
     public function obtenerTicket($id)
     {
         $ticket = TicketVenta::with(['paciente', 'vendedor', 'detalles.producto'])->findOrFail($id);
         return response()->json($ticket);
     }
 
+    /**
+     * Buscador de productos vía AJAX.
+     */
     public function buscarProducto(Request $request)
     {
         $q = strtoupper(trim($request->q ?? $request->search ?? ''));
@@ -188,6 +230,9 @@ class PosController extends Controller
         return response()->json($productos);
     }
 
+    /**
+     * Carga la vista del ticket para impresión / reimpresión.
+     */
     public function ticket($id)
     {
         $ticket = TicketVenta::with(['paciente', 'vendedor', 'detalles.producto'])->findOrFail($id);

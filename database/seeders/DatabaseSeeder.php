@@ -41,17 +41,18 @@ class DatabaseSeeder extends Seeder
 
         // 2. Crear Módulos Reales y Activos del Sistema (Mismo orden que el Sidebar)
        $modulos = [
+    'Dashboard',
     'Pacientes', 
     'Citas', 
     'Consultas', 
     'Consultorios', 
     'Recetas', 
     'POS', 
-    'Caja', 
+    'Caja central', 
     'Inventario', 
     'Personal', 
     'Roles', 
-    'Configuración', // <--- Módulo agregado
+    'Configuración', 
     'Bitácora'
 ];
 

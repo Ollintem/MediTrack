@@ -57,12 +57,15 @@
                 <p>Pisos</p>
                 <div class="co-elev-bt">
                     <template x-for="p in pisos" :key="'e' + p">
-                        <button type="button" @click="cambiarPiso(p)" :aria-pressed="(piso === p).toString()"
-                                :title="etiquetaPiso(p) + ' · ' + contarPiso(p) + ' consultorios'">
-                            <b :class="{ 'largo': String(p).length > 3 }" x-text="p === '' ? '—' : p"></b>
-                            <small class="t" x-text="contarPiso(p)"></small>
-                            <i x-show="enConsultaPiso(p) > 0" :title="enConsultaPiso(p) + ' en consulta'"></i>
-                        </button>
+                        <div class="co-elev-p">
+                            <button type="button" class="co-elev-piso" @click="cambiarPiso(p)" :aria-pressed="(piso === p).toString()"
+                                    :title="etiquetaPiso(p) + ' · ' + contarPiso(p) + ' consultorios'">
+                                <b :class="{ 'largo': String(p).length > 3 }" x-text="p === '' ? '—' : p"></b>
+                                <small class="t" x-text="contarPiso(p)"></small>
+                                <i x-show="enConsultaPiso(p) > 0" :title="enConsultaPiso(p) + ' en consulta'"></i>
+                            </button>
+                            <button type="button" class="co-elev-x" @click.stop="eliminarPiso(p)" :aria-label="'Quitar ' + etiquetaPiso(p)" :title="'Quitar ' + etiquetaPiso(p)"><i class="bi bi-x"></i></button>
+                        </div>
                     </template>
                 </div>
                 <button type="button" class="co-elev-mas" @click="abrirPisoNuevo()" x-show="!pisoNuevo.abierto" aria-label="Agregar piso">
@@ -227,15 +230,27 @@
 .co-elev { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 0; background: #f8fbfa; border-right: 1px solid var(--linea2); }
 .co-elev > p { font-size: 12px; font-weight: 600; color: var(--media); }
 .co-elev-bt { display: flex; flex-direction: column-reverse; gap: 8px; }
-.co-elev-bt button, .co-elev-mas { position: relative; width: 52px; height: 52px; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; background: var(--papel); border: 1px solid var(--linea); color: var(--tinta); transition: background .15s, border-color .15s, color .15s, transform .15s; }
-.co-elev-bt button:hover { border-color: #b9cbc6; transform: translateY(-1px); }
+.co-elev-bt .co-elev-piso, .co-elev-mas { position: relative; width: 52px; height: 52px; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; background: var(--papel); border: 1px solid var(--linea); color: var(--tinta); transition: background .15s, border-color .15s, color .15s, transform .15s; }
+.co-elev-bt .co-elev-piso:hover { border-color: #b9cbc6; transform: translateY(-1px); }
 .co-elev-bt b { font: 750 20px/1 var(--disp); font-stretch: 85%; max-width: 46px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .co-elev-bt b.largo { font-size: 12px; }
 .co-elev-bt small { font: 500 11px var(--mono); color: var(--media); }
-.co-elev-bt i { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--cred); box-shadow: 0 0 0 2px var(--papel); }
-.co-elev-bt button[aria-pressed=true] { background: var(--cred); border-color: var(--cred); color: #fff; box-shadow: 0 10px 18px -10px rgba(7, 63, 59, .8); }
-.co-elev-bt button[aria-pressed=true] small { color: var(--foil); }
-.co-elev-bt button[aria-pressed=true] i { background: var(--foil); box-shadow: 0 0 0 2px var(--cred); }
+.co-elev-piso > i { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--cred); box-shadow: 0 0 0 2px var(--papel); }
+.co-elev-bt .co-elev-piso[aria-pressed=true] { background: var(--cred); border-color: var(--cred); color: #fff; box-shadow: 0 10px 18px -10px rgba(7, 63, 59, .8); }
+.co-elev-bt .co-elev-piso[aria-pressed=true] small { color: var(--foil); }
+.co-elev-bt .co-elev-piso[aria-pressed=true] > i { background: var(--foil); box-shadow: 0 0 0 2px var(--cred); }
+.co-elev-p { position: relative; }
+.co-elev-x { position: absolute; top: -7px; left: -7px; z-index: 2; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; padding: 0; border: 1px solid var(--linea); background: var(--papel); color: var(--media); font-size: 15px; box-shadow: 0 3px 8px rgba(11, 30, 28, .18); opacity: 0; scale: .6; pointer-events: none; transition: opacity .12s, scale .15s var(--e), color .12s, background .12s; }
+.co-elev-p:hover .co-elev-x, .co-elev-x:focus-visible { opacity: 1; scale: 1; pointer-events: auto; }
+.co-elev-x:hover { background: var(--rosav); color: var(--rosa); border-color: #f3c6cf; }
+@media (hover: none) { .co-elev-piso[aria-pressed=true] + .co-elev-x { opacity: 1; scale: 1; pointer-events: auto; } }
+.co-sw-p { font-size: 14.5px; color: #2c3d3a; margin: 0 0 12px; }
+.co-sw-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.co-sw-chip { height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid #dbe4e1; background: #fff; font: 600 13.5px 'Geist', sans-serif; color: #2c3d3a; cursor: pointer; }
+.co-sw-chip.on { border-color: #0b5a54; background: #e2efec; color: #0b5a54; }
+.co-sw-nuevo { width: 130px; height: 36px; padding: 0 10px; border-radius: 10px; border: 1px dashed #b9cbc6; font: 600 13.5px 'Geist', sans-serif; text-transform: uppercase; text-align: center; outline: 0; }
+.co-sw-nuevo:focus { border-style: solid; border-color: #0e7c72; box-shadow: 0 0 0 3px rgba(14, 124, 114, .15); }
+.co-sw-nuevo::placeholder { text-transform: none; }
 .co-elev-mas { border-style: dashed; color: var(--media); background: transparent; }
 .co-elev-mas:hover { color: var(--cred); border-color: var(--cred); }
 .co-elev-nuevo { width: 64px; display: flex; flex-direction: column; gap: 4px; }
@@ -294,7 +309,7 @@
 .co-lado { display: grid; gap: 14px; align-content: start; }
 @container (min-width: 640px) and (max-width: 1039px) { .co-lado { grid-template-columns: 320px minmax(0, 1fr); align-items: start; } }
 .co-placa { perspective: 1400px; }
-.co-placa-in { position: relative; height: 360px; transform-style: preserve-3d; transition: transform .85s var(--flip); }
+.co-placa-in { position: relative; height: 360px; transform-style: preserve-3d; transition: transform .45s var(--flip); }
 .co-placa.volteada .co-placa-in { transform: rotateY(180deg); }
 .co-cara { position: absolute; inset: 0; border-radius: 22px; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
 
@@ -458,6 +473,7 @@ function modConsultorios() {
             let ultimo = null; try { ultimo = sessionStorage.getItem('piso_activo_consultorios'); } catch (e) {}
             this.piso = (ultimo !== null && this.pisos.includes(ultimo)) ? ultimo : (this.pisos[0] ?? '');
             this.sel = this.planoVisible[0] || this.P[0] || null;
+            this.$watch('sel', () => window.mtRefresca && mtRefresca('.co-frente .co-fr'));
 
             // Escala del plano según el ancho disponible
             const ajustar = () => { const w = this.$refs.lienzo.clientWidth; this.escala = Math.min(1, Math.max(.35, w / 900)); };
@@ -537,6 +553,75 @@ function modConsultorios() {
             this.pisoNuevo.abierto = false;
             this.cambiarPiso(v);
             avisar(this.etiquetaPiso(v) + ' agregado. Registra su primer consultorio.');
+        },
+
+        /* Quitar un piso: si tiene consultorios, se mueven a otro piso o se eliminan junto con él */
+        async eliminarPiso(p) {
+            if (this.editando || this.arrastre) return;
+            const esc = t => String(t).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+            const nombre = this.etiquetaPiso(p);
+            const enPiso = this.P.filter(c => c.piso === p);
+            const otros = this.pisos.filter(x => x !== p);
+            const terminar = (destino) => {
+                this.pisosExtra = this.pisosExtra.filter(x => x !== p);
+                if (destino !== undefined && destino !== null && !this.P.some(c => c.piso === destino) && !this.pisosExtra.includes(destino)) this.pisosExtra.push(destino);
+                guarda('pisos_extra_consultorios', this.pisosExtra);
+                this.cambiarPiso(destino !== undefined && destino !== null ? destino : (this.pisos[0] ?? ''));
+            };
+
+            if (!enPiso.length) {
+                const r = await Swal.fire({ title: '¿Quitar ' + nombre + '?', text: 'No tiene consultorios registrados.', icon: 'question', showCancelButton: true, reverseButtons: true, confirmButtonText: 'Quitar piso', cancelButtonText: 'Cancelar', confirmButtonColor: '#c8102e', cancelButtonColor: '#56625f' });
+                if (!r.isConfirmed) return;
+                terminar(); avisar(nombre + ' quitado.'); return;
+            }
+
+            const chips = otros.map(o => '<button type="button" class="co-sw-chip" data-v="' + esc(o) + '">' + esc(this.etiquetaPiso(o)) + '</button>').join('');
+            const r = await Swal.fire({
+                title: '¿Quitar ' + nombre + '?',
+                html: '<p class="co-sw-p">Tiene <b>' + enPiso.length + (enPiso.length === 1 ? ' consultorio' : ' consultorios') + '</b>. Elige a qué piso pasarlos:</p>'
+                    + '<div class="co-sw-chips">' + chips + '<input type="text" class="co-sw-nuevo" maxlength="20" placeholder="Otro piso…" aria-label="Nombre de otro piso"></div>',
+                icon: 'question', showCancelButton: true, showDenyButton: true, reverseButtons: true, focusCancel: true,
+                confirmButtonText: 'Mover y quitar piso', denyButtonText: 'Eliminar también sus consultorios', cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#0b5a54', denyButtonColor: '#c8102e', cancelButtonColor: '#56625f',
+                didOpen: (el) => {
+                    const lista = el.querySelectorAll('.co-sw-chip'), nuevo = el.querySelector('.co-sw-nuevo');
+                    const elegir = b => { lista.forEach(x => x.classList.toggle('on', x === b)); if (b) nuevo.value = ''; };
+                    lista.forEach(b => b.addEventListener('click', () => elegir(b)));
+                    nuevo.addEventListener('input', () => elegir(null));
+                    if (lista[0]) elegir(lista[0]); else nuevo.focus();
+                },
+                preConfirm: () => {
+                    const el = Swal.getPopup(), on = el.querySelector('.co-sw-chip.on'), nuevo = el.querySelector('.co-sw-nuevo').value.trim().toUpperCase();
+                    const v = on ? on.dataset.v : nuevo;
+                    if (!v && !on) { Swal.showValidationMessage('Elige un piso o escribe uno nuevo.'); return false; }
+                    if (v === p) { Swal.showValidationMessage('Elige un piso distinto.'); return false; }
+                    return v;
+                },
+            });
+            if (r.isDismissed) return;
+
+            const estado = c => ({ disponible: 'Disponible', ocupado: 'Ocupado', mantenimiento: 'Mantenimiento' })[c.estado] || 'Disponible';
+            const fallos = [];
+            Swal.fire({ title: r.isConfirmed ? 'Moviendo consultorios…' : 'Eliminando consultorios…', allowOutsideClick: false, showConfirmButton: false, didOpen: () => Swal.showLoading() });
+            for (const c of enPiso) {
+                try {
+                    const res = r.isConfirmed
+                        ? await fetch(`${URL}/${c.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF }, body: JSON.stringify({ nombre: c.nombre, piso: r.value, estado: estado(c) }) })
+                        : await fetch(`${URL}/${c.id}`, { method: 'DELETE', headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF } });
+                    const d = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(d.message || 'Error');
+                    if (r.isConfirmed) { const i = this.P.findIndex(x => x.id === c.id); if (i >= 0 && d.consultorio) this.P.splice(i, 1, Object.assign({}, this.P[i], d.consultorio)); }
+                    else this.P.splice(this.P.findIndex(x => x.id === c.id), 1);
+                } catch (e) { fallos.push(c.nombre + ': ' + e.message); }
+            }
+            Swal.close();
+            if (fallos.length) {
+                if (this.P.some(c => c.piso === p) && !this.pisosExtra.includes(p)) { /* el piso sigue existiendo por los que no se pudieron mover */ }
+                Swal.fire({ title: 'No se pudo con todos', icon: 'warning', html: '<p style="font-size:14px;text-align:left">' + fallos.map(esc).join('<br>') + '</p>', confirmButtonColor: '#0b5a54' });
+            }
+            if (!this.P.some(c => c.piso === p)) terminar(r.isConfirmed ? r.value : null);
+            if (this.sel && !this.P.includes(this.sel)) this.sel = this.planoVisible[0] || this.P[0] || null;
+            if (!fallos.length) avisar(r.isConfirmed ? nombre + ' quitado; sus consultorios pasaron a ' + this.etiquetaPiso(r.value) + '.' : nombre + ' y sus consultorios se eliminaron.');
         },
 
         /* ---------- Selección ---------- */
@@ -689,7 +774,7 @@ function modConsultorios() {
             this.errores = {};
             if (!f.nombre) this.errores.nombre = 'Escribe el nombre del consultorio.';
             if (this.P.some(c => c.id !== f.id && norm(c.nombre) === norm(f.nombre) && c.piso === f.piso)) this.errores.nombre = 'Ya hay un consultorio con ese nombre en este piso.';
-            if (Object.keys(this.errores).length) { this.mensajeForm = 'Revisa el dato marcado.'; return; }
+            if (Object.keys(this.errores).length) { this.mensajeForm = 'Revisa el dato marcado.'; window.mtSacudir && mtSacudir('.co-reverso'); return; }
 
             this.guardando = true; this.mensajeForm = 'Guardando…';
             try {
@@ -701,7 +786,7 @@ function modConsultorios() {
                 const d = await r.json().catch(() => ({}));
                 if (r.status === 422) {
                     Object.entries(d.errors || {}).forEach(([k, v]) => { this.errores[k] = v[0]; });
-                    this.mensajeForm = d.message || 'Revisa los datos.'; this.guardando = false; return;
+                    this.mensajeForm = d.message || 'Revisa los datos.'; this.guardando = false; window.mtSacudir && mtSacudir('.co-reverso'); return;
                 }
                 if (!r.ok) throw new Error(r.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (d.message || 'No se pudo guardar.'));
 
@@ -723,6 +808,7 @@ function modConsultorios() {
                 if (c.piso !== this.piso) this.cambiarPiso(c.piso);
                 this.$nextTick(() => this.rebotar(c.id));
                 avisar(d.message || 'Consultorio guardado.');
+                this.$nextTick(() => window.mtDestello && mtDestello('.co-fila.sel'));
             } catch (e) {
                 this.guardando = false; this.mensajeForm = e.message;
                 avisar(e.message, 'error');
@@ -768,10 +854,13 @@ function modConsultorios() {
                 allowOutsideClick: () => !Swal.isLoading()
             }).then(res => {
                 if (!res.isConfirmed) return;
-                const i = this.P.findIndex(x => x.id === c.id);
-                this.P.splice(i, 1);
-                if (!this.P.some(x => x.piso === c.piso) && !this.pisosExtra.includes(c.piso)) { this.pisosExtra.push(c.piso); guarda('pisos_extra_consultorios', this.pisosExtra); }
-                this.sel = this.planoVisible[0] || this.P[0] || null;
+                const quitar = () => {
+                    const i = this.P.findIndex(x => x.id === c.id);
+                    this.P.splice(i, 1);
+                    if (!this.P.some(x => x.piso === c.piso) && !this.pisosExtra.includes(c.piso)) { this.pisosExtra.push(c.piso); guarda('pisos_extra_consultorios', this.pisosExtra); }
+                    this.sel = this.planoVisible[0] || this.P[0] || null;
+                };
+                window.mtQuitar ? mtQuitar('.co-fila.sel', quitar) : quitar();
                 avisar((res.value && res.value.message) || 'Consultorio eliminado.');
             });
         },

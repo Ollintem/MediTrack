@@ -1,537 +1,850 @@
 @extends('layouts.admin')
 
+{{--
+    MÓDULO DE PERSONAL · MediTrack
+    Plantilla agrupada por cargo y, al lado, el gafete de la persona elegida.
+    El gafete se voltea para dar de alta o editar (a lo ancho, como la credencial de pacientes)
+    y se guarda por AJAX: PersonalController responde JSON. ?nuevo=1 abre el alta; ?p=ID elige a alguien.
+--}}
+
 @section('content')
-@php
-    $personal = $personal ?? collect();
-    if ($personal instanceof \Illuminate\Database\Eloquent\Collection) {
-        $personal->loadMissing('usuario');
-    }
+<div class="pe" x-data="modPersonal()" x-cloak :class="{ 'editando': editando }" @keydown.window="tecla($event)">
 
-    // Permisos (se consultan una sola vez, no en cada fila)
-    $puedeVerRoles = auth()->user()->tienePermiso('Roles', 'ver');
-    $puedeCrear    = auth()->user()->tienePermiso('Personal', 'crear');
-    $puedeEditar   = auth()->user()->tienePermiso('Personal', 'editar');
-    $puedeEliminar = auth()->user()->tienePermiso('Personal', 'eliminar');
+    <!-- PESTAÑAS, BÚSQUEDA Y ALTA -->
+    <header class="pe-top">
+        @include('personal._pestanas', ['activa' => 'plantilla'])
+        <label class="pe-cmd">
+            <i class="bi bi-search" aria-hidden="true"></i>
+            <span class="pe-sr">Buscar personal</span>
+            <input type="search" x-ref="buscar" x-model.debounce.150ms="q" autocomplete="off" placeholder="Busca por nombre, cargo, especialidad, correo o teléfono">
+            <kbd aria-hidden="true">/</kbd>
+        </label>
+        <a class="pe-btn" x-show="PUEDE.roles && R.roles" :href="R.roles"><i class="bi bi-shield-lock"></i> Roles y permisos</a>
+        <button type="button" class="pe-dark" x-show="PUEDE.crear" @click="nueva()">Registrar personal <kbd>N</kbd></button>
+    </header>
 
-    $miUsuarioId = auth()->id();
-
-    $personalJs = $personal->map(function ($p) use ($miUsuarioId) {
-        $nombre = $p->nombre_completo ?: trim(($p->nombre ?? '') . ' ' . ($p->apellidos ?? $p->apellido_paterno ?? ''));
-        $estado = $p->estado ?? 'Activo';
-        $rol    = data_get($p, 'usuario.rol.nombre') ?: data_get($p, 'usuario.role.nombre')
-               ?: (is_string(data_get($p, 'usuario.rol')) ? data_get($p, 'usuario.rol') : null);
-
-        return [
-            'id'           => $p->id,
-            'nombre'       => $nombre ?: 'Sin nombre',
-            'email'        => data_get($p, 'usuario.email'),
-            'especialidad' => $p->especialidad_principal ?: null,
-            'telefono'     => $p->telefono ?: null,
-            'cedula'       => $p->cedula_profesional ?? $p->cedula ?? $p->rut ?? null,
-            'rol'          => $rol,
-            'activo'       => mb_strtolower((string) $estado) === 'activo',
-            'estado'       => $estado,
-            'soyYo'        => $miUsuarioId && (int) data_get($p, 'usuario.id') === (int) $miUsuarioId,
-            'editar'       => route('personal.edit', $p->id),
-            'nomina'       => \Illuminate\Support\Facades\Route::has('personal.nomina.empleado') ? route('personal.nomina.empleado', $p->id) : '#',
-            'salario'      => (float) ($p->salario_diario ?? 0),
-            'tipo_pago'    => $p->tipo_pago ?? null,
-            'buscar'       => \Illuminate\Support\Str::lower(\Illuminate\Support\Str::ascii(implode(' ', array_filter([
-                $nombre, data_get($p, 'usuario.email'), $p->especialidad_principal, $p->telefono, $rol,
-            ])))),
-        ];
-    })->sortBy('nombre', SORT_NATURAL | SORT_FLAG_CASE)->values();
-
-    $tarjetas = [
-        ['Total de personal', 'total',          'bi-people-fill',       'bg-teal-50 text-teal-600'],
-        ['Cuentas activas',   'activos',        'bi-person-check-fill', 'bg-emerald-50 text-emerald-600'],
-        ['Inactivas',         'inactivos',      'bi-person-dash-fill',  'bg-slate-100 text-slate-500'],
-        ['Especialidades',    'especialidades', 'bi-heart-pulse-fill',  'bg-sky-50 text-sky-600'],
-    ];
-@endphp
-
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
-<div class="space-y-6" x-data="moduloPersonal()">
-
-    @include('personal._pestanas', ['activa' => 'plantilla'])
-
-    {{-- ===================== ENCABEZADO ===================== --}}
-    <div class="aparece relative overflow-hidden rounded-3xl bg-gradient-to-br from-teal-900 via-teal-800 to-emerald-700 text-white shadow-xl shadow-teal-900/20">
-        <div class="flotar absolute -right-16 -top-20 w-64 h-64 rounded-full bg-white/5"></div>
-        <div class="flotar absolute right-48 -bottom-24 w-56 h-56 rounded-full bg-emerald-400/10" style="animation-delay:-2.5s"></div>
-        {{-- Línea de latido --}}
-        <svg class="absolute inset-x-0 bottom-2 w-full h-12 opacity-25 pointer-events-none" viewBox="0 0 800 40" preserveAspectRatio="none" fill="none" aria-hidden="true">
-            <path class="ecg-linea" d="M0 20 H300 L315 20 L325 6 L338 34 L350 2 L364 38 L374 20 H520 L532 13 L544 20 H800" stroke="#6ee7b7" stroke-width="2" stroke-linejoin="round"/>
-        </svg>
-        {{-- Avatares decorativos --}}
-        <div class="absolute right-10 top-8 hidden lg:flex -space-x-3 opacity-25 pointer-events-none">
-            <span class="w-12 h-12 rounded-full bg-white border-4 border-teal-800 flotar"></span>
-            <span class="w-12 h-12 rounded-full bg-emerald-200 border-4 border-teal-800 flotar" style="animation-delay:-1s"></span>
-            <span class="w-12 h-12 rounded-full bg-teal-200 border-4 border-teal-800 flotar" style="animation-delay:-2s"></span>
+    <!-- CABECERA: cifra e indicadores -->
+    <section class="pe-cab">
+        <div class="pe-g">
+            <b class="t" x-text="P.length"></b>
+            <span><em x-text="P.length === 1 ? 'persona en el equipo' : 'personas en el equipo'"></em><span x-text="CLINICA"></span></span>
         </div>
-
-        <div class="relative p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div class="space-y-2 min-w-0">
-                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-[11px] font-bold uppercase tracking-wide text-emerald-300 backdrop-blur-md">
-                    <i class="bi bi-heart-pulse-fill latido-lento"></i> Gestión institucional
-                </div>
-                <h1 class="text-2xl sm:text-3xl font-black tracking-tight flex items-center gap-3">
-                    Directorio de personal <i class="bi bi-heart-pulse-fill text-emerald-300 text-2xl latido-lento"></i>
-                </h1>
-                <p class="text-xs text-teal-100/80 font-medium max-w-xl leading-relaxed">
-                    Administra las cuentas del equipo, sus cargos, datos profesionales y acceso a MediTrack.
-                </p>
-            </div>
-
-            <div class="flex items-center gap-2.5 flex-wrap shrink-0">
-                @if ($puedeVerRoles)
-                    <a href="{{ route('roles.index') }}"
-                       class="bg-white/10 hover:bg-white/20 text-white font-bold px-4 py-2.5 rounded-2xl text-xs border border-white/20 backdrop-blur-md transition-all hover:-translate-y-0.5 flex items-center gap-2">
-                        <i class="bi bi-shield-lock-fill text-emerald-300"></i> Roles y permisos
-                    </a>
-                @endif
-                @if ($puedeCrear)
-                    <a href="{{ route('personal.create') }}"
-                       class="group bg-white text-teal-900 hover:bg-emerald-50 font-black px-5 py-2.5 rounded-2xl text-xs shadow-lg shadow-teal-950/25 transition-all hover:-translate-y-0.5 active:scale-95 flex items-center gap-2">
-                        <i class="bi bi-person-plus-fill text-teal-700 text-sm transition-transform duration-300 group-hover:scale-110"></i> Registrar personal
-                    </a>
-                @endif
-            </div>
-        </div>
-    </div>
-
-    {{-- ===================== RESUMEN ===================== --}}
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        @foreach ($tarjetas as $i => [$titulo, $clave, $icono, $color])
-            <button type="button" @click="filtrarPorTarjeta('{{ $clave }}')"
-                    class="tarjeta-stat group text-left bg-white rounded-2xl border shadow-sm p-4 flex items-center justify-between gap-3 transition-all hover:shadow-md hover:-translate-y-1 cursor-pointer"
-                    :class="tarjetaActiva('{{ $clave }}') ? 'border-teal-300 ring-2 ring-teal-100' : 'border-slate-100 hover:border-slate-200'"
-                    style="animation-delay: {{ $i * 70 }}ms">
-                <div>
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{{ $titulo }}</p>
-                    <p class="text-2xl font-black text-slate-800 mt-1 tabular-nums" x-text="resumenMostrado.{{ $clave }}">0</p>
-                </div>
-                <span class="w-11 h-11 rounded-2xl flex items-center justify-center text-lg shrink-0 transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6 {{ $color }}">
-                    <i class="bi {{ $icono }}"></i>
-                </span>
-            </button>
-        @endforeach
-    </div>
-
-    {{-- ===================== DIRECTORIO ===================== --}}
-    <div class="aparece bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden" style="--d: 220ms">
-
-        <div class="p-5 sm:p-6 border-b border-slate-100 space-y-4">
-            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div class="flex items-center gap-3">
-                    <span class="w-9 h-9 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center"><i class="bi bi-person-lines-fill"></i></span>
-                    <div>
-                        <h3 class="text-base font-black text-slate-800">Miembros del equipo</h3>
-                        <p class="text-[11px] font-semibold text-slate-400"
-                           x-text="filtrados.length === personal.length ? personal.length + ' registrados' : filtrados.length + ' de ' + personal.length + ' registrados'"></p>
-                    </div>
-                </div>
-
-                <div class="flex items-center gap-2">
-                    <div class="relative flex-1 md:w-80">
-                        <i class="bi bi-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                        <input type="search" x-ref="buscar" x-model.debounce.150ms="busqueda" placeholder="Nombre, correo, especialidad, teléfono…"
-                               class="w-full pl-9 pr-9 py-2.5 rounded-2xl border border-slate-200 bg-slate-50 text-xs font-semibold focus:bg-white focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all">
-                        <kbd class="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400 border border-slate-200 rounded px-1.5 py-0.5 hidden sm:block" x-show="!busqueda">/</kbd>
-                    </div>
-                    <div class="relative flex bg-slate-100 p-1 rounded-2xl shrink-0">
-                        <span class="absolute top-1 bottom-1 w-9 rounded-xl bg-white shadow-sm transition-all duration-300" :style="vista === 'lista' ? 'left:4px' : 'left:40px'"></span>
-                        <button @click="cambiarVista('lista')" type="button" title="Vista de tabla" class="relative z-10 w-9 h-8 rounded-xl flex items-center justify-center transition-colors cursor-pointer" :class="vista === 'lista' ? 'text-teal-700' : 'text-slate-400 hover:text-slate-600'">
-                            <i class="bi bi-list-task"></i>
-                        </button>
-                        <button @click="cambiarVista('tarjetas')" type="button" title="Vista de tarjetas" class="relative z-10 w-9 h-8 rounded-xl flex items-center justify-center transition-colors cursor-pointer" :class="vista === 'tarjetas' ? 'text-teal-700' : 'text-slate-400 hover:text-slate-600'">
-                            <i class="bi bi-grid-fill"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Filtro por especialidad --}}
-            <div class="flex flex-wrap items-center gap-2" x-show="especialidades.length > 1">
-                <button type="button" @click="filtroEspecialidad = ''"
-                        :class="filtroEspecialidad === '' ? 'bg-teal-600 text-white border-teal-600 shadow-md shadow-teal-600/20' : 'bg-white text-slate-500 border-slate-200 hover:border-teal-300 hover:text-teal-700'"
-                        class="px-3 py-1.5 rounded-full border text-[11px] font-bold transition-all cursor-pointer">Todas</button>
-                <template x-for="e in especialidades" :key="e.nombre">
-                    <button type="button" @click="filtroEspecialidad = filtroEspecialidad === e.nombre ? '' : e.nombre"
-                            :class="filtroEspecialidad === e.nombre ? 'bg-teal-600 text-white border-teal-600 shadow-md shadow-teal-600/20' : 'bg-white text-slate-500 border-slate-200 hover:border-teal-300 hover:text-teal-700'"
-                            class="px-3 py-1.5 rounded-full border text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5">
-                        <span x-text="e.nombre"></span>
-                        <span class="text-[9px] font-black opacity-70" x-text="e.total"></span>
-                    </button>
-                </template>
-                <button type="button" x-show="hayFiltros" x-cloak @click="limpiarFiltros()" class="ml-auto text-[11px] font-black text-teal-700 hover:text-teal-900 cursor-pointer">Limpiar filtros</button>
-            </div>
-        </div>
-
-        {{-- ---------- TABLA ---------- --}}
-        <div x-show="vista === 'lista' && filtrados.length" class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-                <thead class="bg-slate-50/70 text-[10px] text-slate-400 font-black uppercase tracking-wider border-b border-slate-100">
-                    <tr>
-                        <th class="py-3.5 px-5">Nombre</th>
-                        <th class="py-3.5 px-5">Contacto</th>
-                        <th class="py-3.5 px-5">Cargo / especialidad</th>
-                        <th class="py-3.5 px-5">Estado</th>
-                        <th class="py-3.5 px-5 text-right">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100 font-semibold text-slate-700">
-                    <template x-for="(p, i) in pagina" :key="p.id">
-                        <tr class="fila-in group hover:bg-teal-50/30 transition-colors" :style="'--d:' + Math.min(i * 35, 400) + 'ms'" :class="p._saliendo && 'fila-sale'">
-                            <td class="py-3.5 px-5">
-                                <div class="flex items-center gap-3">
-                                    <span class="relative w-10 h-10 rounded-2xl flex items-center justify-center text-[11px] font-black shrink-0 transition-transform group-hover:scale-110"
-                                          :class="colorAvatar(p.nombre)">
-                                        <span x-text="iniciales(p.nombre)"></span>
-                                        <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ring-2 ring-white" :class="p.activo ? 'bg-emerald-500' : 'bg-slate-300'"></span>
-                                    </span>
-                                    <div class="min-w-0">
-                                        <p class="font-black text-slate-900 text-sm truncate max-w-[240px] flex items-center gap-1.5">
-                                            <span x-text="p.nombre"></span>
-                                            <span x-show="p.soyYo" class="text-[9px] font-black text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-1.5 py-0.5">Tú</span>
-                                        </p>
-                                        <p class="text-[10px] font-bold text-slate-400" x-show="p.rol" x-text="p.rol"></p>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="py-3.5 px-5">
-                                <div class="space-y-1">
-                                    <p class="flex items-center gap-1.5 text-slate-600">
-                                        <i class="bi bi-envelope text-teal-600"></i>
-                                        <template x-if="p.email">
-                                            <button type="button" @click="copiar(p.email)" class="hover:text-teal-700 hover:underline cursor-pointer truncate max-w-[200px]" :title="'Copiar ' + p.email" x-text="p.email"></button>
-                                        </template>
-                                        <span x-show="!p.email" class="text-slate-300 italic">Sin correo</span>
-                                    </p>
-                                    <p class="flex items-center gap-1.5 text-slate-500" x-show="p.telefono">
-                                        <i class="bi bi-telephone text-slate-400"></i>
-                                        <a :href="'tel:' + p.telefono" class="hover:text-teal-700 tabular-nums" x-text="p.telefono"></a>
-                                    </p>
-                                </div>
-                            </td>
-                            <td class="py-3.5 px-5">
-                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold border"
-                                      :class="p.especialidad ? 'bg-teal-50 text-teal-700 border-teal-200/60' : 'bg-slate-50 text-slate-400 border-slate-200'">
-                                    <i class="bi bi-shield-check"></i>
-                                    <span x-text="p.especialidad || 'Sin asignar'"></span>
-                                </span>
-                                <p class="text-[10px] font-bold text-slate-400 mt-1" x-show="p.cedula" x-text="'Céd. ' + p.cedula"></p>
-                            </td>
-                            <td class="py-3.5 px-5">
-                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border"
-                                      :class="p.activo ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'">
-                                    <span class="w-1.5 h-1.5 rounded-full" :class="p.activo ? 'bg-emerald-500 latido' : 'bg-slate-400'"></span>
-                                    <span x-text="p.estado"></span>
-                                </span>
-                            </td>
-                            <td class="py-3.5 px-5 text-right">
-                                <div class="inline-flex items-center gap-1.5">
-                                    <a :href="p.nomina" title="Nómina de este empleado"
-                                       class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center justify-center transition-all hover:scale-110">
-                                        <i class="bi bi-cash-coin text-[12px]"></i>
-                                    </a>
-                                    @if ($puedeEditar)
-                                        <a :href="p.editar" title="Editar"
-                                           class="h-8 px-3 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 text-[11px] font-black flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95">
-                                            <i class="bi bi-pencil-fill"></i><span class="hidden sm:inline">Editar</span>
-                                        </a>
-                                    @endif
-                                    @if ($puedeEliminar)
-                                        <button type="button" @click="eliminar(p)" :disabled="p.soyYo"
-                                                :title="p.soyYo ? 'No puedes eliminar tu propia cuenta' : 'Eliminar'"
-                                                class="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:scale-100">
-                                            <i class="bi bi-trash-fill text-[11px]"></i>
-                                        </button>
-                                    @endif
-                                    @if (!$puedeEditar && !$puedeEliminar)
-                                        <span class="text-[11px] text-slate-300 italic">Sin acciones</span>
-                                    @endif
-                                </div>
-                            </td>
-                        </tr>
-                    </template>
-                </tbody>
-            </table>
-        </div>
-
-        {{-- ---------- TARJETAS ---------- --}}
-        <div x-show="vista === 'tarjetas' && filtrados.length" x-cloak class="p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-            <template x-for="(p, i) in pagina" :key="p.id">
-                <div class="fila-in group relative bg-white rounded-3xl border border-slate-200 overflow-hidden hover:border-teal-300 hover:shadow-lg hover:shadow-teal-900/5 hover:-translate-y-1 transition-all"
-                     :style="'--d:' + Math.min(i * 40, 400) + 'ms'" :class="p._saliendo && 'fila-sale'">
-                    <div class="h-16 bg-gradient-to-r" :class="p.activo ? 'from-teal-600 to-emerald-500' : 'from-slate-300 to-slate-400'"></div>
-                    <div class="px-5 pb-5 -mt-8">
-                        <div class="flex items-end justify-between">
-                            <span class="relative w-16 h-16 rounded-2xl flex items-center justify-center text-lg font-black ring-4 ring-white shadow-md transition-transform group-hover:scale-105"
-                                  :class="colorAvatar(p.nombre)">
-                                <span x-text="iniciales(p.nombre)"></span>
-                                <span class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full ring-2 ring-white" :class="p.activo ? 'bg-emerald-500' : 'bg-slate-300'"></span>
-                            </span>
-                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border mb-1"
-                                  :class="p.activo ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'">
-                                <span class="w-1.5 h-1.5 rounded-full" :class="p.activo ? 'bg-emerald-500' : 'bg-slate-400'"></span>
-                                <span x-text="p.estado"></span>
-                            </span>
-                        </div>
-
-                        <h4 class="mt-3 font-black text-slate-900 text-sm truncate flex items-center gap-1.5">
-                            <span x-text="p.nombre" class="truncate"></span>
-                            <span x-show="p.soyYo" class="text-[9px] font-black text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-1.5 py-0.5 shrink-0">Tú</span>
-                        </h4>
-                        <p class="text-[11px] font-extrabold text-teal-700 truncate" x-text="p.especialidad || 'Sin especialidad asignada'"></p>
-                        <p class="text-[10px] font-bold text-slate-400 truncate" x-text="[p.rol, p.cedula ? 'Céd. ' + p.cedula : ''].filter(Boolean).join(' · ')"></p>
-
-                        <div class="mt-4 space-y-1.5 text-[11px] font-semibold text-slate-600">
-                            <p class="flex items-center gap-2 truncate">
-                                <i class="bi bi-envelope text-teal-600"></i>
-                                <span x-text="p.email || 'Sin correo'" :class="!p.email && 'text-slate-300 italic'" class="truncate"></span>
-                            </p>
-                            <p class="flex items-center gap-2">
-                                <i class="bi bi-telephone text-slate-400"></i>
-                                <span x-text="p.telefono || 'Sin teléfono'" :class="!p.telefono && 'text-slate-300 italic'"></span>
-                            </p>
-                        </div>
-
-                        <div class="mt-4 pt-3 border-t border-slate-100 flex items-center gap-1.5">
-                            <button type="button" x-show="p.email" @click="copiar(p.email)" title="Copiar correo"
-                                    class="w-8 h-8 rounded-xl bg-slate-50 text-slate-500 hover:bg-teal-50 hover:text-teal-700 flex items-center justify-center transition-all cursor-pointer">
-                                <i class="bi bi-clipboard"></i>
-                            </button>
-                            <a x-show="p.telefono" :href="'tel:' + p.telefono" title="Llamar"
-                               class="w-8 h-8 rounded-xl bg-slate-50 text-slate-500 hover:bg-teal-50 hover:text-teal-700 flex items-center justify-center transition-all">
-                                <i class="bi bi-telephone-fill"></i>
-                            </a>
-                            <span class="mr-auto"></span>
-                            @if ($puedeEliminar)
-                                <button type="button" @click="eliminar(p)" :disabled="p.soyYo" :title="p.soyYo ? 'No puedes eliminar tu propia cuenta' : 'Eliminar'"
-                                        class="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">
-                                    <i class="bi bi-trash-fill text-[11px]"></i>
-                                </button>
-                            @endif
-                            <a :href="p.nomina" title="Nómina" class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center justify-center transition-all">
-                                <i class="bi bi-cash-coin"></i>
-                            </a>
-                            @if ($puedeEditar)
-                                <a :href="p.editar" class="h-8 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-black flex items-center gap-1.5 transition-all">
-                                    <i class="bi bi-pencil-fill"></i> Editar
-                                </a>
-                            @endif
-                        </div>
-                    </div>
-                </div>
+        <div class="pe-ind">
+            <template x-for="i in INDICADORES" :key="i.k">
+                <button type="button" :class="'i-' + i.k" @click="filtro = filtro === i.k ? '' : i.k" :aria-pressed="(filtro === i.k).toString()">
+                    <span x-text="i.t"></span><b class="t" x-text="contar(i.k)"></b>
+                </button>
             </template>
         </div>
+        <div class="pe-turnos" role="group" aria-label="Turno">
+            <button type="button" :aria-pressed="(!turno).toString()" @click="turno = ''">Todos</button>
+            <template x-for="t in TURNOS" :key="'ft' + t.v">
+                <button type="button" :aria-pressed="(turno === t.v).toString()" @click="turno = turno === t.v ? '' : t.v"><i class="bi" :class="t.i"></i><span x-text="t.v"></span></button>
+            </template>
+        </div>
+    </section>
 
-        {{-- Mostrar más --}}
-        <div x-show="filtrados.length > limite" class="px-6 pb-6 pt-2 text-center">
-            <button type="button" @click="limite += 24"
-                    class="px-5 py-2.5 rounded-2xl border border-slate-200 text-xs font-black text-slate-600 hover:border-teal-300 hover:text-teal-700 transition-all cursor-pointer"
-                    x-text="'Mostrar más (' + (filtrados.length - limite) + ' restantes)'"></button>
+    <section class="pe-esc">
+        <!-- PLANTILLA POR CARGO -->
+        <div class="pe-lista" aria-label="Plantilla">
+            <template x-for="g in grupos" :key="'g' + g.rol">
+                <div class="pe-grupo">
+                    <h3><span x-text="g.rol"></span><small class="t" x-text="g.items.length"></small></h3>
+                    <template x-for="p in g.items" :key="'p' + p.id">
+                        <button type="button" class="pe-fila" :class="{ 'sel': sel && sel.id === p.id, 'inactivo': !p.activo }" @click="seleccionar(p)">
+                            <span class="pe-av"><span x-html="roseta(p.nombre, 44)"></span><b x-text="iniciales(p)"></b><i :class="p.activo ? 'on' : ''"></i></span>
+                            <span class="pe-fila-n">
+                                <b><span x-text="p.nombre"></span><em x-show="p.soyYo">Tú</em></b>
+                                <small x-text="[p.especialidad || p.rol, 'Turno ' + p.turno.toLowerCase()].filter(Boolean).join(' · ')"></small>
+                            </span>
+                            <span class="pe-fila-d">
+                                <span class="pe-hoy t" x-show="p.citasHoy" x-text="p.citasHoy + (p.citasHoy === 1 ? ' cita hoy' : ' citas hoy')"></span>
+                                <i class="bi" :class="p.acceso ? 'bi-shield-check pe-acc-si' : 'bi-shield-x pe-acc-no'" :title="p.acceso ? 'Con acceso: ' + p.email : 'Sin acceso al sistema'"></i>
+                            </span>
+                        </button>
+                    </template>
+                </div>
+            </template>
+            <div class="pe-vacio" x-show="!grupos.length">
+                <b x-text="P.length ? 'Nadie coincide con la búsqueda' : 'Aún no hay personal registrado'"></b>
+                <button type="button" x-show="P.length" @click="limpiar()">Quitar filtros</button>
+                <button type="button" x-show="!P.length && PUEDE.crear" @click="nueva()">Registrar a la primera persona</button>
+            </div>
         </div>
 
-        {{-- Vacío --}}
-        <div x-show="!filtrados.length" x-cloak class="py-16 text-center px-6">
-            <span class="flotar inline-flex w-16 h-16 rounded-3xl items-center justify-center text-3xl mb-3"
-                  :class="personal.length ? 'bg-slate-100 text-slate-400' : 'bg-teal-50 text-teal-500'">
-                <i class="bi" :class="personal.length ? 'bi-search' : 'bi-person-plus'"></i>
-            </span>
-            <p class="text-sm font-black text-slate-600" x-text="personal.length ? 'Nadie coincide con la búsqueda' : 'Aún no hay personal registrado'"></p>
-            <button type="button" x-show="personal.length" @click="limpiarFiltros()" class="mt-2 text-xs font-black text-teal-700 hover:text-teal-900 cursor-pointer">Quitar filtros</button>
-            @if ($puedeCrear)
-                <a x-show="!personal.length" href="{{ route('personal.create') }}" class="mt-2 inline-block text-xs font-black text-teal-700 hover:text-teal-900">+ Registrar al primero</a>
-            @endif
-        </div>
-    </div>
+        <!-- GAFETE (frente) Y SU FORMULARIO (reverso) -->
+        <aside class="pe-lado">
+            <div class="pe-gafete" :class="{ 'volteado': editando }">
+                <div class="pe-gafete-in">
+
+                    <!-- FRENTE: gafete del personal -->
+                    <article class="pe-cara pe-frente" :class="sel && !sel.activo ? 'inactivo' : ''" :aria-hidden="editando.toString()">
+                        <span class="pe-ranura" aria-hidden="true"></span>
+                        <template x-if="sel">
+                            <div class="pe-fr">
+                                <header class="pe-fr-h">
+                                    <span class="pe-gl" x-html="guilloche(sel.nombre + sel.folio)"></span>
+                                    <p><b x-text="CLINICA"></b><span>Personal</span></p>
+                                    <span class="pe-folio t" x-text="sel.folio"></span>
+                                </header>
+                                <div class="pe-fr-foto">
+                                    <span class="pe-ros" x-html="roseta(sel.nombre, 120)"></span>
+                                    <b x-text="iniciales(sel)"></b>
+                                </div>
+                                <h2 x-text="sel.nombre"></h2>
+                                <p class="pe-cargo"><span x-text="sel.rol || 'Sin cargo'"></span></p>
+                                <p class="pe-esp" x-show="sel.especialidad" x-text="sel.especialidad"></p>
+                                <dl class="pe-fr-d">
+                                    <div><dt>Cédula</dt><dd class="t" x-text="sel.cedula || '—'"></dd></div>
+                                    <div><dt>Turno</dt><dd><i class="bi" :class="turnoDe(sel.turno).i"></i> <span x-text="sel.turno"></span></dd></div>
+                                    <div><dt>Teléfono</dt><dd class="t" x-text="sel.telefono ? formatoTel(sel.telefono) : '—'"></dd></div>
+                                    <div><dt>Desde</dt><dd x-text="sel.desde || '—'"></dd></div>
+                                    <div class="ancho" x-show="sel.direccion"><dt>Domicilio</dt><dd x-text="sel.direccion"></dd></div>
+                                </dl>
+                                <p class="pe-act t" x-show="sel.citasHoy || sel.atendidasMes" x-text="'Hoy ' + sel.citasHoy + (sel.citasHoy === 1 ? ' cita' : ' citas') + ' · ' + sel.atendidasMes + ' atendidas este mes'"></p>
+                                <figure class="pe-codigo" :title="'Código 128 · ' + sel.folio">
+                                    <span class="pe-barras" x-html="barras(sel.folio)"></span>
+                                    <figcaption class="t" x-text="sel.folio"></figcaption>
+                                </figure>
+                                <footer class="pe-franja">
+                                    <i></i>
+                                    <span x-text="(sel.activo ? 'Activo' : 'Inactivo') + ' · ' + (sel.acceso ? sel.email : 'Sin acceso al sistema')"></span>
+                                </footer>
+                            </div>
+                        </template>
+                        <template x-if="!sel">
+                            <div class="pe-fr pe-fr-vacio">
+                                <header class="pe-fr-h"><span class="pe-gl" x-html="guilloche('PERSONAL')"></span><p><b x-text="CLINICA"></b><span>Personal</span></p></header>
+                                <h2>Elige a alguien</h2>
+                                <p>Toca un nombre de la plantilla para ver su gafete.</p>
+                            </div>
+                        </template>
+                    </article>
+
+                    <!-- REVERSO: alta o edición -->
+                    <form class="pe-cara pe-reverso" @submit.prevent="guardar()" novalidate :aria-hidden="(!editando).toString()">
+                        <p class="pe-rv-k" x-text="form.id ? 'Editando · ' + (sel ? sel.folio : '') : 'Alta de personal'"></p>
+
+                        <div class="pe-rv-c">
+                            <!-- Columna A: identidad y puesto -->
+                            <div class="pe-rv-a">
+                                <h4>Identidad</h4>
+                                <div class="pe-dos">
+                                    <label class="pe-campo" :class="{ 'mal': errores.nombre }">
+                                        <span>Nombre(s)</span>
+                                        <input type="text" x-ref="campoNombre" x-model="form.nombre" maxlength="80" autocomplete="off" class="may" placeholder="LAURA" @input="errores.nombre = ''" @blur="form.nombre = mayus(form.nombre)" :tabindex="editando ? 0 : -1">
+                                        <small x-show="errores.nombre" x-text="errores.nombre"></small>
+                                    </label>
+                                    <label class="pe-campo">
+                                        <span>Apellidos</span>
+                                        <input type="text" x-model="form.apellido" maxlength="80" autocomplete="off" class="may" placeholder="MÉNDEZ RÍOS" @blur="form.apellido = mayus(form.apellido)" :tabindex="editando ? 0 : -1">
+                                    </label>
+                                </div>
+                                <div class="pe-dos">
+                                    <label class="pe-campo" :class="{ 'mal': errores.telefono }">
+                                        <span>Teléfono <em>(opcional)</em></span>
+                                        <input type="tel" x-model="form.telefono" inputmode="numeric" maxlength="10" autocomplete="off" class="t" placeholder="10 dígitos" @input="form.telefono = form.telefono.replace(/\D/g, '').slice(0, 10); errores.telefono = ''" :tabindex="editando ? 0 : -1">
+                                        <small x-show="errores.telefono" x-text="errores.telefono"></small>
+                                    </label>
+                                    <label class="pe-campo" :class="{ 'mal': errores.rut }">
+                                        <span>Cédula profesional <em>(opcional)</em></span>
+                                        <input type="text" x-model="form.rut" maxlength="20" autocomplete="off" class="t may" placeholder="12345678" @input="errores.rut = ''" @blur="form.rut = form.rut.toUpperCase().replace(/\s/g, '')" :tabindex="editando ? 0 : -1">
+                                        <small x-show="errores.rut" x-text="errores.rut"></small>
+                                    </label>
+                                </div>
+                                <label class="pe-campo">
+                                    <span>Domicilio <em>(opcional)</em></span>
+                                    <input type="text" x-model="form.direccion" maxlength="255" autocomplete="off" class="may" placeholder="Calle y número, colonia, municipio, CP" @blur="form.direccion = mayus(form.direccion)" :tabindex="editando ? 0 : -1">
+                                </label>
+
+                                <h4>Puesto</h4>
+                                <div class="pe-campo" :class="{ 'mal': errores.rol_id }">
+                                    <span>Cargo o rol</span>
+                                    <div class="pe-chips">
+                                        <template x-for="r in ROLES" :key="'r' + r.id">
+                                            <button type="button" class="pe-chip" :class="{ 'on': form.rol_id === r.id }" @click="form.rol_id = r.id; errores.rol_id = ''" :tabindex="editando ? 0 : -1">
+                                                <i class="bi" :class="iconoRol(r.nombre)"></i><span x-text="r.nombre"></span>
+                                            </button>
+                                        </template>
+                                    </div>
+                                    <p class="pe-ayuda" x-show="!ROLES.length">No hay roles registrados. Crea uno en Roles y permisos.</p>
+                                    <small x-show="errores.rol_id" x-text="errores.rol_id"></small>
+                                </div>
+                                <label class="pe-campo" x-show="esMedico">
+                                    <span>Especialidad <em>(se muestra en citas y recetas)</em></span>
+                                    <input type="text" x-model="form.especialidad" maxlength="100" autocomplete="off" class="may" placeholder="MEDICINA GENERAL, PEDIATRÍA…" @blur="form.especialidad = mayus(form.especialidad)" :tabindex="editando ? 0 : -1">
+                                </label>
+                                <div class="pe-campo">
+                                    <span>Turno</span>
+                                    <div class="pe-seg pe-seg-4">
+                                        <template x-for="t in TURNOS" :key="'t' + t.v">
+                                            <button type="button" :aria-pressed="(form.turno === t.v).toString()" @click="form.turno = t.v" :tabindex="editando ? 0 : -1"><i class="bi" :class="t.i"></i><span x-text="t.v"></span></button>
+                                        </template>
+                                    </div>
+                                </div>
+                                <div class="pe-campo">
+                                    <span>Estatus</span>
+                                    <div class="pe-seg pe-seg-2">
+                                        <button type="button" class="s-act" :aria-pressed="(form.estado === 'Activo').toString()" @click="form.estado = 'Activo'" :tabindex="editando ? 0 : -1"><i></i>Activo</button>
+                                        <button type="button" class="s-ina" :aria-pressed="(form.estado === 'Inactivo').toString()" @click="form.estado = 'Inactivo'" :tabindex="editando ? 0 : -1"><i></i>Inactivo o con permiso</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Columna B: acceso y nómina -->
+                            <div class="pe-rv-b">
+                                <div class="pe-h4">
+                                    <h4>Acceso al sistema</h4>
+                                    <button type="button" class="pe-switch" role="switch" :aria-checked="form.acceso.toString()" @click="alternarAcceso()" :tabindex="editando ? 0 : -1">
+                                        <span x-text="form.acceso ? 'Tendrá cuenta' : 'Sin cuenta'"></span><i></i>
+                                    </button>
+                                </div>
+                                <template x-if="form.acceso">
+                                    <div class="pe-acceso">
+                                        <div class="pe-campo" :class="{ 'mal': errores.username }">
+                                            <span>Usuario</span>
+                                            <div class="pe-usuario">
+                                                <input type="text" x-model="form.username" maxlength="40" autocomplete="off" placeholder="lmendez" @input="form.username = form.username.toLowerCase().replace(/[^a-z0-9_-]/g, ''); usuarioManual = true; errores.username = ''" :tabindex="editando ? 0 : -1">
+                                                <span x-text="'@' + DOMINIO"></span>
+                                            </div>
+                                            <div class="pe-sug" x-show="!form.username || !usuarioManual">
+                                                <template x-for="s in sugerencias" :key="'su' + s">
+                                                    <button type="button" class="t" :class="{ 'on': form.username === s }" @click="form.username = s; usuarioManual = true" x-text="s" :tabindex="editando ? 0 : -1"></button>
+                                                </template>
+                                            </div>
+                                            <small x-show="errores.username" x-text="errores.username"></small>
+                                        </div>
+                                        <div class="pe-campo" :class="{ 'mal': errores.password }">
+                                            <span x-text="tieneCuenta ? 'Nueva contraseña (déjala vacía para conservarla)' : 'Contraseña de 8 caracteres'"></span>
+                                            <div class="pe-pass">
+                                                <input :type="verPass ? 'text' : 'password'" x-model="form.password" maxlength="8" autocomplete="new-password" class="t" placeholder="••••••••" @input="errores.password = ''" :tabindex="editando ? 0 : -1">
+                                                <button type="button" @click="copiarPass()" x-show="form.password" aria-label="Copiar contraseña" :tabindex="editando ? 0 : -1"><i class="bi bi-clipboard"></i></button>
+                                                <button type="button" @click="verPass = !verPass" :aria-label="verPass ? 'Ocultar' : 'Mostrar'" :tabindex="editando ? 0 : -1"><i class="bi" :class="verPass ? 'bi-eye-slash' : 'bi-eye'"></i></button>
+                                                <button type="button" class="pe-gen" @click="generarPass()" :tabindex="editando ? 0 : -1"><i class="bi bi-magic"></i> Generar</button>
+                                            </div>
+                                            <div class="pe-fuerza" x-show="form.password"><template x-for="n in 4" :key="'fz' + n"><i :class="n <= fuerza.nivel ? fuerza.clase : ''"></i></template><span x-text="form.password.length !== 8 ? 'Lleva ' + form.password.length + ' de 8' : fuerza.texto"></span></div>
+                                            <small x-show="errores.password" x-text="errores.password"></small>
+                                        </div>
+                                        <label class="pe-campo" x-show="form.password" :class="{ 'mal': form.password2 && form.password2 !== form.password }">
+                                            <span>Confirmar contraseña</span>
+                                            <input :type="verPass ? 'text' : 'password'" x-model="form.password2" maxlength="8" autocomplete="new-password" class="t" placeholder="••••••••" :tabindex="editando ? 0 : -1">
+                                            <small x-show="form.password2 && form.password2 !== form.password">Las contraseñas no coinciden.</small>
+                                        </label>
+                                        <p class="pe-nota" x-show="passGenerada"><i class="bi bi-info-circle"></i> Copia la contraseña y entrégala: después de guardar ya no se puede ver.</p>
+                                    </div>
+                                </template>
+                                <p class="pe-nota" x-show="!form.acceso">
+                                    <i class="bi bi-person-lock"></i>
+                                    <span x-text="tieneCuenta ? 'Al guardar se eliminará su cuenta y ya no podrá entrar al sistema. Su ficha y sus citas se conservan.' : 'Quedará solo en la plantilla: se le pueden asignar citas, pero no podrá iniciar sesión. Puedes darle acceso después.'"></span>
+                                </p>
+
+                                <h4>Datos de nómina</h4>
+                                <div class="pe-dos">
+                                    <label class="pe-campo" :class="{ 'mal': errores.salario_diario }">
+                                        <span>Salario diario <em>(opcional)</em></span>
+                                        <div class="pe-dinero"><b>$</b><input type="text" inputmode="decimal" x-model="form.salario_diario" maxlength="10" class="t" placeholder="0.00" @input="form.salario_diario = form.salario_diario.replace(/[^\d.]/g, ''); errores.salario_diario = ''" :tabindex="editando ? 0 : -1"><span>MXN</span></div>
+                                        <small x-show="errores.salario_diario" x-text="errores.salario_diario"></small>
+                                    </label>
+                                    <div class="pe-campo">
+                                        <span>Se le paga</span>
+                                        <div class="pe-seg pe-seg-3">
+                                            <template x-for="t in PAGOS" :key="'tp' + t.v">
+                                                <button type="button" :aria-pressed="(form.tipo_pago === t.v).toString()" @click="form.tipo_pago = t.v" x-text="t.t" :tabindex="editando ? 0 : -1"></button>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p class="pe-ayuda" x-text="Number(form.salario_diario) ? 'Por pago ' + form.tipo_pago.toLowerCase() + ': ' + dinero(porPeriodo) + ' · aprox. ' + dinero(Number(form.salario_diario) * 30) + ' al mes' : 'Puedes dejarlo vacío y capturarlo después desde Nómina.'"></p>
+                            </div>
+                        </div>
+
+                        <footer class="pe-rv-f">
+                            <span class="pe-msg" :class="{ 'mal': mensajeMal }" x-text="mensajeForm"></span>
+                            <button type="button" class="pe-btn" @click="cancelar()" :tabindex="editando ? 0 : -1">Cancelar</button>
+                            <button type="submit" class="pe-btn pe-prim" :disabled="guardando" :tabindex="editando ? 0 : -1" x-text="guardando ? 'Guardando…' : (form.id ? 'Guardar cambios' : 'Dar de alta')"></button>
+                        </footer>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Acciones del gafete -->
+            <div class="pe-acc" x-show="!editando && sel">
+                <button type="button" class="pe-btn pe-prim" x-show="PUEDE.editar" @click="editar(sel)"><i class="bi bi-pencil"></i> Editar <kbd>E</kbd></button>
+                <a class="pe-btn" x-show="sel && sel.nomina" :href="sel ? sel.nomina : '#'"><i class="bi bi-receipt"></i> Nómina</a>
+                <button type="button" class="pe-btn pe-ico" x-show="sel && sel.email" @click="copiar(sel.email)" aria-label="Copiar correo" title="Copiar correo"><i class="bi bi-envelope"></i></button>
+                <a class="pe-btn pe-ico" x-show="sel && sel.telefono" :href="sel && sel.telefono ? 'tel:' + sel.telefono : '#'" aria-label="Llamar" title="Llamar"><i class="bi bi-telephone"></i></a>
+                <button type="button" class="pe-btn pe-ico pe-borrar" x-show="PUEDE.eliminar" @click="eliminar(sel)" :disabled="sel && sel.soyYo" :title="sel && sel.soyYo ? 'No puedes eliminar tu propia cuenta' : 'Eliminar'" aria-label="Eliminar"><i class="bi bi-trash3"></i></button>
+            </div>
+        </aside>
+    </section>
 </div>
 
+<script type="application/json" id="pe-datos">{!! json_encode(array_merge($datosPersonal ?? [], ['csrf' => csrf_token(), 'exito' => session('success'), 'error' => session('error')]), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) !!}</script>
+
+@verbatim
 <style>
-    @keyframes fadeUp   { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-    @keyframes filaIn   { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-    @keyframes filaSale { to { opacity: 0; transform: translateX(30px); } }
-    @keyframes flotar   { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-    @keyframes latido   { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .6; } }
-    @keyframes latidoLento { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.2); } 30% { transform: scale(1); } 45% { transform: scale(1.12); } }
-    @keyframes ecg      { from { stroke-dashoffset: 1000; } to { stroke-dashoffset: 0; } }
+.pe {
+    --tinta: #0b1e1c; --texto: #2c3d3a; --media: #56625f; --linea: #dbe4e1; --linea2: #edf2f1; --niebla: #eef3f1; --papel: #fff;
+    --cred: #0b5a54; --cred2: #073f3b; --foil: #a6efe2; --teal: #0e7c72; --velo: #e2efec;
+    --rosa: #c8102e; --rosav: #fdecef; --ambar: #9a5800; --ambarv: #fdf3e1; --verde: #08734f; --verdev: #e5f4ee;
+    --e: cubic-bezier(.2, .8, .2, 1); --flip: cubic-bezier(.3, .7, .1, 1);
+    --disp: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif; --ui: 'Geist', ui-sans-serif, system-ui, sans-serif; --mono: 'Geist Mono', ui-monospace, monospace;
+    container-type: inline-size; font: 450 14px/1.45 var(--ui); color: var(--texto);
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px;
+}
+.pe * { box-sizing: border-box; }
+.pe :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.pe button { cursor: pointer; }
+.pe button:disabled { cursor: default; }
+.pe .t { font-variant-numeric: tabular-nums; }
+.pe h2, .pe h3, .pe h4, .pe p, .pe dl, .pe dd { margin: 0; }
+.pe-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.pe kbd { font: 600 11px var(--mono); border: 1px solid var(--linea); border-radius: 6px; padding: 1px 6px; color: var(--media); background: transparent; }
+[x-cloak] { display: none !important; }
 
-    .aparece      { animation: fadeUp .55s cubic-bezier(.16, 1, .3, 1) backwards; animation-delay: var(--d, 0ms); }
-    .tarjeta-stat { animation: fadeUp .55s cubic-bezier(.16, 1, .3, 1) backwards; }
-    .fila-in      { animation: filaIn .4s cubic-bezier(.16, 1, .3, 1) backwards; animation-delay: var(--d, 0ms); }
-    .fila-sale    { animation: filaSale .35s ease-in forwards !important; }
-    .flotar       { animation: flotar 5s ease-in-out infinite; }
-    .latido       { animation: latido 1.4s ease-in-out infinite; }
-    .latido-lento { display: inline-block; animation: latidoLento 1.6s ease-in-out infinite; }
-    .ecg-linea    { stroke-dasharray: 160 840; animation: ecg 4s linear infinite; }
+/* ---------- Arriba ---------- */
+.pe-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.pe-cmd { flex: 1 1 320px; min-width: 0; height: 46px; border-radius: 14px; background: var(--papel); border: 1px solid var(--linea); box-shadow: 0 12px 30px -24px rgba(11, 30, 28, .45); display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; }
+.pe-cmd > .bi { color: var(--cred); }
+.pe-cmd input { flex: 1; min-width: 0; border: 0; outline: 0 !important; box-shadow: none !important; background: none; font: 450 15px var(--ui); color: var(--tinta); }
+.pe-cmd input::placeholder { color: var(--media); }
+.pe-dark { height: 44px; border-radius: 12px; border: 0; background: var(--tinta); color: #fff; font: 600 14px var(--ui); display: flex; align-items: center; gap: 10px; padding: 0 12px 0 16px; white-space: nowrap; }
+.pe-dark:hover { background: var(--cred2); }
+.pe-dark kbd { border-color: rgba(255, 255, 255, .25); color: #cfe; }
 
-    [x-cloak] { display: none !important; }
+/* ---------- Cabecera ---------- */
+.pe-cab { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 26px; }
+.pe-g { display: flex; align-items: flex-end; gap: 12px; }
+.pe-g > b { font: 800 84px/.8 var(--disp); font-stretch: 78%; letter-spacing: -.04em; color: var(--tinta); }
+.pe-g > span { display: flex; flex-direction: column; padding-bottom: 2px; font-size: 14px; color: var(--media); line-height: 1.25; }
+.pe-g em { font: 700 19px/1.15 var(--disp); font-style: normal; color: var(--tinta); }
+.pe-ind { flex: 1 1 480px; min-width: 300px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 14px; }
+.pe-ind button { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; padding: 8px 0 6px; text-align: left; background: none; border: 0; border-top: 2px solid var(--linea); font: 500 13px var(--ui); color: var(--texto); white-space: nowrap; }
+.pe-ind button span { overflow: hidden; text-overflow: ellipsis; }
+.pe-ind button b { font: 750 22px/1 var(--disp); color: var(--c); }
+.pe-ind button[aria-pressed=true] { border-top-color: var(--c); }
+.pe-ind button[aria-pressed=true] span { color: var(--tinta); font-weight: 650; }
+.pe-ind .i-activos { --c: var(--verde); } .pe-ind .i-inactivos { --c: var(--media); } .pe-ind .i-acceso { --c: var(--cred); } .pe-ind .i-hoy { --c: var(--ambar); }
+.pe-turnos { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 11px; background: var(--papel); border: 1px solid var(--linea); }
+.pe-turnos button { height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 11px; border: 0; border-radius: 8px; background: none; font: 600 13px var(--ui); color: var(--media); }
+.pe-turnos button[aria-pressed=true] { background: var(--tinta); color: #fff; }
+@container (max-width: 759px) { .pe-g > b { font-size: 64px; } .pe-ind { min-width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
-    @media (prefers-reduced-motion: reduce) {
-        .aparece, .tarjeta-stat, .fila-in, .flotar, .latido, .latido-lento, .ecg-linea { animation: none !important; }
-    }
+/* ---------- Escenario ---------- */
+.pe-esc { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+@container (min-width: 1000px) { .pe-esc { grid-template-columns: minmax(0, 1fr) 380px; } .pe-lado { position: sticky; top: 96px; } }
+.pe-lado { display: grid; gap: 12px; min-width: 0; }
+
+/* Plantilla */
+.pe-lista { display: grid; gap: 16px; min-width: 0; transition: opacity .3s, filter .3s; }
+.pe-grupo { background: var(--papel); border: 1px solid var(--linea); border-radius: 16px; padding: 10px 8px 8px; }
+.pe-grupo h3 { display: flex; align-items: baseline; gap: 8px; padding: 2px 10px 8px; font: 700 16px var(--disp); color: var(--tinta); }
+.pe-grupo h3 small { font: 500 12.5px var(--mono); color: var(--media); }
+.pe-fila { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 0; border-radius: 12px; background: none; text-align: left; transition: background .15s; }
+.pe-fila:hover { background: var(--niebla); }
+.pe-fila.sel { background: var(--velo); box-shadow: inset 3px 0 0 var(--cred); }
+.pe-fila.inactivo .pe-fila-n b { color: var(--media); }
+.pe-av { position: relative; flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #8fbfb6; background: var(--niebla); }
+.pe-av > span, .pe-av svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.pe-av b { position: relative; font: 700 14px var(--disp); color: var(--cred); }
+.pe-av > i { position: absolute; right: 0; bottom: 0; width: 11px; height: 11px; border-radius: 50%; background: #b8c4c1; box-shadow: 0 0 0 2px var(--papel); }
+.pe-av > i.on { background: var(--verde); }
+.pe-fila-n { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pe-fila-n b { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--tinta); min-width: 0; }
+.pe-fila-n b span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pe-fila-n em { flex: none; font-style: normal; font-size: 11px; font-weight: 650; color: var(--cred); background: var(--velo); border-radius: 99px; padding: 0 7px; }
+.pe-fila-n small { font-size: 12.5px; color: var(--media); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pe-fila-d { flex: none; display: flex; align-items: center; gap: 10px; }
+.pe-hoy { font: 500 12px var(--mono); color: var(--ambar); background: var(--ambarv); border-radius: 99px; padding: 2px 8px; white-space: nowrap; }
+.pe-acc-si { color: var(--cred); font-size: 16px; }
+.pe-acc-no { color: #b8c4c1; font-size: 16px; }
+.pe-vacio { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 16px; border: 1.5px dashed var(--linea); border-radius: 16px; text-align: center; }
+.pe-vacio b { font: 700 17px var(--disp); color: var(--tinta); }
+.pe-vacio button { border: 0; background: none; font: 600 13.5px var(--ui); color: var(--cred); }
+@container (max-width: 559px) { .pe-hoy { display: none; } }
+
+/* ---------- Gafete ---------- */
+.pe-gafete { perspective: 1500px; }
+.pe-gafete-in { position: relative; min-height: 500px; transform-style: preserve-3d; transition: transform .45s var(--flip), height .3s var(--e); }
+.pe-gafete.volteado .pe-gafete-in { transform: rotateY(180deg); height: 1180px; }
+.pe-cara { position: absolute; inset: 0; border-radius: 22px; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.pe-frente { position: relative; inset: auto; min-height: 500px; background: var(--papel); border: 1px solid var(--linea); box-shadow: 0 30px 50px -34px rgba(11, 30, 28, .6); }
+.pe-ranura { position: absolute; z-index: 3; top: 14px; left: 50%; width: 62px; height: 12px; margin-left: -31px; border-radius: 99px; background: var(--niebla); box-shadow: inset 0 2px 3px rgba(11, 30, 28, .25); }
+.pe-fr { position: relative; min-height: 500px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.pe-fr-h { position: relative; width: 100%; height: 132px; padding: 38px 20px 0; overflow: hidden; color: #eafaf6; background: linear-gradient(160deg, #0d6a63, var(--cred) 50%, var(--cred2)); display: flex; justify-content: space-between; align-items: flex-start; text-align: left; }
+.pe-gl, .pe-gl svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.pe-fr-h p { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.pe-fr-h p b { font: 600 12px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--foil); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.pe-fr-h p span { font: 700 20px var(--disp); color: #fff; }
+.pe-folio { position: relative; font: 600 13px var(--mono); color: #fff; padding: 2px 8px; border: 1px solid rgba(166, 239, 226, .4); border-radius: 7px; }
+.pe-fr-foto { position: relative; z-index: 2; width: 124px; height: 124px; margin-top: -58px; border-radius: 50%; display: grid; place-items: center; background: var(--papel); color: #7fbcb1; box-shadow: 0 0 0 5px var(--papel), 0 14px 26px -14px rgba(7, 63, 59, .7); }
+.pe-ros, .pe-ros svg { position: absolute; inset: 2px; width: calc(100% - 4px); height: calc(100% - 4px); }
+.pe-fr-foto b { position: relative; font: 800 40px/1 var(--disp); font-stretch: 85%; color: var(--cred); }
+.pe-fr h2 { margin-top: 14px; padding: 0 22px; font: 780 25px/1.04 var(--disp); font-stretch: 80%; color: var(--tinta); text-transform: uppercase; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pe-cargo { margin-top: 8px; }
+.pe-cargo span { display: inline-block; padding: 3px 12px; border-radius: 99px; background: var(--cred); color: var(--foil); font-size: 12.5px; font-weight: 650; letter-spacing: .02em; }
+.pe-esp { margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--teal); text-transform: uppercase; }
+.pe-fr-d { width: 100%; margin-top: 16px; padding: 14px 22px 0; border-top: 1px solid var(--linea2); display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; text-align: left; }
+.pe-fr-d dt { font-size: 11.5px; color: var(--media); }
+.pe-fr-d dd { font-size: 14px; font-weight: 600; color: var(--tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pe-fr-d dd.t { font-family: var(--mono); font-weight: 500; }
+.pe-fr-d .ancho { grid-column: 1 / -1; }
+.pe-fr-d .ancho dd { font-size: 13px; font-weight: 500; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pe-fr-d dd .bi { color: var(--teal); }
+.pe-act { margin-top: 12px; font: 500 12.5px var(--mono); color: var(--ambar); }
+.pe-codigo { flex: none; margin: auto 0 10px; padding-top: 16px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.pe-barras { display: block; height: 40px; background: #fff; }
+.pe-barras svg { display: block; max-width: 100%; height: 40px; }
+.pe-codigo figcaption { font: 500 11.5px var(--mono); letter-spacing: .3em; color: var(--media); }
+.pe-franja { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 18px; font-size: 13px; font-weight: 600; color: #fff; background: var(--verde); }
+.pe-franja i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #fff; }
+.pe-franja span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pe-frente.inactivo .pe-franja { background: #5d6a67; }
+.pe-frente.inactivo .pe-fr-foto, .pe-frente.inactivo h2 { filter: grayscale(1); opacity: .75; }
+.pe-fr-vacio h2 { margin-top: 70px; text-transform: none; font-size: 26px; }
+.pe-fr-vacio > p { margin-top: 8px; padding: 0 30px; color: var(--media); }
+
+/* Reverso: formulario */
+.pe-reverso { transform: rotateY(180deg); background: #fbfdfc; border: 1px solid var(--linea); box-shadow: 0 24px 44px -30px rgba(11, 30, 28, .55); display: flex; flex-direction: column; }
+.pe-rv-k { padding: 16px 18px 6px; font: 500 12px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--cred); }
+.pe-rv-c { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 18px 16px; display: flex; flex-direction: column; gap: 12px; scrollbar-width: thin; }
+.pe-rv-a, .pe-rv-b { display: contents; }
+.pe-rv-c h4 { flex-shrink: 0; margin-top: 6px; font: 700 15px var(--disp); color: var(--tinta); }
+.pe-h4 { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
+.pe-h4 h4 { margin: 0 !important; }
+.pe-rv-c > *, .pe-rv-a > *, .pe-rv-b > * { flex-shrink: 0; }
+.pe-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pe-campo { position: relative; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.pe-campo > span { font-size: 13px; font-weight: 600; color: var(--tinta); }
+.pe-campo > span em { font-style: normal; font-weight: 400; color: var(--media); }
+.pe-campo input { width: 100%; height: 40px; border: 1px solid var(--linea); border-radius: 10px; padding: 0 10px; font: 500 14px var(--ui); color: var(--tinta); background: var(--papel); outline: 0; transition: border-color .15s, box-shadow .15s; }
+.pe-campo input.t { font-family: var(--mono); }
+.pe-campo input.may { text-transform: uppercase; }
+.pe-campo input.may::placeholder { text-transform: none; }
+.pe-campo input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(14, 124, 114, .15); }
+.pe-campo.mal input { border-color: var(--rosa); }
+.pe-campo > small { font-size: 12px; font-weight: 500; color: var(--rosa); }
+.pe-ayuda { font-size: 12.5px; color: var(--media); }
+.pe-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pe-chip { height: 36px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--linea); background: var(--papel); font: 600 13px var(--ui); color: var(--texto); }
+.pe-chip .bi { color: var(--media); }
+.pe-chip.on { border-color: var(--cred); background: var(--velo); color: var(--cred); }
+.pe-chip.on .bi { color: var(--cred); }
+.pe-campo.mal .pe-chip { border-color: #f1a7b4; }
+.pe-seg { display: grid; gap: 5px; }
+.pe-seg-2 { grid-template-columns: 1fr 1.6fr; }
+.pe-seg-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pe-seg-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.pe-seg button { height: 38px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 6px; border-radius: 9px; border: 1px solid var(--linea); background: var(--papel); font: 600 12.5px var(--ui); color: var(--texto); white-space: nowrap; overflow: hidden; }
+.pe-seg button .bi { color: var(--media); }
+.pe-seg button[aria-pressed=true] { border-color: var(--cred); background: var(--velo); color: var(--cred); }
+.pe-seg button[aria-pressed=true] .bi { color: var(--cred); }
+.pe-seg button > i:not(.bi) { width: 8px; height: 8px; border-radius: 50%; background: var(--media); }
+.pe-seg .s-act > i:not(.bi) { background: var(--verde); }
+.pe-seg .s-act[aria-pressed=true] { border-color: var(--verde); background: var(--verdev); color: var(--verde); }
+.pe-seg .s-ina[aria-pressed=true] { border-color: var(--media); background: var(--niebla); color: var(--texto); }
+.pe-switch { display: inline-flex; align-items: center; gap: 10px; height: 34px; padding: 0 6px 0 12px; border-radius: 99px; border: 1px solid var(--linea); background: var(--papel); font: 600 13px var(--ui); color: var(--media); }
+.pe-switch i { position: relative; width: 36px; height: 20px; border-radius: 99px; background: #c5d0cd; transition: background .2s; }
+.pe-switch i:after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform .2s var(--e); }
+.pe-switch[aria-checked=true] { color: var(--cred); border-color: #b9d6d0; }
+.pe-switch[aria-checked=true] i { background: var(--cred); }
+.pe-switch[aria-checked=true] i:after { transform: translateX(16px); }
+.pe-acceso { display: flex; flex-direction: column; gap: 12px; }
+.pe-usuario { display: flex; height: 40px; border: 1px solid var(--linea); border-radius: 10px; overflow: hidden; background: var(--papel); transition: border-color .15s, box-shadow .15s; }
+.pe-usuario:focus-within { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(14, 124, 114, .15); }
+.pe-campo.mal .pe-usuario { border-color: var(--rosa); }
+.pe-usuario input:focus, .pe-dinero input:focus { outline: 0 !important; box-shadow: none !important; }
+.pe-usuario input { flex: 1; min-width: 0; height: 100%; border: 0 !important; box-shadow: none !important; border-radius: 0; font-family: var(--mono); }
+.pe-usuario span { display: flex; align-items: center; padding: 0 10px; background: var(--niebla); border-left: 1px solid var(--linea); font: 500 12.5px var(--mono); color: var(--media); }
+.pe-sug { display: flex; flex-wrap: wrap; gap: 5px; }
+.pe-sug button { height: 26px; padding: 0 9px; border-radius: 99px; border: 1px solid var(--linea); background: var(--papel); font: 500 12px var(--mono); color: var(--texto); }
+.pe-sug button.on, .pe-sug button:hover { border-color: var(--cred); color: var(--cred); background: var(--velo); }
+.pe-pass { position: relative; display: flex; gap: 6px; }
+.pe-pass input { flex: 1; min-width: 0; padding-right: 72px; letter-spacing: .08em; }
+.pe-pass > button:not(.pe-gen) { position: absolute; top: 5px; width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--media); display: grid; place-items: center; }
+.pe-pass > button:nth-of-type(1) { right: 142px; }
+.pe-pass > button:nth-of-type(2) { right: 110px; }
+.pe-pass > button:not(.pe-gen):hover { background: var(--niebla); color: var(--cred); }
+.pe-gen { flex: none; height: 40px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--linea); background: var(--papel); font: 600 13px var(--ui); color: var(--cred); }
+.pe-gen:hover { background: var(--velo); }
+.pe-fuerza { display: flex; align-items: center; gap: 4px; }
+.pe-fuerza i { flex: 1; max-width: 46px; height: 5px; border-radius: 99px; background: var(--linea2); }
+.pe-fuerza i.f1 { background: var(--rosa); } .pe-fuerza i.f2 { background: #d9a24a; } .pe-fuerza i.f3 { background: var(--teal); } .pe-fuerza i.f4 { background: var(--verde); }
+.pe-fuerza span { margin-left: 6px; font-size: 12px; color: var(--media); }
+.pe-nota { display: flex; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--niebla); font-size: 12.5px; color: var(--texto); }
+.pe-nota .bi { color: var(--cred); }
+.pe-dinero { display: flex; align-items: center; height: 40px; border: 1px solid var(--linea); border-radius: 10px; background: var(--papel); overflow: hidden; transition: border-color .15s, box-shadow .15s; }
+.pe-dinero:focus-within { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(14, 124, 114, .15); }
+.pe-dinero b { padding-left: 10px; font: 600 14px var(--mono); color: var(--media); }
+.pe-dinero input { flex: 1; min-width: 0; height: 100%; border: 0 !important; box-shadow: none !important; padding: 0 6px; }
+.pe-dinero span { padding: 0 10px; font: 500 11.5px var(--mono); color: var(--media); }
+.pe-rv-f { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--linea2); background: var(--papel); }
+.pe-msg { flex: 1; min-width: 0; font-size: 12.5px; color: var(--media); line-height: 1.3; }
+.pe-msg.mal { color: var(--rosa); font-weight: 600; }
+
+/* Botones */
+.pe-btn { height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; border-radius: 11px; border: 1px solid var(--linea); background: var(--papel); font: 600 14px var(--ui); color: var(--tinta); text-decoration: none; white-space: nowrap; transition: background .15s, border-color .15s; }
+.pe-btn:hover { background: #f7faf9; color: var(--tinta); }
+.pe-btn .bi { color: var(--cred); }
+.pe-prim { background: var(--cred); border-color: var(--cred); color: #fff; }
+.pe-prim .bi { color: var(--foil); }
+.pe-prim:hover { background: var(--cred2); color: #fff; }
+.pe-prim:disabled { opacity: .6; }
+.pe-prim kbd { border-color: rgba(255, 255, 255, .3); color: #cfe; }
+.pe-ico { width: 40px; padding: 0; }
+.pe-borrar .bi { color: var(--rosa); }
+.pe-borrar { border-color: #f3c6cf; }
+.pe-borrar:hover { background: var(--rosav); }
+.pe-borrar:disabled { opacity: .35; cursor: not-allowed; }
+.pe-acc { display: flex; gap: 8px; }
+.pe-acc .pe-prim { flex: 1; }
+
+/* Captura: lo demás se atenúa */
+.pe.editando .pe-lista, .pe.editando .pe-cab { opacity: .35; filter: saturate(.6); pointer-events: none; }
+
+/* Captura a lo ancho: como al crear un paciente, el gafete ocupa toda la vista */
+@container (min-width: 640px) {
+    .pe.editando .pe-esc { grid-template-columns: minmax(0, 1fr); }
+    .pe.editando .pe-lista, .pe.editando .pe-acc { display: none; }
+    .pe.editando .pe-cab { display: none; }
+    .pe.editando .pe-lado { position: static; }
+    .pe.editando .pe-cmd { opacity: .35; pointer-events: none; }
+    .pe-gafete.volteado .pe-gafete-in { height: 1020px; }
+    .pe.editando .pe-rv-k { padding: 20px 28px 8px; font-size: 13px; }
+    .pe.editando .pe-rv-c { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 4px 28px 18px; align-content: start; }
+    .pe.editando .pe-rv-a, .pe.editando .pe-rv-b { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    .pe.editando .pe-rv-f { padding: 14px 28px; }
+}
+@container (min-width: 1000px) {
+    .pe-gafete.volteado .pe-gafete-in { height: 790px; }
+    .pe.editando .pe-rv-c { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 32px; }
+    .pe.editando .pe-rv-b { padding-left: 32px; margin-left: -1px; border-left: 1px solid var(--linea2); }
+}
+@container (max-width: 459px) {
+    .pe-dos { grid-template-columns: minmax(0, 1fr); }
+    .pe-seg-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pe-dark kbd, .pe-cmd > kbd { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pe-gafete-in { transition: none; }
+    .pe-gafete.volteado .pe-gafete-in { transform: none; }
+    .pe-gafete.volteado .pe-frente { visibility: hidden; }
+    .pe-reverso { transform: none; visibility: hidden; }
+    .pe-gafete.volteado .pe-reverso { visibility: visible; }
+}
 </style>
 
 <script>
-    const URL_PERSONAL = @js(url('personal'));
-    const CSRF_PERSONAL = @js(csrf_token());
+function modPersonal() {
+    const D = JSON.parse(document.getElementById('pe-datos').textContent || '{}');
+    const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const aviso = (m, i) => { if (window.notificar) window.notificar(m, i || 'success'); };
+    const vacio = () => ({ id: null, nombre: '', apellido: '', telefono: '', rut: '', direccion: '', rol_id: '', especialidad: '', turno: 'Completo', estado: 'Activo', acceso: false, username: '', password: '', password2: '', salario_diario: '', tipo_pago: 'QUINCENAL' });
 
-    // Usa la notificación del layout (window.notificar(mensaje, icono)); si no existe, un toast de SweetAlert
-    function avisoPersonal(mensaje, icono = 'success') {
-        if (typeof window.notificar === 'function') return window.notificar(mensaje, icono);
-        if (window.Swal) Swal.fire({ toast: true, position: 'top-end', timer: 3000, showConfirmButton: false, icon: icono, title: mensaje });
-    }
+    return {
+        P: D.personal || [],
+        ROLES: D.roles || [],
+        PUEDE: D.puede || {},
+        R: D.rutas || {},
+        DOMINIO: D.dominio || 'meditrack.com',
+        CLINICA: D.clinica || 'MediTrack',
+        TURNOS: [
+            { v: 'Mañana', i: 'bi-sunrise' }, { v: 'Tarde', i: 'bi-sunset' },
+            { v: 'Noche', i: 'bi-moon-stars' }, { v: 'Completo', i: 'bi-clock' },
+        ],
+        PAGOS: [{ v: 'SEMANAL', t: 'Semanal', d: 7 }, { v: 'QUINCENAL', t: 'Quincenal', d: 15 }, { v: 'MENSUAL', t: 'Mensual', d: 30 }],
+        INDICADORES: [
+            { k: 'activos', t: 'Activos' }, { k: 'inactivos', t: 'Inactivos' },
+            { k: 'acceso', t: 'Con acceso' }, { k: 'hoy', t: 'Atienden hoy' },
+        ],
 
-    function moduloPersonal() {
-        return {
-            personal: @json($personalJs),
-            mensajeExito: @js(session('success')),
+        sel: null, editando: false, guardando: false,
+        q: '', filtro: '', turno: '',
+        form: vacio(), errores: {}, mensajeForm: '', mensajeMal: false,
+        verPass: false, passGenerada: false, usuarioManual: false,
 
-            busqueda: '',
-            filtroEspecialidad: '',
-            filtroEstado: '',          // '', 'activos', 'inactivos'
-            vista: 'lista',
-            limite: 24,
-            resumenMostrado: { total: 0, activos: 0, inactivos: 0, especialidades: 0 },
+        init() {
+            this.$watch('sel', () => window.mtRefresca && mtRefresca('.pe-frente .pe-fr'));
+            const u = new URLSearchParams(location.search);
+            this.sel = this.P.find(p => String(p.id) === u.get('p')) || this.P.find(p => p.soyYo) || this.P[0] || null;
+            if (u.get('nuevo') && this.PUEDE.crear) this.$nextTick(() => this.nueva());
+            else if (u.get('editar') && this.sel && this.PUEDE.editar) this.$nextTick(() => this.editar(this.sel));
+            if (u.has('nuevo') || u.has('editar')) history.replaceState(null, '', location.pathname + (this.sel ? '?p=' + this.sel.id : ''));
+            if (D.exito) setTimeout(() => aviso(D.exito, 'success'), 300);
+            if (D.error) setTimeout(() => aviso(D.error, 'error'), 300);
+            this.$watch('form.nombre', () => this.sugerirUsuario());
+            this.$watch('form.apellido', () => this.sugerirUsuario());
+        },
 
-            init() {
-                try { this.vista = localStorage.getItem('personal_vista') || (window.innerWidth < 768 ? 'tarjetas' : 'lista'); } catch (e) {}
-                ['busqueda', 'filtroEspecialidad', 'filtroEstado'].forEach(k => this.$watch(k, () => { this.limite = 24; }));
-                this.$nextTick(() => this.animarResumen());
+        // ----- Lista -----
+        cumple(p, k) {
+            if (k === 'activos') return p.activo;
+            if (k === 'inactivos') return !p.activo;
+            if (k === 'acceso') return p.acceso;
+            if (k === 'hoy') return p.citasHoy > 0;
+            return true;
+        },
+        contar(k) { return this.P.filter(p => this.cumple(p, k)).length; },
+        get filtrados() {
+            const q = norm(this.q);
+            return this.P.filter(p => (!this.filtro || this.cumple(p, this.filtro)) && (!this.turno || p.turno === this.turno)
+                && (!q || norm([p.nombre, p.rol, p.especialidad, p.email, p.telefono, p.cedula, p.folio].join(' ')).includes(q)));
+        },
+        get grupos() {
+            const m = {};
+            this.filtrados.forEach(p => { const k = p.rol || 'Sin cargo'; (m[k] = m[k] || []).push(p); });
+            return Object.keys(m).sort((a, b) => (a === 'Sin cargo') - (b === 'Sin cargo') || m[b].length - m[a].length || a.localeCompare(b))
+                .map(rol => ({ rol, items: m[rol] }));
+        },
+        limpiar() { this.q = ''; this.filtro = ''; this.turno = ''; },
+        seleccionar(p) {
+            if (this.editando) return;
+            this.sel = p;
+            history.replaceState(null, '', location.pathname + '?p=' + p.id);
+            if (window.innerWidth < 1100) this.$nextTick(() => { const g = document.querySelector('.pe-gafete'); if (g) g.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' }); });
+        },
 
-                window.addEventListener('keydown', e => {
-                    if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
-                        e.preventDefault();
-                        this.$refs.buscar.focus();
-                    }
-                });
+        // ----- Formulario -----
+        nueva() {
+            if (!this.PUEDE.crear || this.editando) return;
+            this.form = vacio();
+            if (this.ROLES.length === 1) this.form.rol_id = this.ROLES[0].id;
+            this.abrir(false);
+        },
+        editar(p) {
+            if (!p || !this.PUEDE.editar || this.editando) return;
+            this.form = Object.assign(vacio(), {
+                id: p.id, nombre: p.pila || p.nombre, apellido: p.apellido || '', telefono: p.telefono || '', rut: p.cedula || '',
+                direccion: p.direccion || '', rol_id: p.rol_id || '', especialidad: p.especialidad || '', turno: p.turno || 'Completo',
+                estado: p.estado || 'Activo', acceso: !!p.acceso, username: p.username || '',
+                salario_diario: p.salario ? String(p.salario) : '', tipo_pago: p.tipo_pago || 'QUINCENAL',
+            });
+            this.abrir(true);
+        },
+        abrir(manual) {
+            this.errores = {}; this.mensajeForm = this.form.id ? 'Ctrl + Enter guarda los cambios' : 'Ctrl + Enter da de alta'; this.mensajeMal = false;
+            this.verPass = false; this.passGenerada = false; this.usuarioManual = manual;
+            this.editando = true;
+            this.$nextTick(() => {
+                const m = document.querySelector('.pe').closest('.overflow-y-auto');
+                if (m) m.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+                setTimeout(() => this.$refs.campoNombre && this.$refs.campoNombre.focus({ preventScroll: true }), reduce ? 0 : 500);
+            });
+        },
+        cancelar() { this.editando = false; this.guardando = false; },
+        get tieneCuenta() { const p = this.form.id ? this.P.find(x => x.id === this.form.id) : null; return !!(p && p.acceso); },
+        get nombreRol() { const r = this.ROLES.find(r => r.id === this.form.rol_id); return r ? r.nombre : ''; },
+        get esMedico() { return /medic|doctor|dr\b|dra\b/.test(norm(this.nombreRol)) || !!this.form.especialidad; },
+        alternarAcceso() { this.form.acceso = !this.form.acceso; if (this.form.acceso && !this.form.username) this.sugerirUsuario(true); },
+        get sugerencias() {
+            const nom = norm(this.form.nombre).replace(/\b(dr|dra|enf|lic)\.?\s+/g, '').replace(/[^a-z ]/g, '').split(/\s+/).filter(Boolean);
+            const ape = norm(this.form.apellido).replace(/[^a-z ]/g, '').split(/\s+/).filter(Boolean);
+            if (!nom.length || !ape.length) return [];
+            const n = nom[0], a = ape[0], a2 = ape[1] || '';
+            return [...new Set([n[0] + a, n + '_' + a, n[0] + a + (a2 ? a2[0] : ''), n + a[0]])].filter(s => s.length >= 3).slice(0, 3);
+        },
+        sugerirUsuario(forzar) { if ((forzar || !this.usuarioManual) && this.form.acceso && !this.tieneCuenta) this.form.username = this.sugerencias[0] || this.form.username; },
+        get fuerza() {
+            const p = this.form.password; let n = 0;
+            if (p.length >= 8) n++; if (/[a-z]/.test(p) && /[A-Z]/.test(p)) n++; if (/\d/.test(p)) n++; if (/[^A-Za-z0-9]/.test(p)) n++;
+            const t = ['Muy débil', 'Débil: agrega mayúsculas, números o símbolos', 'Aceptable', 'Buena', 'Muy buena'];
+            return { nivel: Math.max(p ? 1 : 0, n), texto: t[n], clase: 'f' + Math.max(1, n) };
+        },
+        generarPass() {
+            const g = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghijkmnpqrstuvwxyz', '23456789', '#$%&*@!?'];
+            const azar = s => s[crypto.getRandomValues(new Uint32Array(1))[0] % s.length];
+            const c = g.map(azar), todos = g.join('');
+            while (c.length < 8) c.push(azar(todos));
+            for (let i = c.length - 1; i > 0; i--) { const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1); [c[i], c[j]] = [c[j], c[i]]; }
+            this.form.password = this.form.password2 = c.join('');
+            this.verPass = true; this.passGenerada = true; this.errores.password = '';
+        },
+        async copiarPass() { try { await navigator.clipboard.writeText(this.form.password); aviso('Contraseña copiada'); } catch (e) { aviso('No se pudo copiar', 'warning'); } },
+        get porPeriodo() { const t = this.PAGOS.find(t => t.v === this.form.tipo_pago) || this.PAGOS[1]; return (Number(this.form.salario_diario) || 0) * t.d; },
 
-                if (this.mensajeExito) setTimeout(() => avisoPersonal(this.mensajeExito, 'success'), 300);
-            },
-
-            // ----- Resumen -----
-            get resumen() {
-                const activos = this.personal.filter(p => p.activo).length;
-                return {
-                    total: this.personal.length,
-                    activos,
-                    inactivos: this.personal.length - activos,
-                    especialidades: this.especialidades.length
-                };
-            },
-            animarResumen() {
-                const meta = this.resumen;
-                const sinMov = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-                Object.keys(meta).forEach(k => {
-                    const destino = meta[k], origen = this.resumenMostrado[k];
-                    if (sinMov || origen === destino) { this.resumenMostrado[k] = destino; return; }
-                    const t0 = performance.now(), dur = 800;
-                    const paso = t => {
-                        const p = Math.min(1, (t - t0) / dur);
-                        this.resumenMostrado[k] = Math.round(origen + (destino - origen) * (1 - Math.pow(1 - p, 3)));
-                        if (p < 1) requestAnimationFrame(paso);
-                    };
-                    requestAnimationFrame(paso);
-                });
-            },
-            filtrarPorTarjeta(clave) {
-                if (clave === 'activos' || clave === 'inactivos') this.filtroEstado = this.filtroEstado === clave ? '' : clave;
-                else if (clave === 'total') this.limpiarFiltros();
-            },
-            tarjetaActiva(clave) {
-                if (clave === 'total') return !this.hayFiltros;
-                return this.filtroEstado === clave;
-            },
-
-            // ----- Filtros -----
-            normalizar(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); },
-            get especialidades() {
-                const cuenta = {};
-                this.personal.forEach(p => { if (p.especialidad) cuenta[p.especialidad] = (cuenta[p.especialidad] || 0) + 1; });
-                return Object.entries(cuenta).map(([nombre, total]) => ({ nombre, total }))
-                    .sort((a, b) => b.total - a.total || a.nombre.localeCompare(b.nombre));
-            },
-            get filtrados() {
-                const q = this.normalizar(this.busqueda);
-                return this.personal.filter(p =>
-                    (!q || p.buscar.includes(q)) &&
-                    (!this.filtroEspecialidad || p.especialidad === this.filtroEspecialidad) &&
-                    (!this.filtroEstado || (this.filtroEstado === 'activos' ? p.activo : !p.activo))
-                );
-            },
-            get pagina() { return this.filtrados.slice(0, this.limite); },
-            get hayFiltros() { return this.busqueda.trim() !== '' || this.filtroEspecialidad !== '' || this.filtroEstado !== ''; },
-            limpiarFiltros() { this.busqueda = ''; this.filtroEspecialidad = ''; this.filtroEstado = ''; },
-            cambiarVista(v) {
-                this.vista = v;
-                try { localStorage.setItem('personal_vista', v); } catch (e) {}
-            },
-
-            // ----- Formato -----
-            iniciales(n) { return (n || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0]).join('').toUpperCase(); },
-            colorAvatar(n) {
-                const colores = ['bg-teal-100 text-teal-800', 'bg-sky-100 text-sky-800', 'bg-violet-100 text-violet-800', 'bg-amber-100 text-amber-800', 'bg-rose-100 text-rose-800', 'bg-emerald-100 text-emerald-800'];
-                let h = 0;
-                for (const ch of String(n || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-                return colores[h % colores.length];
-            },
-
-            // ----- Acciones -----
-            async copiar(texto) {
-                try {
-                    await navigator.clipboard.writeText(texto);
-                    avisoPersonal('Correo copiado: ' + texto, 'success');
-                } catch (e) {
-                    avisoPersonal('No se pudo copiar el correo', 'warning');
+        validar() {
+            const f = this.form, e = {};
+            if (!f.nombre.trim()) e.nombre = 'Escribe el nombre.';
+            if (!f.rol_id) e.rol_id = 'Elige el cargo o rol.';
+            if (f.telefono && f.telefono.length !== 10) e.telefono = 'El teléfono debe tener 10 dígitos.';
+            if (f.salario_diario && isNaN(Number(f.salario_diario))) e.salario_diario = 'Escribe un número.';
+            if (f.acceso) {
+                if (!/^[a-z0-9_-]{3,40}$/.test(f.username)) e.username = 'Usa al menos 3 letras minúsculas, números, guion o guion bajo.';
+                if (!this.tieneCuenta || f.password) {
+                    if (f.password.length !== 8) e.password = 'La contraseña debe tener exactamente 8 caracteres.';
+                    else if (f.password !== f.password2) e.password = 'Las contraseñas no coinciden.';
                 }
-            },
-
-            eliminar(p) {
-                if (p.soyYo) return;
-                Swal.fire({
-                    title: '¿Eliminar a este miembro?',
-                    html: `Se eliminará a <b>${this.escapar(p.nombre)}</b>${p.email ? ' y su acceso (' + this.escapar(p.email) + ')' : ''}.<br><span style="font-size:12px;color:#f43f5e">Esta acción no se puede deshacer.</span>`,
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonColor: '#f43f5e',
-                    cancelButtonColor: '#64748b',
-                    confirmButtonText: 'Sí, eliminar',
-                    cancelButtonText: 'Cancelar',
-                    reverseButtons: true,
-                    showLoaderOnConfirm: true,
-                    customClass: { popup: 'rounded-3xl' },
-                    preConfirm: async () => {
-                        try {
-                            const res = await fetch(`${URL_PERSONAL}/${p.id}`, {
-                                method: 'DELETE',
-                                headers: { 'X-CSRF-TOKEN': CSRF_PERSONAL, 'Accept': 'application/json' }
-                            });
-                            const data = await res.json().catch(() => ({}));
-                            if (!res.ok || data.success === false) {
-                                throw new Error(res.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (data.message || 'No se pudo eliminar el registro.'));
-                            }
-                            return data;
-                        } catch (e) {
-                            Swal.showValidationMessage(e.message || 'Error de conexión');
-                        }
-                    },
-                    allowOutsideClick: () => !Swal.isLoading()
-                }).then(result => {
-                    if (!result.isConfirmed) return;
-                    // Sale con animación y se quita sin recargar la página
-                    p._saliendo = true;
-                    setTimeout(() => {
-                        this.personal = this.personal.filter(x => x.id !== p.id);
-                        this.animarResumen();
-                    }, 330);
-                    avisoPersonal((result.value && result.value.message) || 'Registro eliminado.', 'success');
+            }
+            this.errores = e;
+            return Object.keys(e).length === 0;
+        },
+        async guardar() {
+            if (this.guardando) return;
+            if (!this.validar()) { this.mensajeForm = 'Revisa los campos marcados.'; this.mensajeMal = true; window.mtSacudir && mtSacudir('.pe-rv-c'); return; }
+            const f = this.form;
+            const datos = {
+                nombre: this.mayus(f.nombre), apellido: this.mayus(f.apellido), telefono: f.telefono, rut: f.rut, direccion: f.direccion,
+                rol_id: f.rol_id, especialidad: this.esMedico ? f.especialidad : '', turno: f.turno, estado: f.estado,
+                requiere_acceso: f.acceso ? 1 : 0, username: f.username, salario_diario: f.salario_diario || 0, tipo_pago: f.tipo_pago,
+            };
+            if (f.acceso && f.password) { datos.password = f.password; datos.password_confirmation = f.password2; }
+            this.guardando = true; this.mensajeMal = false; this.mensajeForm = 'Guardando…';
+            try {
+                const res = await fetch(f.id ? this.R.base + '/' + f.id : this.R.base, {
+                    method: f.id ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': D.csrf, 'X-Requested-With': 'XMLHttpRequest' },
+                    body: JSON.stringify(datos),
                 });
-            },
-            escapar(t) { const d = document.createElement('div'); d.textContent = t || ''; return d.innerHTML; }
-        };
-    }
+                const r = await res.json().catch(() => ({}));
+                if (res.status === 422) {
+                    const e = {}, mapa = { email: 'username', password_confirmation: 'password' };
+                    Object.entries(r.errors || {}).forEach(([k, v]) => { e[mapa[k] || k] = v[0]; });
+                    this.errores = e;
+                    this.mensajeForm = Object.values(e)[0] || 'Revisa los datos.'; this.mensajeMal = true;
+                    window.mtSacudir && mtSacudir('.pe-rv-c');
+                    return;
+                }
+                if (!res.ok) throw new Error(res.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (r.message || 'No se pudo guardar.'));
+                const p = r.personal;
+                const i = this.P.findIndex(x => x.id === p.id);
+                if (i >= 0) this.P.splice(i, 1, Object.assign({}, this.P[i], p, { citasHoy: this.P[i].citasHoy, atendidasMes: this.P[i].atendidasMes }));
+                else this.P.push(p);
+                this.sel = this.P.find(x => x.id === p.id);
+                this.editando = false;
+                history.replaceState(null, '', location.pathname + '?p=' + p.id);
+                aviso(r.mensaje || 'Guardado', 'success');
+                this.$nextTick(() => window.mtDestello && mtDestello('.pe-fila.sel'));
+            } catch (err) {
+                this.mensajeForm = err.message || 'Error de conexión.'; this.mensajeMal = true;
+            } finally {
+                this.guardando = false;
+            }
+        },
+
+        // ----- Acciones del gafete -----
+        async copiar(t) { try { await navigator.clipboard.writeText(t); aviso('Correo copiado: ' + t); } catch (e) { aviso('No se pudo copiar', 'warning'); } },
+        eliminar(p) {
+            if (!p || p.soyYo || !window.Swal) return;
+            Swal.fire({
+                title: '¿Eliminar a ' + p.nombre + '?',
+                text: p.acceso ? 'También se eliminará su cuenta (' + p.email + '). Esta acción no se puede deshacer.' : 'Esta acción no se puede deshacer.',
+                icon: 'warning', showCancelButton: true, reverseButtons: true, focusCancel: true,
+                confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar', confirmButtonColor: '#c8102e', cancelButtonColor: '#56625f',
+                showLoaderOnConfirm: true, allowOutsideClick: () => !Swal.isLoading(),
+                preConfirm: async () => {
+                    try {
+                        const res = await fetch(this.R.base + '/' + p.id, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': D.csrf, 'Accept': 'application/json' } });
+                        const r = await res.json().catch(() => ({}));
+                        if (!res.ok || r.success === false) throw new Error(res.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (r.message || 'No se pudo eliminar.'));
+                        return r;
+                    } catch (e) { Swal.showValidationMessage(e.message || 'Error de conexión'); }
+                },
+            }).then(res => {
+                if (!res.isConfirmed) return;
+                const quitar = () => {
+                    this.P = this.P.filter(x => x.id !== p.id);
+                    this.sel = this.filtrados[0] || this.P[0] || null;
+                };
+                window.mtQuitar ? mtQuitar('.pe-fila.sel', quitar) : quitar();
+                aviso((res.value && res.value.message) || 'Registro eliminado.', 'success');
+            });
+        },
+
+        // ----- Teclado -----
+        tecla(e) {
+            const t = e.target.tagName, escribiendo = ['INPUT', 'TEXTAREA', 'SELECT'].includes(t) || e.target.isContentEditable;
+            if (document.querySelector('.swal2-container')) return;
+            if (!this.editando && this.lector(e, escribiendo)) return;
+            if (this.editando) {
+                if (e.key === 'Escape') { e.preventDefault(); this.cancelar(); }
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.guardar(); }
+                return;
+            }
+            if (escribiendo || e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key === '/') { e.preventDefault(); this.$refs.buscar.focus(); }
+            else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); this.nueva(); }
+            else if ((e.key === 'e' || e.key === 'E') && this.sel) { e.preventDefault(); this.editar(this.sel); }
+            else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                const l = this.grupos.flatMap(g => g.items); if (!l.length) return;
+                e.preventDefault();
+                const i = l.findIndex(p => this.sel && p.id === this.sel.id);
+                this.seleccionar(l[Math.max(0, Math.min(l.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))]);
+            }
+        },
+
+        // Lector de códigos: teclea el folio muy rápido y termina con Enter (también si cae en el buscador)
+        _lec: '', _lecT: 0,
+        lector(e, escribiendo) {
+            const ahora = performance.now();
+            if (e.key === 'Enter') {
+                const leido = (escribiendo && e.target === this.$refs.buscar ? this.q : this._lec).trim().toUpperCase();
+                this._lec = '';
+                const m = leido.match(/^MT-?(\d{1,6})$/);
+                if (!m) return false;
+                const p = this.P.find(x => x.folio === 'MT-' + m[1].padStart(4, '0'));
+                e.preventDefault();
+                if (!p) { if (window.notificar) window.notificar('Ningún gafete con el folio ' + leido, 'warning'); return true; }
+                this.limpiar(); this.seleccionar(p);
+                if (escribiendo) e.target.blur();
+                if (window.notificar) window.notificar('Gafete leído: ' + p.nombre, 'success');
+                return true;
+            }
+            if (escribiendo || e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return false;
+            this._lec = (ahora - this._lecT > 80 ? '' : this._lec) + e.key;
+            this._lecT = ahora;
+            // Mientras llegan teclas de lector (rápidas), no se disparan los atajos N, E ni /
+            return this._lec.length > 1;
+        },
+
+        // ----- Formatos y dibujos -----
+        mayus(s) { return String(s || '').trim().replace(/\s+/g, ' ').toUpperCase(); },
+        iniciales(p) {
+            const n = String((p && (p.pila || p.nombre)) || '').replace(/\b(DR|DRA|ENF|LIC|ING)\.?\s+/gi, '').trim();
+            const a = String((p && p.apellido) || '').trim();
+            return ((n[0] || '') + (a[0] || (n.split(/\s+/)[1] || '')[0] || '')).toUpperCase() || '?';
+        },
+        turnoDe(v) { return this.TURNOS.find(t => t.v === v) || this.TURNOS[3]; },
+        formatoTel(t) { return t && t.length === 10 ? t.slice(0, 2) + ' ' + t.slice(2, 6) + ' ' + t.slice(6) : t; },
+        dinero(v) { return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(v || 0); },
+        iconoRol(n) {
+            const s = norm(n);
+            if (/medic|doctor/.test(s)) return 'bi-heart-pulse';
+            if (/enferm/.test(s)) return 'bi-bandaid';
+            if (/recep/.test(s)) return 'bi-person-workspace';
+            if (/admin/.test(s)) return 'bi-shield-lock';
+            if (/farmac/.test(s)) return 'bi-capsule';
+            if (/caj|contab|factur/.test(s)) return 'bi-cash-coin';
+            return 'bi-person-badge';
+        },
+        roseta(seed, size) { return typeof mtRoseta === 'function' ? mtRoseta(seed, size) : ''; },
+        guilloche(seed) { return typeof mtGuilloche === 'function' ? mtGuilloche(seed) : ''; },
+        // Código de barras Code 128 (juego B) con el folio: lo lee cualquier lector o app de códigos.
+        // Un lector USB que «teclea» el folio y Enter en esta pantalla selecciona a la persona.
+        barras(texto) {
+            const P = ['212222','222122','222221','121223','121322','131222','122213','122312','132212','221213','221312','231212','112232','122132','122231','113222','123122','123221','223211','221132','221231','213212','223112','312131','311222','321122','321221','312212','322112','322211','212123','212321','232121','111323','131123','131321','112313','132113','132311','211313','231113','231311','112133','112331','132131','113123','113321','133121','313121','211331','231131','213113','213311','213131','311123','311321','331121','312113','312311','332111','314111','221411','431111','111224','111422','121124','121421','141122','141221','112214','112412','122114','122411','142112','142211','241211','221114','413111','241112','134111','111242','121142','121241','114212','124112','124211','411212','421112','421211','212141','214121','412121','111143','111341','131141','114113','114311','411113','411311','113141','114131','311141','411131','211412','211214','211232','2331112'];
+            const t = String(texto || '').replace(/[^\x20-\x7E]/g, '');
+            if (!t) return '';
+            const vals = [104], q = 10;
+            for (const ch of t) vals.push(ch.charCodeAt(0) - 32);
+            let suma = 104;
+            for (let i = 1; i < vals.length; i++) suma += vals[i] * i;
+            vals.push(suma % 103, 106);
+            let x = q, d = '';
+            vals.forEach(v => {
+                const w = P[v];
+                for (let i = 0; i < w.length; i++) {
+                    const n = Number(w[i]);
+                    if (i % 2 === 0) d += 'M' + x + ' 0h' + n + 'v40h-' + n + 'z';
+                    x += n;
+                }
+            });
+            const ancho = x + q;
+            return '<svg viewBox="0 0 ' + ancho + ' 40" width="' + ancho * 2 + '" height="40" preserveAspectRatio="none" shape-rendering="crispEdges" role="img" aria-label="Código de barras ' + t + '"><path d="' + d + '" fill="#0b1e1c"/></svg>';
+        },
+    };
+}
 </script>
+@endverbatim
 @endsection

@@ -1,539 +1,175 @@
-@php
-    // Datos de la consulta de origen (cuando se llega desde "Finalizar y emitir receta"). Si no hay, es una receta manual.
-    $pf = $prefill ?? null;
-@endphp
+{{--
+    HOJA DE RECETA · MediTrack
+    Frente: la receta elegida tal como se imprime (clínica, paciente, diagnóstico, medicamentos y firma).
+    Reverso: el formulario para emitir una receta nueva. Al emitir, la hoja se voltea y ocupa todo el ancho
+    (dos columnas: paciente, médico, diagnóstico e indicaciones | medicamentos).
+    Lo usa recetas/index.blade.php (comparte su componente Alpine).
+--}}
+<div class="rx-hoja" :class="{ 'volteada': editando }">
+    <div class="rx-hoja-in">
 
-<!-- MODAL CREAR RECETA MÉDICA - WIZARD ANIMADO PREMIUM -->
-<template x-teleport="body">
-    <div x-show="openCreateModal" 
-         class="fixed inset-0 z-[9999] bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-6" 
-         x-cloak 
-         x-transition:enter="transition ease-out duration-300" 
-         x-transition:enter-start="opacity-0 scale-95" 
-         x-transition:enter-end="opacity-100 scale-100" 
-         x-transition:leave="transition ease-in duration-200" 
-         x-transition:leave-start="opacity-100 scale-100" 
-         x-transition:leave-end="opacity-0 scale-95">
-        
-        <div class="bg-white rounded-[2.5rem] shadow-2xl max-w-4xl w-full max-h-[90vh] border border-slate-100 flex flex-col overflow-hidden my-auto" 
-             @click.outside="openCreateModal = false"
-             x-data="{
-                step: {{ $pf ? 3 : 1 }},
-                vitals: {
-                    pa_sistolica: '{{ old('pa_sistolica') }}',
-                    pa_diastolica: '{{ old('pa_diastolica') }}',
-                    frecuencia_cardiaca: '{{ old('frecuencia_cardiaca') }}',
-                    frecuencia_respiratoria: '{{ old('frecuencia_respiratoria') }}',
-                    temperatura: '{{ old('temperatura') }}',
-                    saturacion_oxigeno: '{{ old('saturacion_oxigeno') }}',
-                    peso_kg: '{{ old('peso_kg') }}',
-                    talla_cm: '{{ old('talla_cm') }}'
-                },
-                errors: {},
-
-                validateField(field, min, max, name) {
-                    let val = parseFloat(this.vitals[field]);
-                    if (this.vitals[field] !== '' && !isNaN(val)) {
-                        if (val < min || val > max) {
-                            this.errors[field] = `${name} fuera de rango clínico (${min} - ${max})`;
-                        } else {
-                            delete this.errors[field];
-                        }
-                    } else {
-                        delete this.errors[field];
-                    }
-                },
-
-                get hasErrors() {
-                    return Object.keys(this.errors).length > 0;
-                }
-             }">
-            
-            <!-- ENCABEZADO CON GRADIENTE -->
-            <div class="px-8 py-6 bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-800 text-white flex flex-col gap-4 shadow-md shrink-0 relative overflow-hidden">
-                <div class="flex justify-between items-center z-10">
-                    <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-white flex items-center justify-center shadow-inner">
-                            <i class="bi bi-file-earmark-medical-fill text-2xl text-emerald-300"></i>
-                        </div>
+        <!-- FRENTE: receta impresa -->
+        <article class="rx-cara rx-papel" :aria-hidden="editando.toString()">
+            <template x-if="sel">
+                <div class="rx-doc">
+                    <header class="rx-doc-h">
                         <div>
-                            <h3 class="text-xl font-black tracking-tight text-white flex items-center gap-2">
-                                Nueva Receta Médica
-                                <span class="text-[10px] bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 px-2.5 py-0.5 rounded-full uppercase font-bold tracking-wider">Flujo Guiado</span>
-                            </h3>
-                            <p class="text-xs text-teal-100/90 font-medium">Completa la prescripción médica en 3 sencillos pasos</p>
+                            <b x-text="CLINICA.nombre"></b>
+                            <small x-text="[CLINICA.direccion, CLINICA.telefono ? 'Tel. ' + CLINICA.telefono : ''].filter(Boolean).join(' · ')"></small>
+                        </div>
+                        <p class="t"><span>Receta</span><b x-text="'#' + sel.folio"></b><small x-text="fechaLarga(sel.fecha)"></small></p>
+                    </header>
+                    <div class="rx-doc-p">
+                        <p><span>Paciente</span><b x-text="sel.paciente"></b><em x-show="sel.edad !== null" x-text="sel.edad + ' años'"></em></p>
+                        <p class="rx-alg" x-show="sel.alergias.length"><i class="bi bi-exclamation-triangle-fill"></i><span x-text="'Alergias: ' + sel.alergias.join(', ')"></span></p>
+                        <p><span>Diagnóstico</span><b class="rx-dx" x-text="sel.diagnostico"></b></p>
+                    </div>
+                    <div class="rx-doc-rx">
+                        <span class="rx-simbolo" aria-hidden="true">℞</span>
+                        <ol>
+                            <template x-for="(d, i) in sel.detalles" :key="'d' + i">
+                                <li>
+                                    <b x-text="d.medicamento"></b>
+                                    <span x-text="[d.dosis, d.frecuencia, d.duracion].filter(Boolean).join(' · ') || 'Sin indicación de dosis'"></span>
+                                </li>
+                            </template>
+                        </ol>
+                    </div>
+                    <p class="rx-doc-ind" x-show="sel.indicaciones"><span>Indicaciones</span><span x-text="sel.indicaciones"></span></p>
+                    <footer class="rx-doc-f">
+                        <i></i>
+                        <b x-text="sel.medico ? 'Dr(a). ' + sel.medico : 'Médico tratante'"></b>
+                        <small x-text="sel.cedula ? 'Cédula ' + sel.cedula : 'Firma y sello'"></small>
+                    </footer>
+                </div>
+            </template>
+            <template x-if="!sel">
+                <div class="rx-doc rx-doc-vacio">
+                    <span class="rx-simbolo" aria-hidden="true">℞</span>
+                    <b>Sin receta seleccionada</b>
+                    <p>Elige una receta de la lista o emite una nueva.</p>
+                </div>
+            </template>
+        </article>
+
+        <!-- REVERSO: emitir receta -->
+        <form class="rx-cara rx-form" @submit.prevent="emitir()" novalidate :aria-hidden="(!editando).toString()">
+            <p class="rx-form-k" x-text="form.consulta_id ? 'Receta de la consulta · ' + (PREFILL ? PREFILL.fecha : '') : 'Receta nueva'"></p>
+
+            <div class="rx-form-c">
+                <!-- Columna A: paciente, médico, diagnóstico e indicaciones -->
+                <div class="rx-form-a">
+                    <!-- Resumen de la consulta (si viene de una) -->
+                    <div class="rx-cons" x-show="form.consulta_id && PREFILL && PREFILL.resumen && PREFILL.resumen.length">
+                        <button type="button" @click="verResumen = !verResumen">Exploración de la consulta <i class="bi bi-chevron-down" :class="{ 'gira': verResumen }"></i></button>
+                        <div x-show="verResumen">
+                            <template x-for="r in (PREFILL ? PREFILL.resumen : [])" :key="'r' + r.etiqueta"><p><b x-text="r.etiqueta + ':'"></b> <span x-text="r.texto"></span></p></template>
                         </div>
                     </div>
-                    <button @click="openCreateModal = false" type="button" class="text-teal-200 hover:text-white hover:bg-white/10 transition-all text-lg font-bold w-10 h-10 rounded-2xl flex items-center justify-center">
-                        <i class="bi bi-x-lg"></i>
-                    </button>
+
+                    <!-- Paciente -->
+                    <div class="rx-campo" :class="{ 'mal': errores.paciente_id }" @click.outside="bPac.abierto = false">
+                        <span>Paciente</span>
+                        <input type="text" x-ref="campoPaciente" x-model="bPac.q" autocomplete="off" :disabled="!!form.consulta_id"
+                               :placeholder="form.paciente_id ? nombrePaciente(form.paciente_id) : 'Busca por nombre o CURP'" :class="{ 'elegido': form.paciente_id && !bPac.q }"
+                               @focus="bPac.abierto = true" @input="bPac.abierto = true; errores.paciente_id = ''"
+                               @keydown.arrow-down.prevent="bPac.i = Math.min(bPac.i + 1, pacientesFiltrados.length - 1)" @keydown.arrow-up.prevent="bPac.i = Math.max(bPac.i - 1, 0)"
+                               @keydown.enter.prevent="pacientesFiltrados[bPac.i] && elegirPaciente(pacientesFiltrados[bPac.i])" :tabindex="editando ? 0 : -1">
+                        <div class="rx-lista" x-show="bPac.abierto && pacientesFiltrados.length" x-cloak>
+                            <template x-for="(p, i) in pacientesFiltrados" :key="'p' + p.id">
+                                <button type="button" :class="{ 'on': i === bPac.i }" @mousemove="bPac.i = i" @click="elegirPaciente(p)">
+                                    <b x-text="p.nombre"></b><small class="t" x-text="p.curp || 'Sin CURP'"></small>
+                                    <em x-show="p.alergias.length" x-text="p.alergias[0]"></em>
+                                </button>
+                            </template>
+                        </div>
+                        <p class="rx-alg-f" x-show="alergiasForm.length"><i class="bi bi-exclamation-triangle-fill"></i><span x-text="'Alérgico a: ' + alergiasForm.join(', ')"></span></p>
+                        <small x-show="errores.paciente_id" x-text="errores.paciente_id"></small>
+                    </div>
+
+                    <!-- Médico -->
+                    <div class="rx-campo" :class="{ 'mal': errores.personal_id }" @click.outside="popMed = false">
+                        <span>Médico</span>
+                        <button type="button" class="rx-pick" :class="{ 'abierto': popMed }" @click="popMed = !popMed" :tabindex="editando ? 0 : -1">
+                            <span x-text="form.personal_id ? nombreMedico(form.personal_id) : 'Elige al médico'"></span><i class="bi bi-chevron-down"></i>
+                        </button>
+                        <div class="rx-lista" x-show="popMed" x-cloak>
+                            <template x-for="m in MED" :key="'m' + m.id">
+                                <button type="button" :class="{ 'on': String(m.id) === String(form.personal_id) }" @click="form.personal_id = String(m.id); popMed = false; errores.personal_id = ''">
+                                    <b x-text="m.nombre"></b><small x-text="m.especialidad || 'Médico'"></small>
+                                </button>
+                            </template>
+                        </div>
+                        <small x-show="errores.personal_id" x-text="errores.personal_id"></small>
+                    </div>
+
+                    <!-- Diagnóstico -->
+                    <label class="rx-campo" :class="{ 'mal': errores.diagnostico }">
+                        <span>Diagnóstico</span>
+                        <textarea rows="2" maxlength="2000" class="may" x-model="form.diagnostico" @input="errores.diagnostico = ''" placeholder="Ej. Faringoamigdalitis aguda" :tabindex="editando ? 0 : -1"></textarea>
+                        <small x-show="errores.diagnostico" x-text="errores.diagnostico"></small>
+                    </label>
+
+                    <!-- Indicaciones -->
+                    <label class="rx-campo">
+                        <span>Indicaciones generales <em>(opcional)</em></span>
+                        <textarea rows="2" maxlength="3000" class="may" x-model="form.indicaciones_generales" placeholder="Dieta, reposo, cuidados, próxima cita…" :tabindex="editando ? 0 : -1"></textarea>
+                    </label>
                 </div>
 
-                <!-- BARRA PROGRESIVA DE PESTAÑAS -->
-                <div class="grid grid-cols-3 gap-2 pt-2 z-10">
-                    <button type="button" @click="step = 1" class="flex items-center gap-2 p-2 rounded-xl text-left transition-all" :class="step === 1 ? 'bg-white/20 text-white font-extrabold border border-white/30' : 'bg-black/10 text-teal-200/70 hover:bg-white/10'">
-                        <span class="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold" :class="step === 1 ? 'bg-emerald-400 text-slate-900' : 'bg-white/10'">1</span>
-                        <span class="text-xs hidden sm:inline">Emisión</span>
-                    </button>
-
-                    <button type="button" @click="step = 2" class="flex items-center gap-2 p-2 rounded-xl text-left transition-all" :class="step === 2 ? 'bg-white/20 text-white font-extrabold border border-white/30' : 'bg-black/10 text-teal-200/70 hover:bg-white/10'">
-                        <span class="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold" :class="step === 2 ? 'bg-emerald-400 text-slate-900' : 'bg-white/10'">2</span>
-                        <span class="text-xs hidden sm:inline">Signos Vitales</span>
-                    </button>
-
-                    <button type="button" @click="step = 3" class="flex items-center gap-2 p-2 rounded-xl text-left transition-all" :class="step === 3 ? 'bg-white/20 text-white font-extrabold border border-white/30' : 'bg-black/10 text-teal-200/70 hover:bg-white/10'">
-                        <span class="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold" :class="step === 3 ? 'bg-emerald-400 text-slate-900' : 'bg-white/10'">3</span>
-                        <span class="text-xs hidden sm:inline">Fármacos</span>
-                    </button>
+                <!-- Columna B: medicamentos -->
+                <div class="rx-form-b">
+                    <!-- Medicamentos -->
+                    <div class="rx-campo" :class="{ 'mal': errores.medicamentos }">
+                        <span>Medicamentos</span>
+                        <template x-for="(m, i) in form.medicamentos" :key="m.uid">
+                            <div class="rx-med" :class="{ 'alerta': alergiaDe(m.nombre) }">
+                                <span class="rx-med-n t" x-text="i + 1"></span>
+                                <div class="rx-med-c" @click.outside="m.sug = false">
+                                    <input type="text" class="may rx-med-nom" x-model="m.nombre" maxlength="255" placeholder="Medicamento y presentación" autocomplete="off"
+                                           @focus="m.sug = true" @input="m.sug = true; errores.medicamentos = ''" @keydown.escape.stop="m.sug = false" :tabindex="editando ? 0 : -1">
+                                    <div class="rx-lista rx-sug" x-show="m.sug && sugerencias(m.nombre).length" x-cloak>
+                                        <template x-for="s in sugerencias(m.nombre)" :key="'s' + s.nombre">
+                                            <button type="button" @click="m.nombre = s.nombre; m.sug = false"><b x-text="s.nombre"></b><small class="t" :class="{ 'agotado': s.stock <= 0 }" x-text="s.stock > 0 ? s.stock + ' en inventario' : 'Sin existencias'"></small></button>
+                                        </template>
+                                    </div>
+                                    <p class="rx-med-alg" x-show="alergiaDe(m.nombre)"><i class="bi bi-exclamation-triangle-fill"></i><span x-text="'Coincide con la alergia a ' + alergiaDe(m.nombre)"></span></p>
+                                    <div class="rx-med-d">
+                                        <input type="text" class="may" x-model="m.dosis" maxlength="255" placeholder="Dosis (1 tableta)" :tabindex="editando ? 0 : -1">
+                                        <input type="text" class="may" x-model="m.frecuencia" maxlength="255" placeholder="Frecuencia" :tabindex="editando ? 0 : -1">
+                                        <input type="text" class="may" x-model="m.duracion" maxlength="255" placeholder="Duración" :tabindex="editando ? 0 : -1">
+                                    </div>
+                                    <div class="rx-rapidos">
+                                        <template x-for="f in ['CADA 6 H', 'CADA 8 H', 'CADA 12 H', 'CADA 24 H']" :key="'f' + f">
+                                            <button type="button" :class="{ 'on': m.frecuencia === f }" @click="m.frecuencia = f" x-text="f.replace('CADA ', 'c/').toLowerCase()" :tabindex="editando ? 0 : -1"></button>
+                                        </template>
+                                        <i></i>
+                                        <template x-for="d in ['3 DÍAS', '5 DÍAS', '7 DÍAS', '10 DÍAS']" :key="'du' + d">
+                                            <button type="button" :class="{ 'on': m.duracion === d }" @click="m.duracion = d" x-text="d.toLowerCase()" :tabindex="editando ? 0 : -1"></button>
+                                        </template>
+                                    </div>
+                                </div>
+                                <button type="button" class="rx-med-x" @click="quitarMed(i)" x-show="form.medicamentos.length > 1" aria-label="Quitar medicamento" :tabindex="editando ? 0 : -1"><i class="bi bi-x-lg"></i></button>
+                            </div>
+                        </template>
+                        <button type="button" class="rx-mas" @click="agregarMed()" :tabindex="editando ? 0 : -1"><i class="bi bi-plus-lg"></i> Agregar medicamento</button>
+                        <small x-show="errores.medicamentos" x-text="errores.medicamentos"></small>
+                    </div>
                 </div>
             </div>
 
-            <!-- CUERPO DEL FORMULARIO -->
-            <form action="{{ route('recetas.store') }}" method="POST" class="flex flex-col flex-1 min-h-0 bg-slate-50/50">
-                @csrf
-
-                {{-- Enlaza la receta con la consulta de origen --}}
-                @if ($pf)
-                    <input type="hidden" name="consulta_id" value="{{ $pf['consulta_id'] }}">
-                @endif
-
-                <div class="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-6">
-
-                    <!-- AVISO: LA RECETA VIENE DE UNA CONSULTA -->
-                    @if ($pf)
-                        <div class="rounded-3xl border border-sky-200 bg-sky-50 p-4 flex items-start gap-3">
-                            <span class="w-10 h-10 rounded-2xl bg-sky-600 text-white flex items-center justify-center text-lg shrink-0">
-                                <i class="bi bi-clipboard2-pulse-fill"></i>
-                            </span>
-                            <div class="min-w-0">
-                                <p class="text-[10px] font-black uppercase tracking-wide text-sky-600">Receta desde una consulta</p>
-                                <p class="text-xs font-bold text-slate-700">
-                                    Consulta #{{ $pf['consulta_id'] }} · {{ $pf['paciente_nombre'] }}@if ($pf['fecha']) · {{ $pf['fecha'] }}@endif
-                                </p>
-                                <p class="text-[11px] font-medium text-slate-500 mt-0.5 leading-relaxed">
-                                    Ya cargamos el paciente, el médico y el diagnóstico. Solo falta agregar los medicamentos en el paso 3.
-                                </p>
-                            </div>
-                        </div>
-                    @endif
-
-                    <!-- PASO 1: EMISIÓN DE DATOS GENERALES -->
-                    <div x-show="step === 1" 
-                         x-transition:enter="transition ease-out duration-300 transform"
-                         x-transition:enter-start="opacity-0 translate-x-8"
-                         x-transition:enter-end="opacity-100 translate-x-0"
-                         class="space-y-6">
-                        
-                        <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-6">
-                            <h4 class="text-xs font-black uppercase tracking-wider text-teal-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-                                <i class="bi bi-person-badge-fill text-teal-600 text-base"></i> Datos del Prescriptor y Paciente
-                            </h4>
-
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                
-                                <!-- MÉDICO PRESCRIPTOR -->
-                                <div x-data="{
-                                    openDoc: false,
-                                    searchDoc: '',
-                                    selectedDocId: @js((string) (($pf['personal_id'] ?? null) ?: (auth()->user()->personal->id ?? ''))),
-                                    selectedDocName: @js($pf['personal_nombre'] ?? ('Dr. ' . (auth()->user()->personal->nombre_completo ?? auth()->user()->nombre_completo))),
-                                    doctores: {{ json_encode($doctores->map(fn($d) => ['id' => $d->id, 'nombre' => 'Dr. ' . $d->nombre_completo])) }},
-                                    get filteredDoctores() {
-                                        if (!this.searchDoc) return this.doctores;
-                                        return this.doctores.filter(d => d.nombre.toLowerCase().includes(this.searchDoc.toLowerCase()));
-                                    }
-                                }" class="relative">
-                                    <label class="block text-xs font-bold text-slate-700 uppercase mb-2 flex items-center gap-1.5">
-                                        <i class="bi bi-person-workspace text-teal-600"></i> Médico Prescriptor *
-                                    </label>
-                                    
-                                    @if(auth()->user()->isSuperAdmin() || in_array(strtolower(auth()->user()->rol->nombre ?? ''), ['administrador', 'admin', 'super admin']))
-                                        <input type="hidden" name="personal_id" :value="selectedDocId" required>
-                                        
-                                        <button type="button" @click="openDoc = !openDoc" class="w-full bg-white border-2 border-slate-200 hover:border-teal-500 rounded-2xl p-3.5 text-left text-xs font-bold text-slate-800 flex justify-between items-center focus:ring-4 focus:ring-teal-500/10 transition-all shadow-xs">
-                                            <span class="truncate" x-text="selectedDocName || 'Selecciona un médico'"></span>
-                                            <i class="bi bi-chevron-down text-slate-400 text-xs"></i>
-                                        </button>
-
-                                        <div x-show="openDoc" @click.outside="openDoc = false" class="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 z-50 p-2 space-y-2" x-cloak>
-                                            <div class="relative">
-                                                <i class="bi bi-search absolute left-3 top-2.5 text-slate-400 text-xs"></i>
-                                                <input type="text" x-model="searchDoc" placeholder="Buscar médico..." class="w-full pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500">
-                                            </div>
-                                            <div class="max-h-40 overflow-y-auto space-y-1">
-                                                <template x-for="doc in filteredDoctores" :key="doc.id">
-                                                    <button type="button" @click="selectedDocId = doc.id; selectedDocName = doc.nombre; openDoc = false" class="w-full text-left px-3 py-2 text-xs hover:bg-teal-50 rounded-xl font-bold text-slate-700 transition-colors flex items-center justify-between">
-                                                        <span x-text="doc.nombre"></span>
-                                                        <i class="bi bi-check-lg text-teal-600" x-show="selectedDocId == doc.id"></i>
-                                                    </button>
-                                                </template>
-                                            </div>
-                                        </div>
-                                    @else
-                                        <div class="w-full bg-slate-100 border-2 border-slate-200 rounded-2xl p-3.5 text-xs font-bold text-teal-800 flex items-center gap-2 truncate">
-                                            <i class="bi bi-person-badge-fill text-teal-600"></i>
-                                            <span class="truncate">
-                                                Dr. {{ auth()->user()->personal->nombre_completo ?? auth()->user()->nombre_completo }}
-                                            </span>
-                                        </div>
-                                    @endif
-                                </div>
-
-                                <!-- PACIENTE -->
-                                <div x-data="{
-                                    openPac: false,
-                                    searchPac: '',
-                                    selectedPacId: @js((string) ($pf['paciente_id'] ?? '')),
-                                    selectedPacName: @js($pf['paciente_nombre'] ?? ''),
-                                    pacientes: {{ json_encode($pacientes->map(fn($p) => ['id' => $p->id, 'nombre' => $p->nombre_completo ?? trim(($p->nombre ?? '') . ' ' . ($p->apellido ?? ''))])) }},
-                                    get filteredPacientes() {
-                                        if (!this.searchPac) return this.pacientes;
-                                        return this.pacientes.filter(p => p.nombre.toLowerCase().includes(this.searchPac.toLowerCase()));
-                                    }
-                                }" class="relative">
-                                    <label class="block text-xs font-bold text-slate-700 uppercase mb-2 flex items-center gap-1.5">
-                                        <i class="bi bi-person-fill text-teal-600"></i> Paciente Seleccionado *
-                                    </label>
-                                    
-                                    <input type="hidden" name="paciente_id" :value="selectedPacId" required>
-                                    
-                                    <button type="button" @click="openPac = !openPac" class="w-full bg-white border-2 border-slate-200 hover:border-teal-500 rounded-2xl p-3.5 text-left text-xs font-bold text-slate-800 flex justify-between items-center focus:ring-4 focus:ring-teal-500/10 transition-all shadow-xs">
-                                        <span class="truncate" x-text="selectedPacName || 'Selecciona un paciente'"></span>
-                                        <i class="bi bi-chevron-down text-slate-400 text-xs"></i>
-                                    </button>
-
-                                    <div x-show="openPac" @click.outside="openPac = false" class="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 z-50 p-2 space-y-2" x-cloak>
-                                        <div class="relative">
-                                            <i class="bi bi-search absolute left-3 top-2.5 text-slate-400 text-xs"></i>
-                                            <input type="text" x-model="searchPac" placeholder="Buscar paciente por nombre..." class="w-full pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500">
-                                        </div>
-                                        <div class="max-h-40 overflow-y-auto space-y-1">
-                                            <template x-for="pac in filteredPacientes" :key="pac.id">
-                                                <button type="button" @click="selectedPacId = pac.id; selectedPacName = pac.nombre; openPac = false" class="w-full text-left px-3 py-2 text-xs hover:bg-teal-50 rounded-xl font-bold text-slate-700 transition-colors flex items-center justify-between">
-                                                    <span x-text="pac.nombre"></span>
-                                                    <i class="bi bi-check-lg text-teal-600" x-show="selectedPacId == pac.id"></i>
-                                                </button>
-                                            </template>
-                                        </div>
-                                    </div>
-                                </div>
-
-                            </div>
-
-                            <!-- FECHA DE EMISIÓN CON HOMOLOGACIÓN EXACTA DE ESTILOS -->
-                            <div>
-                                <label class="block text-xs font-bold text-slate-700 uppercase mb-2 flex items-center justify-between">
-                                    <span class="flex items-center gap-1.5">
-                                        <i class="bi bi-calendar-check-fill text-teal-600"></i> Fecha de Emisión *
-                                    </span>
-                                    <span class="text-[10px] text-teal-700 font-extrabold bg-teal-50 px-2 py-0.5 rounded-md border border-teal-100">Prescripción Oficial</span>
-                                </label>
-                                
-                                <div class="relative flex items-center group">
-                                    <!-- Ícono izquierdo -->
-                                    <div class="absolute left-3.5 z-10 text-teal-600 flex items-center justify-center pointer-events-none">
-                                        <i class="bi bi-calendar3 text-sm font-bold"></i>
-                                    </div>
-                                    
-                                    <!-- Input idéntico en padding, bordes y fuentes a los otros selects -->
-                                    <input type="text" 
-                                           id="fecha_emision_input" 
-                                           name="fecha_emision" 
-                                           value="{{ date('Y-m-d') }}" 
-                                           required 
-                                           readonly 
-                                           class="w-full bg-white border-2 border-slate-200 hover:border-teal-500 rounded-2xl p-3.5 pl-11 pr-10 text-xs font-bold text-slate-800 focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all shadow-xs cursor-pointer">
-
-                                    <!-- Flecha derecha -->
-                                    <i class="bi bi-chevron-down absolute right-4 text-slate-400 text-xs pointer-events-none transition-transform group-hover:translate-y-0.5"></i>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- PASO 2: SIGNOS VITALES -->
-                    <div x-show="step === 2" 
-                         x-transition:enter="transition ease-out duration-300 transform"
-                         x-transition:enter-start="opacity-0 translate-x-8"
-                         x-transition:enter-end="opacity-100 translate-x-0"
-                         class="space-y-6">
-                        
-                        <div x-show="hasErrors" x-cloak class="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs shadow-xs space-y-1">
-                            <p class="font-black flex items-center gap-2 text-rose-700">
-                                <i class="bi bi-exclamation-triangle-fill text-base"></i> Valores Fuera de Rango Clínico:
-                            </p>
-                            <ul class="list-disc pl-6 space-y-0.5 text-xs text-rose-600 font-bold">
-                                <template x-for="(msg, key) in errors" :key="key">
-                                    <li x-text="msg"></li>
-                                </template>
-                            </ul>
-                        </div>
-
-                        <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-6">
-                            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                                <h4 class="text-xs font-black uppercase tracking-wider text-teal-900 flex items-center gap-2">
-                                    <span class="w-7 h-7 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-sm shadow-xs">
-                                        <i class="bi bi-heart-pulse-fill"></i>
-                                    </span>
-                                    Captura de Signos Vitales
-                                </h4>
-                                <span class="text-[11px] font-bold text-slate-400 bg-slate-100 px-3 py-1 rounded-full">Lecturas Opcionales</span>
-                            </div>
-
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-5">
-                                <div>
-                                    <label class="block text-[10px] font-extrabold uppercase mb-1.5" :class="errors.pa_sistolica ? 'text-rose-600' : 'text-slate-600'">
-                                        P.A. Sistólica <span class="text-slate-400 font-normal">(40-300)</span>
-                                    </label>
-                                    <div class="relative">
-                                        <input type="number" name="pa_sistolica" x-model="vitals.pa_sistolica" @input="validateField('pa_sistolica', 40, 300, 'P.A. Sistólica')" placeholder="120" class="w-full bg-slate-50 border-2 rounded-2xl p-3 pr-12 text-xs font-bold focus:bg-white outline-none transition-all" :class="errors.pa_sistolica ? 'border-rose-400 ring-4 ring-rose-400/20 text-rose-600' : 'border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10'">
-                                        <span class="absolute right-3.5 top-3 text-[10px] font-bold text-slate-400 pointer-events-none">mmHg</span>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label class="block text-[10px] font-extrabold uppercase mb-1.5" :class="errors.pa_diastolica ? 'text-rose-600' : 'text-slate-600'">
-                                        P.A. Diastólica <span class="text-slate-400 font-normal">(20-200)</span>
-                                    </label>
-                                    <div class="relative">
-                                        <input type="number" name="pa_diastolica" x-model="vitals.pa_diastolica" @input="validateField('pa_diastolica', 20, 200, 'P.A. Diastólica')" placeholder="80" class="w-full bg-slate-50 border-2 rounded-2xl p-3 pr-12 text-xs font-bold focus:bg-white outline-none transition-all" :class="errors.pa_diastolica ? 'border-rose-400 ring-4 ring-rose-400/20 text-rose-600' : 'border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10'">
-                                        <span class="absolute right-3.5 top-3 text-[10px] font-bold text-slate-400 pointer-events-none">mmHg</span>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label class="block text-[10px] font-extrabold uppercase mb-1.5" :class="errors.frecuencia_cardiaca ? 'text-rose-600' : 'text-slate-600'">
-                                        Frec. Cardíaca <span class="text-slate-400 font-normal">(30-250)</span>
-                                    </label>
-                                    <div class="relative">
-                                        <input type="number" name="frecuencia_cardiaca" x-model="vitals.frecuencia_cardiaca" @input="validateField('frecuencia_cardiaca', 30, 250, 'Frecuencia Cardíaca')" placeholder="75" class="w-full bg-slate-50 border-2 rounded-2xl p-3 pr-12 text-xs font-bold focus:bg-white outline-none transition-all" :class="errors.frecuencia_cardiaca ? 'border-rose-400 ring-4 ring-rose-400/20 text-rose-600' : 'border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10'">
-                                        <span class="absolute right-3.5 top-3 text-[10px] font-bold text-slate-400 pointer-events-none">BPM</span>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label class="block text-[10px] font-extrabold uppercase mb-1.5" :class="errors.frecuencia_respiratoria ? 'text-rose-600' : 'text-slate-600'">
-                                        Frec. Resp. <span class="text-slate-400 font-normal">(5-80)</span>
-                                    </label>
-                                    <div class="relative">
-                                        <input type="number" name="frecuencia_respiratoria" x-model="vitals.frecuencia_respiratoria" @input="validateField('frecuencia_respiratoria', 5, 80, 'Frecuencia Respiratoria')" placeholder="18" class="w-full bg-slate-50 border-2 rounded-2xl p-3 pr-12 text-xs font-bold focus:bg-white outline-none transition-all" :class="errors.frecuencia_respiratoria ? 'border-rose-400 ring-4 ring-rose-400/20 text-rose-600' : 'border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10'">
-                                        <span class="absolute right-3.5 top-3 text-[10px] font-bold text-slate-400 pointer-events-none">RPM</span>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label class="block text-[10px] font-extrabold uppercase mb-1.5" :class="errors.temperatura ? 'text-rose-600' : 'text-slate-600'">
-                                        Temperatura <span class="text-slate-400 font-normal">(30-45)</span>
-                                    </label>
-                                    <div class="relative">
-                                        <input type="number" step="0.1" name="temperatura" x-model="vitals.temperatura" @input="validateField('temperatura', 30.0, 45.0, 'Temperatura')" placeholder="36.5" class="w-full bg-slate-50 border-2 rounded-2xl p-3 pr-10 text-xs font-bold focus:bg-white outline-none transition-all" :class="errors.temperatura ? 'border-rose-400 ring-4 ring-rose-400/20 text-rose-600' : 'border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10'">
-                                        <span class="absolute right-3.5 top-3 text-[10px] font-bold text-slate-400 pointer-events-none">°C</span>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label class="block text-[10px] font-extrabold uppercase mb-1.5" :class="errors.saturacion_oxigeno ? 'text-rose-600' : 'text-slate-600'">
-                                        Sat. Oxígeno <span class="text-slate-400 font-normal">(0-100)</span>
-                                    </label>
-                                    <div class="relative">
-                                        <input type="number" step="0.1" name="saturacion_oxigeno" x-model="vitals.saturacion_oxigeno" @input="validateField('saturacion_oxigeno', 0, 100, 'Sat. Oxígeno')" placeholder="98" class="w-full bg-slate-50 border-2 rounded-2xl p-3 pr-10 text-xs font-bold focus:bg-white outline-none transition-all" :class="errors.saturacion_oxigeno ? 'border-rose-400 ring-4 ring-rose-400/20 text-rose-600' : 'border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10'">
-                                        <span class="absolute right-3.5 top-3 text-[10px] font-bold text-slate-400 pointer-events-none">%</span>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label class="block text-[10px] font-extrabold uppercase mb-1.5" :class="errors.peso_kg ? 'text-rose-600' : 'text-slate-600'">
-                                        Peso <span class="text-slate-400 font-normal">(0.5-500)</span>
-                                    </label>
-                                    <div class="relative">
-                                        <input type="number" step="0.1" name="peso_kg" x-model="vitals.peso_kg" @input="validateField('peso_kg', 0.5, 500.0, 'Peso')" placeholder="70.5" class="w-full bg-slate-50 border-2 rounded-2xl p-3 pr-10 text-xs font-bold focus:bg-white outline-none transition-all" :class="errors.peso_kg ? 'border-rose-400 ring-4 ring-rose-400/20 text-rose-600' : 'border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10'">
-                                        <span class="absolute right-3.5 top-3 text-[10px] font-bold text-slate-400 pointer-events-none">kg</span>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label class="block text-[10px] font-extrabold uppercase mb-1.5" :class="errors.talla_cm ? 'text-rose-600' : 'text-slate-600'">
-                                        Estatura / Talla <span class="text-slate-400 font-normal">(20-300)</span>
-                                    </label>
-                                    <div class="relative">
-                                        <input type="number" step="0.1" name="talla_cm" x-model="vitals.talla_cm" @input="validateField('talla_cm', 20.0, 300.0, 'Estatura')" placeholder="170" class="w-full bg-slate-50 border-2 rounded-2xl p-3 pr-10 text-xs font-bold focus:bg-white outline-none transition-all" :class="errors.talla_cm ? 'border-rose-400 ring-4 ring-rose-400/20 text-rose-600' : 'border-slate-200 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10'">
-                                        <span class="absolute right-3.5 top-3 text-[10px] font-bold text-slate-400 pointer-events-none">cm</span>
-                                    </div>
-                                </div>
-
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- PASO 3: FÁRMACOS E INDICACIONES -->
-                    <div x-show="step === 3" 
-                         x-transition:enter="transition ease-out duration-300 transform"
-                         x-transition:enter-start="opacity-0 translate-x-8"
-                         x-transition:enter-end="opacity-100 translate-x-0"
-                         class="space-y-6">
-
-                        {{-- Resumen de la exploración de la consulta, a la vista mientras se prescribe --}}
-                        @if ($pf && !empty($pf['resumen']))
-                            <div x-data="{ abierto: false }" class="bg-sky-50/70 border border-sky-200 rounded-3xl overflow-hidden">
-                                <button type="button" @click="abierto = !abierto" class="w-full flex items-center justify-between gap-3 p-4 text-left">
-                                    <span class="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-sky-700">
-                                        <i class="bi bi-clipboard2-pulse"></i> Resumen de la consulta
-                                    </span>
-                                    <i class="bi bi-chevron-down text-sky-500 text-xs transition-transform" :class="abierto && 'rotate-180'"></i>
-                                </button>
-                                <div x-show="abierto" x-cloak
-                                     x-transition:enter="transition ease-out duration-200"
-                                     x-transition:enter-start="opacity-0 -translate-y-1"
-                                     x-transition:enter-end="opacity-100 translate-y-0"
-                                     class="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    @foreach ($pf['resumen'] as $item)
-                                        <div class="bg-white rounded-2xl border border-sky-100 p-3">
-                                            <p class="text-[10px] font-black uppercase tracking-wide text-slate-400">{{ $item['etiqueta'] }}</p>
-                                            <p class="text-xs font-semibold text-slate-700 mt-0.5 leading-relaxed" style="text-transform: none;">{{ $item['texto'] }}</p>
-                                        </div>
-                                    @endforeach
-                                </div>
-                            </div>
-                        @endif
-
-                        <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
-                            <div>
-                                <label class="block text-xs font-black uppercase text-slate-700 flex items-center gap-2 mb-2">
-                                    <i class="bi bi-stethoscope text-teal-600"></i> Diagnóstico Clínico *
-                                    @if ($pf && $pf['diagnostico'] !== '')
-                                        <span class="text-[10px] font-bold normal-case text-sky-600 bg-sky-50 border border-sky-100 px-2 py-0.5 rounded-md">tomado de la consulta</span>
-                                    @endif
-                                </label>
-                                <textarea name="diagnostico" rows="2" placeholder="Ej. Faringoamigdalitis aguda bacteriana, Hipertensión arterial sistémica primaria..." required class="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-3 text-xs font-bold focus:bg-white focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all uppercase">{{ old('diagnostico', $pf['diagnostico'] ?? '') }}</textarea>
-                            </div>
-
-                            <div>
-                                <label class="block text-xs font-black uppercase text-slate-700 flex items-center gap-2 mb-2">
-                                    <i class="bi bi-journal-text text-teal-600"></i> Indicaciones y Recomendaciones
-                                </label>
-                                <textarea name="indicaciones_generales" rows="2" placeholder="Cuidados generales, dieta, reposo o recomendaciones adicionales..." class="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-3 text-xs font-bold focus:bg-white focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all uppercase">{{ old('indicaciones_generales') }}</textarea>
-                            </div>
-                        </div>
-                        
-                        <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-5">
-                            <div class="flex justify-between items-center border-b border-slate-100 pb-3">
-                                <h4 class="text-xs font-black uppercase tracking-wider text-teal-900 flex items-center gap-2">
-                                    <span class="w-7 h-7 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center text-sm shadow-xs">
-                                        <i class="bi bi-capsule-fill"></i>
-                                    </span>
-                                    Prescripción Farmacológica
-                                </h4>
-                                <button type="button" @click="addMedicamento()" class="text-xs bg-teal-600 hover:bg-teal-700 text-white font-extrabold px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm transition-all active:scale-95">
-                                    <i class="bi bi-plus-lg"></i> Agregar Fármaco
-                                </button>
-                            </div>
-
-                            <div class="space-y-4">
-                                <template x-for="(med, index) in medicamentosLista" :key="index">
-                                    <div class="p-5 border-2 border-slate-200/80 rounded-2xl bg-slate-50/50 space-y-3 relative group transition-all hover:border-teal-300">
-                                        <div class="flex items-center justify-between border-b border-slate-200/60 pb-2">
-                                            <span class="text-xs font-black text-teal-800 uppercase flex items-center gap-2">
-                                                <i class="bi bi-prescription2"></i> Medicamento #<span x-text="index + 1"></span>
-                                            </span>
-                                            <button type="button" @click="removeMedicamento(index)" x-show="medicamentosLista.length > 1" class="text-rose-500 hover:text-rose-700 hover:bg-rose-100/60 px-3 py-1 rounded-xl text-xs font-bold transition-colors flex items-center gap-1">
-                                                <i class="bi bi-trash-fill"></i> Quitar
-                                            </button>
-                                        </div>
-
-                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            <div>
-                                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre Fármaco *</label>
-                                                <input type="text" :name="`medicamentos[${index}][nombre]`" x-model="med.nombre" placeholder="Ej. Amoxicilina 500mg" required class="w-full bg-white border-2 border-slate-200 rounded-xl p-3 text-xs font-bold text-slate-800 focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none uppercase">
-                                            </div>
-                                            <div>
-                                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Dosis Prescrita</label>
-                                                <input type="text" :name="`medicamentos[${index}][dosis]`" x-model="med.dosis" placeholder="Ej. 1 cápsula C/8 hrs" class="w-full bg-white border-2 border-slate-200 rounded-xl p-3 text-xs font-bold text-slate-800 focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none uppercase">
-                                            </div>
-                                            <div>
-                                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Frecuencia / Duración</label>
-                                                <input type="text" :name="`medicamentos[${index}][frecuencia]`" x-model="med.frecuencia" placeholder="Ej. Por 7 días consecutivos" class="w-full bg-white border-2 border-slate-200 rounded-xl p-3 text-xs font-bold text-slate-800 focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none uppercase">
-                                            </div>
-                                        </div>
-                                    </div>
-                                </template>
-                            </div>
-                        </div>
-
-                    </div>
-
-                </div>
-
-                <!-- CONTROLES Y NAVEGACIÓN -->
-                <div class="px-8 py-5 bg-white border-t border-slate-200/80 flex justify-between items-center shrink-0 rounded-b-[2.5rem]">
-                    <div>
-                        <button type="button" @click="step--" x-show="step > 1" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-2xl text-xs transition-all flex items-center gap-1.5">
-                            <i class="bi bi-arrow-left"></i> Anterior
-                        </button>
-                    </div>
-
-                    <div class="flex items-center gap-3">
-                        <button type="button" @click="openCreateModal = false" class="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-2xl text-xs transition-all">
-                            Cancelar
-                        </button>
-                        
-                        <button type="button" @click="step++" x-show="step < 3" class="px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white font-extrabold rounded-2xl text-xs transition-all flex items-center gap-1.5 shadow-md">
-                            Siguiente <i class="bi bi-arrow-right"></i>
-                        </button>
-
-                        <button type="submit" 
-                                x-show="step === 3"
-                                :disabled="hasErrors" 
-                                :class="hasErrors ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none' : 'bg-gradient-to-r from-teal-700 to-emerald-600 hover:from-teal-800 hover:to-emerald-700 text-white shadow-lg shadow-teal-700/20 active:scale-95'" 
-                                class="px-8 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2">
-                            <i class="bi bi-check-circle-fill text-sm"></i> Guardar Receta
-                        </button>
-                    </div>
-                </div>
-            </form>
-        </div>
+            <footer class="rx-form-f">
+                <span class="rx-msg" :class="{ 'mal': hayAlertaAlergia }" x-text="hayAlertaAlergia ? 'Revisa: un medicamento coincide con una alergia' : mensajeForm"></span>
+                <button type="button" class="rx-btn" @click="cancelar()" :tabindex="editando ? 0 : -1">Cancelar</button>
+                <button type="submit" class="rx-btn rx-prim" :disabled="guardando" :tabindex="editando ? 0 : -1" x-text="guardando ? 'Emitiendo…' : 'Emitir receta'"></button>
+            </footer>
+        </form>
     </div>
-</template>
+</div>
 
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        if (typeof flatpickr !== 'undefined') {
-            const fp = flatpickr("#fecha_emision_input", {
-                locale: "es",
-                dateFormat: "Y-m-d",
-                altInput: true,
-                altFormat: "j \\de F, Y",
-                defaultDate: "today",
-                animate: true,
-                disableMobile: true,
-                monthSelectorType: "static",
-                // Posicionamiento inteligente: Forzamos que se abra hacia ARRIBA
-                position: "above",
-                onReady: function(selectedDates, dateStr, instance) {
-                    // Forzar clases idénticas al input original en el altInput generado por Flatpickr
-                    if (instance.altInput) {
-                        instance.altInput.className = "w-full bg-white border-2 border-slate-200 hover:border-teal-500 rounded-2xl p-3.5 pl-11 pr-10 text-xs font-bold text-slate-800 focus:ring-4 focus:ring-teal-500/10 focus:border-teal-500 outline-none transition-all shadow-xs cursor-pointer";
-                    }
-                }
-            });
-        }
-
-        @if ($errors->any())
-            let mainDiv = document.querySelector('[x-data]');
-            if (mainDiv && mainDiv.__x) {
-                mainDiv.__x.$data.openCreateModal = true;
-            }
-
-            Swal.fire({
-                icon: 'error',
-                title: 'Errores en la Receta',
-                html: `<ul style="text-align: left; font-size: 13px; color: #991b1b; font-weight: 600;">
-                        @foreach ($errors->all() as $error)
-                            <li>• {{ $error }}</li>
-                        @endforeach
-                       </ul>`,
-                confirmButtonColor: '#0d9488',
-                confirmButtonText: 'Entendido'
-            });
-        @endif
-    });
-</script>
+<!-- Acciones de la receta elegida -->
+<div class="rx-acc" x-show="!editando && sel">
+    <a class="rx-btn rx-prim" :href="sel ? sel.pdf : '#'" target="_blank" rel="noopener"><i class="bi bi-printer"></i> Imprimir / PDF <kbd>P</kbd></a>
+    <button type="button" class="rx-btn" @click="duplicar(sel)"><i class="bi bi-copy"></i> Repetir</button>
+    <button type="button" class="rx-btn rx-borrar" @click="eliminar(sel)" aria-label="Eliminar receta"><i class="bi bi-trash3"></i></button>
+</div>

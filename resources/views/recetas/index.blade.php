@@ -1,460 +1,461 @@
 @extends('layouts.admin')
 
+{{--
+    MÓDULO DE RECETAS · MediTrack
+    Lista de recetas por fecha, la hoja de la receta tal como se imprime y el formulario para emitir
+    (recetas/modalRecetas.blade.php). Las recetas que vienen de una consulta llegan con ?consulta_id=ID.
+    Guarda por AJAX: RecetaController responde JSON. El PDF se genera en recetas/pdf.blade.php.
+--}}
+
 @section('content')
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
-<style>
-    /* FORZAR MAYÚSCULAS ÚNICAMENTE EN LOS CAMPOS DE TEXTO QUE ESCRIBE EL USUARIO */
-    input[type="text"], 
-    textarea {
-        text-transform: uppercase !important;
-    }
-
-    @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(15px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    .animate-stagger {
-        animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        opacity: 0;
-    }
-
-    /* ESTILOS DE IMPRESIÓN */
-    @media print {
-        body * {
-            visibility: hidden !important;
-        }
-        #hoja-receta-medica, #hoja-receta-medica * {
-            visibility: visible !important;
-        }
-        #hoja-receta-medica {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 20px !important;
-            box-shadow: none !important;
-            border: none !important;
-            background: white !important;
-        }
-        .no-print {
-            display: none !important;
-        }
-    }
-</style>
-
-<div class="space-y-8 w-full block" x-data="{ 
-    searchQuery: '',
-    viewMode: 'list',
-    openCreateModal: {{ $errors->any() ? 'true' : 'false' }},
-    openPrintModal: false,
-    printReceta: {},
-    medicamentosLista: [
-        { nombre: '', dosis: '', frecuencia: '' }
-    ],
-
-    addMedicamento() {
-        this.medicamentosLista.push({ nombre: '', dosis: '', frecuencia: '' });
-    },
-
-    removeMedicamento(index) {
-        if (this.medicamentosLista.length > 1) {
-            this.medicamentosLista.splice(index, 1);
-        }
-    },
-
-    abrirReceta(receta) {
-        this.printReceta = receta;
-        this.openPrintModal = true;
-    }
-}">
-    
-    <!-- BANNER HERO -->
-    <div class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-teal-800 via-teal-600 to-emerald-600 p-8 text-white shadow-xl shadow-teal-900/10 animate-stagger" style="animation-delay: 0ms;">
-        <div class="absolute -right-10 -top-10 h-64 w-64 rounded-full bg-white/10 blur-3xl pointer-events-none"></div>
-        <div class="absolute right-40 -bottom-20 h-48 w-48 rounded-full bg-emerald-400/20 blur-2xl pointer-events-none"></div>
-
-        <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div class="space-y-2">
-                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-teal-100 text-xs font-semibold backdrop-blur-md">
-                    <i class="bi bi-journal-medical text-emerald-300"></i> Módulo de Consultas
-                </div>
-                <h2 class="text-3xl font-extrabold tracking-tight">Recetas Médicas</h2>
-                <p class="text-sm text-teal-100/90 max-w-xl">
-                    Emite, gestiona e imprime las prescripciones e indicaciones médicas vinculadas a los pacientes.
-                </p>
-            </div>
-
-            <div class="flex items-center gap-3">
-                @if(auth()->user()->tienePermiso('Recetas', 'crear'))
-                    <button @click="openCreateModal = true" type="button" class="group bg-white text-teal-800 hover:bg-teal-50 font-bold px-5 py-3 rounded-2xl text-sm shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2 transform hover:-translate-y-0.5">
-                        <i class="bi bi-plus-circle-fill text-teal-600 group-hover:scale-110 transition-transform duration-300 text-base"></i>
-                        <span>Nueva Receta</span>
-                    </button>
-                @endif
-            </div>
-        </div>
-    </div>
-
-    <!-- TARJETAS DE MÉTRICAS -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-5 animate-stagger" style="animation-delay: 100ms;">
-        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4">
-            <div class="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center text-xl font-bold border border-teal-100">
-                <i class="bi bi-file-earmark-text-fill"></i>
-            </div>
-            <div>
-                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Recetas</p>
-                <h3 class="text-2xl font-bold text-gray-800">{{ $recetas->count() }}</h3>
-            </div>
-        </div>
-
-        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4">
-            <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-xl font-bold border border-rose-100">
-                <i class="bi bi-person-check-fill"></i>
-            </div>
-            <div>
-                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Pacientes Prescritos</p>
-                <h3 class="text-2xl font-bold text-gray-800">
-                    {{ $recetas->pluck('paciente_id')->unique()->count() }}
-                </h3>
-            </div>
-        </div>
-
-        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4">
-            <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl font-bold border border-emerald-100">
-                <i class="bi bi-check-circle-fill"></i>
-            </div>
-            <div>
-                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Estado del Registro</p>
-                <span class="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 mt-1">
-                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Al Día
-                </span>
-            </div>
-        </div>
-    </div>
-
-    <!-- TABLA DE RECETAS -->
-    <div class="bg-white rounded-3xl border border-gray-200/80 shadow-sm overflow-hidden animate-stagger" style="animation-delay: 200ms;">
-        
-        <div class="p-6 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-50 via-teal-50/20 to-transparent">
-            <div>
-                <h3 class="font-extrabold text-gray-800 text-lg">Historial de Recetas Emitidas</h3>
-                <p class="text-xs text-gray-500">Listado general de prescripciones médicas</p>
-            </div>
-
-            <div class="flex items-center gap-3 w-full md:w-auto">
-                <div class="relative w-full md:w-80">
-                    <i class="bi bi-search absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
-                    <input type="text" x-model="searchQuery" placeholder="Buscar por paciente, médico o folio..." class="w-full pl-9 pr-4 py-2.5 rounded-2xl border border-gray-200 bg-white text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500 focus:outline-none transition-all uppercase">
-                </div>
-
-                <div class="flex items-center bg-slate-100 p-1 rounded-2xl border border-gray-200 shrink-0">
-                    <button @click="viewMode = 'list'" type="button" :class="viewMode === 'list' ? 'bg-white text-teal-700 shadow-xs' : 'text-gray-400 hover:text-gray-600'" class="p-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1" title="Vista de Tabla">
-                        <i class="bi bi-list-task text-base"></i>
-                    </button>
-                    <button @click="viewMode = 'grid'" type="button" :class="viewMode === 'grid' ? 'bg-white text-teal-700 shadow-xs' : 'text-gray-400 hover:text-gray-600'" class="p-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1" title="Vista de Tarjetas">
-                        <i class="bi bi-grid-fill text-base"></i>
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- TABLA -->
-        <div x-show="viewMode === 'list'" class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-                <thead class="bg-slate-50 text-gray-400 font-bold uppercase tracking-wider border-b border-gray-100">
-                    <tr>
-                        <th class="p-4">N° RECETA</th>
-                        <th class="p-4">PACIENTE</th>
-                        <th class="p-4">DIAGNÓSTICO</th>
-                        <th class="p-4">MÉDICO</th>
-                        <th class="p-4">FECHA</th>
-                        <th class="p-4 text-center">ACCIONES</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100 text-gray-700 font-semibold">
-                    @forelse ($recetas as $rec)
-                        @php
-                            $nombrePac = $rec->paciente->nombre_completo ?? trim(($rec->paciente->nombre ?? 'N/A') . ' ' . ($rec->paciente->apellido ?? ''));
-                            $nombreMed = 'Dr. ' . ($rec->personal->nombre_completo ?? auth()->user()->nombre_completo);
-                            $folio = '#' . str_pad($rec->id, 5, '0', STR_PAD_LEFT);
-                            $fechaFmt = \Carbon\Carbon::parse($rec->fecha_emision ?? $rec->fecha)->format('d/m/Y');
-                        @endphp
-                        <tr class="hover:bg-teal-50/20 transition-colors" x-show="!searchQuery || '{{ strtolower($folio) }}'.includes(searchQuery.toLowerCase()) || '{{ strtolower($nombrePac) }}'.includes(searchQuery.toLowerCase()) || '{{ strtolower($nombreMed) }}'.includes(searchQuery.toLowerCase()) || '{{ strtolower($rec->diagnostico ?? '') }}'.includes(searchQuery.toLowerCase())">
-                            <td class="p-4 font-bold text-teal-800">{{ $folio }}</td>
-                            <td class="p-4 font-bold text-gray-800 uppercase">{{ $nombrePac }}</td>
-                            <td class="p-4 text-teal-800 font-extrabold truncate max-w-[180px] uppercase" title="{{ $rec->diagnostico ?? 'Sin diagnóstico' }}">
-                                {{ $rec->diagnostico ?? 'N/D' }}
-                            </td>
-                            <td class="p-4 text-gray-600 uppercase">{{ $nombreMed }}</td>
-                            <td class="p-4 text-gray-500">{{ $fechaFmt }}</td>
-                            <td class="p-4 text-center">
-                                <div class="flex items-center justify-center gap-1.5">
-                                    <button type="button" @click="abrirReceta({{ json_encode($rec->load(['paciente', 'personal', 'detalles'])) }})" class="bg-teal-600 hover:bg-teal-700 text-white p-2 px-3.5 rounded-xl text-xs font-bold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5" title="Ver Receta">
-                                        <i class="bi bi-eye-fill text-sm"></i>
-                                        <span>Ver Receta</span>
-                                    </button>
-
-                                    @if(auth()->user()->tienePermiso('Recetas', 'eliminar'))
-                                        <button type="button" onclick="confirmarEliminacionReceta({{ $rec->id }})" class="bg-rose-500 hover:bg-rose-600 text-white p-2 rounded-xl text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center justify-center" title="Eliminar Receta">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    @endif
-                                </div>
-                            </td>
-                        </tr>
-                    @empty
-                        <tr>
-                            <td colspan="6" class="p-12 text-center text-gray-400 italic">
-                                <i class="bi bi-prescription2 text-4xl mb-2 block text-gray-300"></i>
-                                No hay recetas registradas en el sistema.
-                            </td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
-
-        <!-- TARJETAS GRID -->
-        <div x-show="viewMode === 'grid'" class="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            @forelse ($recetas as $rec)
-                @php
-                    $nombrePac = $rec->paciente->nombre_completo ?? trim(($rec->paciente->nombre ?? 'N/A') . ' ' . ($rec->paciente->apellido ?? ''));
-                    $nombreMed = 'Dr. ' . ($rec->personal->nombre_completo ?? auth()->user()->nombre_completo);
-                    $folio = '#' . str_pad($rec->id, 5, '0', STR_PAD_LEFT);
-                    $fechaFmt = \Carbon\Carbon::parse($rec->fecha_emision ?? $rec->fecha)->format('d/m/Y');
-                    $inicial = strtoupper(substr($nombrePac, 0, 2));
-                @endphp
-                
-                <div x-show="!searchQuery || '{{ strtolower($folio) }}'.includes(searchQuery.toLowerCase()) || '{{ strtolower($nombrePac) }}'.includes(searchQuery.toLowerCase()) || '{{ strtolower($nombreMed) }}'.includes(searchQuery.toLowerCase())" 
-                     class="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs hover:border-teal-500 hover:shadow-md transition-all flex flex-col justify-between space-y-4">
-                    
-                    <div class="space-y-3">
-                        <div class="flex items-center justify-between border-b border-gray-100 pb-3">
-                            <span class="text-xs font-extrabold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-200">
-                                {{ $folio }}
-                            </span>
-                            <span class="text-xs text-gray-400 font-bold flex items-center gap-1">
-                                <i class="bi bi-calendar3"></i> {{ $fechaFmt }}
-                            </span>
-                        </div>
-
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-2xl bg-teal-100 text-teal-800 font-black flex items-center justify-center text-xs shrink-0">
-                                {{ $inicial }}
-                            </div>
-                            <div class="truncate">
-                                <h4 class="font-bold text-gray-800 text-xs truncate uppercase">{{ $nombrePac }}</h4>
-                                <p class="text-[11px] text-teal-700 font-extrabold truncate uppercase">{{ $rec->diagnostico ?? 'Sin diagnóstico' }}</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
-                        <button type="button" @click="abrirReceta({{ json_encode($rec->load(['paciente', 'personal', 'detalles'])) }})" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition">
-                            <i class="bi bi-eye-fill"></i> Ver Receta
-                        </button>
-                        @if(auth()->user()->tienePermiso('Recetas', 'eliminar'))
-                            <button onclick="confirmarEliminacionReceta({{ $rec->id }})" type="button" class="bg-rose-500 hover:bg-rose-600 text-white p-2 rounded-xl text-xs font-semibold shadow-xs transition" title="Eliminar">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        @endif
-                    </div>
-                </div>
-            @empty
-                <div class="col-span-full p-8 text-center text-gray-400 italic">
-                    No hay recetas registradas en el sistema.
-                </div>
-            @endforelse
-        </div>
-    </div>
-
-    <!-- HOJA CLÍNICA Y DE IMPRESIÓN OFICIAL -->
-    <template x-teleport="body">
-        <div x-show="openPrintModal" 
-             x-transition:enter="transition ease-out duration-300"
-             x-transition:enter-start="opacity-0 scale-95"
-             x-transition:enter-end="opacity-100 scale-100"
-             x-transition:leave="transition ease-in duration-200"
-             x-transition:leave-start="opacity-100 scale-100"
-             x-transition:leave-end="opacity-0 scale-95"
-             class="fixed inset-0 z-[9999] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4" x-cloak>
-            
-            <div class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full border border-teal-100 flex flex-col overflow-hidden my-auto max-h-[92vh]">
-                
-                <!-- CÓDIGO NUEVO (Abre el PDF generado por DomPDF en pestaña nueva) -->
-<a :href="'/recetas/' + printReceta.id + '/pdf'" 
-   target="_blank" 
-   class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-xs shadow-sm transition-all flex items-center gap-2 cursor-pointer decoration-none">
-    <i class="bi bi-printer-fill"></i>
-    <span>Imprimir Ahora</span>
-</a>
-
-                <!-- HOJA IMPRESA DE RECETA -->
-                <div id="hoja-receta-medica" class="p-8 sm:p-10 space-y-6 text-slate-800 bg-white overflow-y-auto">
-                    
-                    @php
-    $clinicaData = \App\Models\Clinica::first();
-    $configData = \App\Models\Configuracion::pluck('valor', 'clave')->toArray();
+@php
+    $datosVista = array_merge($datosRecetas ?? ['recetas' => [], 'pacientes' => [], 'medicos' => [], 'productos' => [], 'prefill' => null, 'clinica' => ['nombre' => 'MediTrack']], [
+        'url'  => url('recetas'),
+        'csrf' => csrf_token(),
+    ]);
 @endphp
 
-<!-- REEMPLAZO DINÁMICO CON DATOS DE LA CLÍNICA -->
-<div class="border-b-2 border-teal-600 pb-4 flex justify-between items-start gap-4">
-    <div>
-        <!-- Nombre de la Clínica -->
-        <h2 class="text-xl font-black text-teal-800 uppercase tracking-tight">
-            {{ $clinicaData->nombre ?? ($clinica->nombre ?? 'MEDITRACK') }}
-        </h2>
-        
-        <!-- Dirección -->
-        <p class="text-xs text-slate-600 font-bold mt-0.5">
-            {{ $clinicaData->direccion ?? ($clinica->direccion ?? 'DIRECCIÓN NO REGISTRADA') }}
+<div class="rx" x-data="modRecetas()" :class="{ 'editando': editando }" @keydown.window="tecla($event)">
+
+    <!-- BÚSQUEDA Y ALTA -->
+    <header class="rx-top">
+        <label class="rx-cmd">
+            <i class="bi bi-search" aria-hidden="true"></i>
+            <input type="search" x-ref="buscar" x-model.debounce.150ms="q" autocomplete="off" placeholder="Busca por paciente, folio, diagnóstico o medicamento" aria-label="Buscar receta">
+            <kbd aria-hidden="true">/</kbd>
+        </label>
+        <button type="button" class="rx-dark" @click="nueva()">Nueva receta <kbd>N</kbd></button>
+    </header>
+
+    <!-- CIFRA -->
+    <section class="rx-cab">
+        <div class="rx-g">
+            <b class="t" x-text="delMes.length">0</b>
+            <span><em x-text="delMes.length === 1 ? 'receta este mes' : 'recetas este mes'"></em><span x-text="nombreMes"></span></span>
+        </div>
+        <p class="rx-res t">
+            <span><b x-text="R.filter(r => r.fecha === hoy).length"></b> hoy</span>
+            <span><b x-text="delMes.reduce((n, r) => n + r.detalles.length, 0)"></b> medicamentos recetados</span>
+            <span x-show="masRecetado"><span>Más recetado:</span> <b x-text="masRecetado"></b></span>
         </p>
+    </section>
 
-        <!-- Teléfono, Correo y RUT/RFC -->
-        <p class="text-[10px] text-slate-500 font-medium mt-0.5">
-            TEL: {{ $clinicaData->telefono ?? ($clinica->telefono ?? 'S/N') }}
-            @if(!empty($configData['email']) || !empty($clinicaData->email) || !empty($clinica->email))
-                <span class="mx-1">|</span> EMAIL: {{ $configData['email'] ?? ($clinicaData->email ?? $clinica->email) }}
-            @endif
-            @if(!empty($clinicaData->rut_empresa) || !empty($clinica->rut_empresa))
-                <span class="mx-1">|</span> RFC/RUT: {{ $clinicaData->rut_empresa ?? $clinica->rut_empresa }}
-            @endif
-        </p>
-    </div>
-
-    <div class="text-right shrink-0">
-        <span class="px-3 py-1 bg-teal-50 text-teal-700 font-bold text-xs rounded-full border border-teal-200 block mb-1">
-            RECETA: #<span x-text="String(recetaSeleccionada?.id || 0).padStart(5, '0')"></span>
-        </span>
-        <span class="text-[11px] font-semibold text-slate-400">
-            Fecha: <span x-text="recetaSeleccionada?.fecha_emision || ''"></span>
-        </span>
-    </div>
-</div>
-
-                    <!-- INFORMACIÓN DEL MÉDICO Y PACIENTE -->
-                    <div class="grid grid-cols-2 gap-4 bg-slate-50/80 p-4 rounded-2xl border border-slate-200 text-xs">
-                        <div class="space-y-1">
-                            <p class="text-[10px] font-black uppercase text-teal-700">Médico Prescriptor</p>
-                            <p class="font-black text-slate-900 text-sm uppercase" x-text="printReceta.personal ? `Dr. ${printReceta.personal.nombre_completo}` : 'Dr. {{ auth()->user()->nombre_completo }}'"></p>
-                            <p class="text-[11px] text-slate-600 font-bold uppercase" x-text="`Céd. Prof: ${printReceta.personal?.cedula_profesional || printReceta.personal?.cedula || '12345678'}`"></p>
-                            <p class="text-[11px] text-slate-500 font-semibold uppercase" x-text="printReceta.personal?.especialidad || 'Médico Cirujano y Partero'"></p>
-                        </div>
-
-                        <div class="space-y-1 border-l border-slate-200 pl-4">
-                            <p class="text-[10px] font-black uppercase text-teal-700">Paciente Atendido</p>
-                            <p class="font-black text-slate-900 text-sm uppercase" x-text="printReceta.paciente ? (printReceta.paciente.nombre_completo || `${printReceta.paciente.nombre || ''} ${printReceta.paciente.apellido || ''}`) : 'N/A'"></p>
-                            <p class="text-[11px] text-slate-500 font-semibold uppercase" x-text="printReceta.paciente?.rut ? `CURP: ${printReceta.paciente.rut}` : 'Expediente Verificado'"></p>
-                        </div>
-                    </div>
-
-                    <!-- DIAGNÓSTICO CLÍNICO RESALTADO -->
-                    <div class="p-4 bg-teal-50 border-2 border-teal-200 rounded-2xl text-xs space-y-1">
-                        <span class="text-[10px] font-black uppercase text-teal-800 flex items-center gap-1.5">
-                            <i class="bi bi-stethoscope"></i> Diagnóstico Clínico:
-                        </span>
-                        <p class="font-black text-slate-900 text-sm uppercase" x-text="printReceta.diagnostico ? printReceta.diagnostico : 'No especificado en la consulta'"></p>
-                    </div>
-
-                    <!-- PRESCRIPCIÓN FARMACOLÓGICA -->
-                    <div class="space-y-3">
-                        <h4 class="text-[11px] font-black uppercase tracking-wider text-teal-800 border-b border-slate-100 pb-1 flex items-center gap-1.5">
-                            <i class="bi bi-capsule"></i> Prescripción de Medicamentos
-                        </h4>
-                        <div class="space-y-2">
-                            <template x-for="(d, idx) in printReceta.detalles" :key="idx">
-                                <div class="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-start gap-3">
-                                    <span class="w-6 h-6 rounded-lg bg-teal-700 text-white flex items-center justify-center font-black text-xs shrink-0" x-text="idx + 1"></span>
-                                    <div class="space-y-0.5 text-xs">
-                                        <p class="font-black text-slate-900 text-sm uppercase" x-text="d.medicamento"></p>
-                                        <p class="text-teal-800 font-bold uppercase" x-text="`Dosis: ${d.dosis || 'Según indicaciones'} | Frecuencia: ${d.frecuencia || 'N/A'}`"></p>
-                                        <p class="text-slate-500 font-semibold uppercase" x-show="d.duracion" x-text="`Duración: ${d.duracion}`"></p>
-                                    </div>
-                                </div>
-                            </template>
-                        </div>
-                    </div>
-
-                    <!-- INDICACIONES GENERALES -->
-                    <template x-if="printReceta.indicaciones_generales">
-                        <div class="space-y-1 pt-1">
-                            <h4 class="text-[10px] font-black uppercase tracking-wider text-slate-400">Indicaciones y Recomendaciones Generales</h4>
-                            <p class="text-xs text-slate-700 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 font-semibold leading-relaxed uppercase" x-text="printReceta.indicaciones_generales"></p>
-                        </div>
+    <section class="rx-cuerpo">
+        <!-- LISTA POR FECHA -->
+        <div class="rx-lista-r" aria-label="Recetas">
+            <template x-for="g in grupos" :key="'g' + g.fecha">
+                <div class="rx-grupo">
+                    <h3 x-text="tituloFecha(g.fecha)"></h3>
+                    <template x-for="r in g.recetas" :key="'r' + r.id">
+                        <button type="button" class="rx-fila" :class="{ 'sel': sel && sel.id === r.id }" @click="seleccionar(r)">
+                            <span class="rx-folio t" x-text="'#' + r.folio"></span>
+                            <span class="rx-fila-n">
+                                <b><span x-text="r.paciente"></span><i x-show="r.alergias.length" class="bi bi-exclamation-triangle-fill" :title="'Alergias: ' + r.alergias.join(', ')"></i></b>
+                                <small x-text="r.diagnostico"></small>
+                            </span>
+                            <span class="rx-fila-m"><b class="t" x-text="r.detalles.length"></b><small x-text="r.detalles.length === 1 ? 'medicamento' : 'medicamentos'"></small></span>
+                        </button>
                     </template>
-
-                    <!-- FIRMA Y SELLO MÉDICO -->
-                    <div class="pt-12 flex justify-center text-center">
-                        <div class="w-72 border-t-2 border-slate-300 pt-2 space-y-1">
-                            <p class="font-black text-xs text-slate-800 uppercase" x-text="printReceta.personal ? `Dr. ${printReceta.personal.nombre_completo}` : 'Dr. {{ auth()->user()->nombre_completo }}'"></p>
-                            <p class="text-[10px] font-extrabold text-slate-600 uppercase" x-text="`Céd. Prof. ${printReceta.personal?.cedula_profesional || printReceta.personal?.cedula || '12345678'}`"></p>
-                            <p class="text-[10px] font-bold text-slate-400 uppercase">Firma y Cédula Profesional</p>
-                        </div>
-                    </div>
-
                 </div>
+            </template>
+            <div class="rx-vacio" x-show="!grupos.length">
+                <b x-text="q.trim() ? 'Ninguna receta coincide' : 'Aún no hay recetas'"></b>
+                <p x-text="q.trim() ? 'Prueba con otro nombre, folio o medicamento.' : 'Emite la primera con «Nueva receta» o al finalizar una consulta.'"></p>
             </div>
         </div>
-    </template>
 
-    @include('recetas.modalRecetas')
+        <!-- HOJA DE RECETA (frente) Y FORMULARIO (reverso) -->
+        <aside class="rx-lado">
+            @include('recetas.modalRecetas')
+        </aside>
+    </section>
 </div>
 
+<script type="application/json" id="rx-datos">{!! json_encode($datosVista, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) !!}</script>
+
+@verbatim
+<style>
+.rx {
+    --tinta: #0b1e1c; --texto: #2c3d3a; --media: #56625f; --linea: #dbe4e1; --linea2: #edf2f1; --niebla: #eef3f1; --papel: #fff;
+    --cred: #0b5a54; --cred2: #073f3b; --foil: #a6efe2; --teal: #0e7c72; --velo: #e2efec;
+    --rosa: #c8102e; --rosav: #fdecef; --ambar: #9a5800; --ambarv: #fdf3e1; --verde: #08734f;
+    --e: cubic-bezier(.2, .8, .2, 1); --flip: cubic-bezier(.3, .7, .1, 1);
+    --disp: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif; --ui: 'Geist', ui-sans-serif, system-ui, sans-serif; --mono: 'Geist Mono', ui-monospace, monospace;
+    container-type: inline-size; font: 450 14px/1.45 var(--ui); color: var(--texto);
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px;
+}
+.rx * { box-sizing: border-box; }
+.rx :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.rx button { cursor: pointer; }
+.rx .t { font-variant-numeric: tabular-nums; }
+.rx kbd { font: 600 11px var(--mono); border: 1px solid var(--linea); border-radius: 6px; padding: 1px 6px; color: var(--media); }
+.rx .may { text-transform: uppercase; }
+.rx .may::placeholder { text-transform: none; }
+[x-cloak] { display: none !important; }
+
+/* Búsqueda */
+.rx-top { display: flex; align-items: center; gap: 12px; }
+.rx-cmd { flex: 1; min-width: 0; max-width: 760px; height: 50px; border-radius: 14px; background: var(--papel); border: 1px solid var(--linea); box-shadow: 0 12px 30px -22px rgba(11, 30, 28, .45); display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; }
+.rx-cmd > .bi { color: var(--cred); }
+.rx-cmd input { flex: 1; min-width: 0; border: 0; outline: 0 !important; box-shadow: none !important; background: none; font: 450 15px var(--ui); color: var(--tinta); }
+.rx-cmd input::placeholder { color: var(--media); }
+.rx-dark { height: 44px; border-radius: 12px; background: var(--tinta); color: #fff; font: 600 14px var(--ui); display: flex; align-items: center; gap: 10px; padding: 0 12px 0 16px; white-space: nowrap; }
+.rx-dark kbd { border-color: rgba(255, 255, 255, .25); color: #cfe; }
+@container (max-width: 639px) { .rx-cmd > kbd, .rx-dark kbd { display: none; } .rx-dark { padding: 0 14px; } }
+
+/* Cifra */
+.rx-cab { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 26px; }
+.rx-g { display: flex; align-items: flex-end; gap: 12px; }
+.rx-g > b { font: 800 72px/.8 var(--disp); font-stretch: 78%; letter-spacing: -.04em; color: var(--tinta); }
+.rx-g > span { display: flex; flex-direction: column; font-size: 14px; color: var(--media); line-height: 1.25; }
+.rx-g em { font-style: normal; font: 700 19px/1.1 var(--disp); color: var(--tinta); text-transform: none; }
+.rx-res { display: flex; flex-wrap: wrap; gap: 4px 18px; padding-bottom: 2px; font-size: 13.5px; }
+.rx-res b { font-weight: 650; color: var(--tinta); }
+.rx-res span span { color: var(--media); }
+
+/* Cuerpo */
+.rx-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+@container (min-width: 960px) { .rx-cuerpo { grid-template-columns: minmax(0, 1fr) 440px; } }
+.rx-lado { display: grid; gap: 12px; }
+@container (min-width: 960px) { .rx-lado { position: sticky; top: 96px; } }
+
+/* Lista */
+.rx-lista-r { display: grid; gap: 14px; transition: opacity .3s, filter .3s; }
+.rx-grupo h3 { padding: 0 10px 4px; font-size: 12.5px; font-weight: 600; color: var(--media); }
+.rx-grupo h3:first-letter { text-transform: uppercase; }
+.rx-fila { width: 100%; display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px; border-radius: 12px; text-align: left; background: none; transition: background .15s; }
+.rx-fila:hover { background: rgba(11, 90, 84, .05); }
+.rx-fila.sel { background: var(--papel); box-shadow: 0 1px 0 var(--linea), 0 8px 18px -14px rgba(11, 30, 28, .55); }
+.rx-folio { font: 500 13px var(--mono); color: var(--cred); }
+.rx-fila-n { min-width: 0; display: flex; flex-direction: column; }
+.rx-fila-n b { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rx-fila-n b span { overflow: hidden; text-overflow: ellipsis; }
+.rx-fila-n b .bi { flex: none; font-size: 11px; color: var(--rosa); }
+.rx-fila-n small { font-size: 12.5px; color: var(--media); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
+.rx-fila-m { display: flex; flex-direction: column; align-items: flex-end; }
+.rx-fila-m b { font: 600 15px var(--mono); color: var(--tinta); }
+.rx-fila-m small { font-size: 11.5px; color: var(--media); }
+.rx-vacio { padding: 40px 16px; text-align: center; border: 1.5px dashed var(--linea); border-radius: 18px; color: var(--media); }
+.rx-vacio b { display: block; font: 700 19px var(--disp); color: var(--tinta); margin-bottom: 4px; }
+@container (max-width: 559px) { .rx-fila { grid-template-columns: minmax(0, 1fr) auto; } .rx-folio { display: none; } }
+
+/* Hoja: frente (papel) y reverso (formulario) */
+.rx-hoja { perspective: 1600px; }
+.rx-hoja-in { position: relative; height: 560px; transform-style: preserve-3d; transition: transform .45s var(--flip), height .3s var(--e); }
+.rx-hoja.volteada .rx-hoja-in { transform: rotateY(180deg); height: 760px; }
+.rx-cara { position: absolute; inset: 0; border-radius: 18px; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+
+.rx-papel { background: #fffefb; border: 1px solid var(--linea); box-shadow: 0 30px 50px -36px rgba(11, 30, 28, .6), 0 1px 0 rgba(11, 30, 28, .04); }
+.rx-papel:before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 6px; background: var(--cred); }
+.rx-doc { position: relative; height: 100%; display: flex; flex-direction: column; padding: 22px 24px 18px; overflow-y: auto; scrollbar-width: thin; }
+.rx-doc-h { display: flex; justify-content: space-between; gap: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--linea); }
+.rx-doc-h b { font: 750 18px/1.1 var(--disp); color: var(--cred); }
+.rx-doc-h small { display: block; margin-top: 3px; font-size: 12px; color: var(--media); }
+.rx-doc-h p { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+.rx-doc-h p span { font-size: 11.5px; color: var(--media); }
+.rx-doc-h p b { font: 600 17px var(--mono); color: var(--tinta); }
+.rx-doc-h p small { font-size: 12px; }
+.rx-doc-p { display: grid; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--linea2); }
+.rx-doc-p p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.rx-doc-p p > span:first-child { width: 78px; font-size: 12px; color: var(--media); }
+.rx-doc-p b { font-weight: 650; color: var(--tinta); }
+.rx-doc-p em { font-style: normal; font-size: 13px; color: var(--media); }
+.rx-dx { flex: 1; min-width: 0; text-transform: uppercase; font-size: 13.5px; }
+.rx-alg { align-self: flex-start; display: inline-flex !important; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--rosav); color: var(--rosa); font-size: 12.5px; font-weight: 650; }
+.rx-doc-rx { position: relative; flex: 1; padding: 14px 0 6px 48px; }
+.rx-simbolo { position: absolute; left: 0; top: 8px; font: 700 40px/1 var(--disp); color: var(--cred); }
+.rx-doc-rx ol { display: grid; gap: 12px; counter-reset: med; }
+.rx-doc-rx li { list-style: none; counter-increment: med; position: relative; }
+.rx-doc-rx li:before { content: counter(med) "."; position: absolute; left: -18px; font: 600 13px var(--mono); color: var(--media); }
+.rx-doc-rx li b { display: block; font-size: 14.5px; font-weight: 700; color: var(--tinta); text-transform: uppercase; }
+.rx-doc-rx li span { font-size: 13px; color: var(--texto); text-transform: uppercase; }
+.rx-doc-ind { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; margin-top: 6px; border-radius: 10px; background: var(--niebla); font-size: 13px; text-transform: uppercase; }
+.rx-doc-ind span:first-child { font-size: 11.5px; color: var(--media); text-transform: none; }
+.rx-doc-f { display: flex; flex-direction: column; align-items: center; margin-top: 16px; padding-top: 8px; }
+.rx-doc-f i { width: 200px; height: 1px; background: var(--texto); margin-bottom: 6px; }
+.rx-doc-f b { font-size: 13.5px; font-weight: 650; color: var(--tinta); }
+.rx-doc-f small { font-size: 12px; color: var(--media); }
+.rx-doc-vacio { align-items: center; justify-content: center; text-align: center; color: var(--media); }
+.rx-doc-vacio .rx-simbolo { position: static; font-size: 56px; color: #c9d6d2; margin-bottom: 8px; }
+.rx-doc-vacio b { font: 700 19px var(--disp); color: var(--tinta); }
+
+.rx-form { transform: rotateY(180deg); background: #fbfdfc; border: 1px solid var(--linea); box-shadow: 0 24px 44px -30px rgba(11, 30, 28, .55); display: flex; flex-direction: column; }
+.rx-form-k { padding: 16px 18px 8px; font: 500 12px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--cred); }
+.rx-form-c { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 18px 14px; display: flex; flex-direction: column; gap: 12px; scrollbar-width: thin; }
+.rx-form-c > * { flex-shrink: 0; }
+.rx-campo { position: relative; display: flex; flex-direction: column; gap: 5px; }
+.rx-campo > span { font-size: 13px; font-weight: 600; color: var(--tinta); }
+.rx-campo > span em { font-style: normal; font-weight: 400; color: var(--media); }
+.rx-campo input, .rx-campo textarea { width: 100%; border: 1px solid var(--linea); border-radius: 10px; padding: 0 10px; height: 40px; font: 500 14px var(--ui); color: var(--tinta); background: var(--papel); outline: 0; transition: border-color .15s, box-shadow .15s; }
+.rx-campo textarea { height: auto; padding: 8px 10px; resize: vertical; line-height: 1.4; }
+.rx-campo input:focus, .rx-campo textarea:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(14, 124, 114, .15); }
+.rx-campo input:disabled { background: var(--niebla); }
+.rx-campo input.elegido::placeholder { color: var(--tinta); font-weight: 600; }
+.rx-campo.mal > input, .rx-campo.mal > textarea, .rx-campo.mal > .rx-pick { border-color: var(--rosa); }
+.rx-campo > small { font-size: 12px; font-weight: 500; color: var(--rosa); }
+.rx-pick { height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 12px; border: 1px solid var(--linea); border-radius: 10px; background: var(--papel); font: 500 14px var(--ui); color: var(--tinta); text-align: left; }
+.rx-pick span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rx-pick .bi { color: var(--cred); transition: transform .2s; }
+.rx-pick.abierto { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(14, 124, 114, .15); }
+.rx-pick.abierto .bi { transform: rotate(180deg); }
+.rx-lista { margin-top: 2px; padding: 4px; max-height: 220px; overflow-y: auto; background: var(--papel); border: 1px solid var(--linea); border-radius: 12px; box-shadow: 0 16px 32px -22px rgba(11, 30, 28, .55); }
+.rx-lista button { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; padding: 7px 9px; border-radius: 8px; text-align: left; background: none; }
+.rx-lista button:hover, .rx-lista button.on { background: var(--velo); }
+.rx-lista b { font-size: 13px; font-weight: 600; color: var(--tinta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rx-lista small { grid-column: 1; font-size: 11.5px; color: var(--media); }
+.rx-lista small.agotado { color: var(--ambar); }
+.rx-lista em { grid-column: 2; grid-row: 1 / 3; align-self: center; font-style: normal; font-size: 11.5px; font-weight: 650; color: var(--rosa); background: var(--rosav); border-radius: 999px; padding: 1px 8px; }
+.rx-alg-f { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 9px; background: var(--rosav); color: var(--rosa); font-size: 12.5px; font-weight: 650; text-transform: uppercase; }
+.rx-cons { border: 1px solid var(--linea); border-radius: 12px; background: var(--papel); padding: 8px 12px; font-size: 13px; }
+.rx-cons button { display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; font-weight: 600; color: var(--cred); }
+.rx-cons .gira { transform: rotate(180deg); }
+.rx-cons p { margin-top: 6px; color: var(--texto); }
+
+.rx-med { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; padding: 10px; border-radius: 12px; border: 1px solid var(--linea); background: var(--papel); }
+.rx-med.alerta { border-color: #f1a7b4; background: #fff8f9; }
+.rx-med-n { font: 600 13px/40px var(--mono); color: var(--media); text-align: center; }
+.rx-med-c { position: relative; min-width: 0; display: grid; gap: 6px; }
+.rx-med-c input { height: 36px; }
+.rx-med-c .rx-med-nom { height: 40px; font-weight: 600; }
+.rx-sug { position: absolute; left: 0; right: 0; top: 42px; z-index: 5; }
+.rx-med-d { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 6px; }
+.rx-med-alg { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; color: var(--rosa); }
+.rx-rapidos { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.rx-rapidos i { width: 1px; height: 16px; background: var(--linea); margin: 0 4px; }
+.rx-rapidos button { height: 26px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--linea2); background: var(--niebla); font: 500 12px var(--mono); color: var(--texto); }
+.rx-rapidos button.on { background: var(--velo); border-color: var(--cred); color: var(--cred); }
+.rx-med-x { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: none; color: var(--media); }
+.rx-med-x:hover { background: var(--rosav); color: var(--rosa); }
+.rx-mas { height: 38px; border-radius: 10px; border: 1.5px dashed var(--linea); background: none; font: 600 13.5px var(--ui); color: var(--cred); }
+.rx-mas:hover { border-color: var(--cred); background: var(--papel); }
+.rx-form-f { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--linea2); background: var(--papel); }
+
+/* Columnas del formulario (en angosto se apilan como siempre) */
+.rx-form-a, .rx-form-b { display: contents; }
+
+/* Emitir a lo ancho: como al crear un paciente, la hoja ocupa toda la vista */
+@container (min-width: 640px) {
+    .rx.editando .rx-cuerpo { grid-template-columns: minmax(0, 1fr); }
+    .rx.editando .rx-lista-r, .rx.editando .rx-acc { display: none; }
+    .rx.editando .rx-lado { position: static; }
+    .rx.editando .rx-top { opacity: .35; pointer-events: none; }
+    .rx-hoja.volteada .rx-hoja-in { height: 900px; }
+    .rx.editando .rx-form-k { padding: 20px 28px 10px; font-size: 13px; }
+    .rx.editando .rx-form-c { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 4px 28px 18px; align-content: start; }
+    .rx.editando .rx-form-a, .rx.editando .rx-form-b { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    .rx.editando .rx-form-a > *, .rx.editando .rx-form-b > * { flex-shrink: 0; }
+    .rx.editando .rx-form-f { padding: 14px 28px; }
+}
+@container (min-width: 1000px) {
+    .rx-hoja.volteada .rx-hoja-in { height: 720px; }
+    .rx.editando .rx-form-c { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 0 32px; }
+    .rx.editando .rx-form-b { padding-left: 32px; margin-left: -1px; border-left: 1px solid var(--linea2); }
+    .rx.editando .rx-form-a textarea[rows="2"] { min-height: 92px; }
+}
+.rx-msg { flex: 1; min-width: 0; font-size: 12px; color: var(--media); line-height: 1.3; }
+.rx-msg.mal { color: var(--rosa); font-weight: 600; }
+
+/* Botones y acciones */
+.rx-btn { height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; border-radius: 11px; border: 1px solid var(--linea); background: var(--papel); font: 600 14px var(--ui); color: var(--tinta); white-space: nowrap; text-decoration: none; transition: background .15s; }
+.rx-btn:hover { background: #f7faf9; }
+.rx-prim { background: var(--cred); border-color: var(--cred); color: #fff; }
+.rx-prim:hover { background: var(--cred2); }
+.rx-prim:disabled { opacity: .6; }
+.rx-prim kbd { border-color: rgba(255, 255, 255, .3); color: #cfe; }
+.rx-borrar { width: 40px; padding: 0; color: var(--rosa); border-color: #f3c6cf; }
+.rx-borrar:hover { background: var(--rosav); }
+.rx-acc { display: flex; gap: 8px; }
+.rx-acc .rx-prim { flex: 1; }
+
+.rx.editando .rx-lista-r, .rx.editando .rx-cab { opacity: .35; filter: saturate(.6); pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    .rx-hoja-in { transition: none; }
+    .rx-hoja.volteada .rx-hoja-in { transform: none; }
+    .rx-hoja.volteada .rx-papel { visibility: hidden; }
+    .rx-form { transform: none; visibility: hidden; }
+    .rx-hoja.volteada .rx-form { visibility: visible; }
+}
+</style>
+
 <script>
-function confirmarEliminacionReceta(id) {
-    Swal.fire({
-        title: '¿Eliminar receta médica?',
-        html: `Estás a punto de eliminar la receta <b class="text-teal-700">#${String(id).padStart(5, '0')}</b>.<br><span class="text-xs text-rose-500">Esta acción no se puede deshacer.</span>`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#f43f5e',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: '<i class="bi bi-trash-fill"></i> Sí, eliminar',
-        cancelButtonText: 'Cancelar',
-        target: 'body',
-        customClass: {
-            container: 'z-[10050]',
-            popup: 'rounded-3xl p-6 border border-slate-100 shadow-2xl bg-white font-sans',
-            title: 'text-xl font-black text-slate-800',
-            confirmButton: 'px-5 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-95',
-            cancelButton: 'px-5 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all active:scale-95'
-        }
-    }).then((result) => {
-        if (result.isConfirmed) {
-            fetch(`/recetas/${id}`, {
-                method: 'DELETE',
-                headers: {
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                    'Accept': 'application/json'
+function modRecetas() {
+    const D = JSON.parse(document.getElementById('rx-datos').textContent);
+    const URL = D.url, CSRF = D.csrf;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const avisar = (m, t = 'success') => { if (window.notificar) window.notificar(m, t); };
+    const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    let uid = 0;
+    const medVacio = (m = {}) => ({ uid: ++uid, nombre: m.medicamento || m.nombre || '', dosis: m.dosis || '', frecuencia: m.frecuencia || '', duracion: m.duracion || '', sug: false });
+
+    return {
+        R: D.recetas || [], PAC: D.pacientes || [], MED: D.medicos || [], PROD: D.productos || [], PREFILL: D.prefill, CLINICA: D.clinica || { nombre: 'MediTrack' },
+        hoy: iso(new Date()), q: '', sel: null,
+        editando: false, guardando: false, form: {}, errores: {}, mensajeForm: '',
+        bPac: { q: '', abierto: false, i: 0 }, popMed: false, verResumen: false,
+
+        init() {
+            this.$watch('sel', () => window.mtRefresca && mtRefresca('.rx-papel .rx-doc'));
+            this.sel = this.R[0] || null;
+            this.form = this.formNuevo();
+            if (this.PREFILL) {
+                this.form = this.formNuevo({ paciente_id: String(this.PREFILL.paciente_id), personal_id: this.PREFILL.personal_id ? String(this.PREFILL.personal_id) : '', diagnostico: this.PREFILL.diagnostico || '', consulta_id: this.PREFILL.consulta_id });
+                this.$nextTick(() => this.abrirForm());
+                history.replaceState(null, '', location.pathname);
+            }
+        },
+
+        /* ---------- Datos derivados ---------- */
+        get visibles() {
+            const q = norm(this.q);
+            if (!q) return this.R;
+            return this.R.filter(r => norm([r.folio, r.paciente, r.diagnostico, r.medico, ...r.detalles.map(d => d.medicamento)].join(' ')).includes(q));
+        },
+        get grupos() {
+            const g = {};
+            this.visibles.forEach(r => { (g[r.fecha] = g[r.fecha] || []).push(r); });
+            return Object.keys(g).sort().reverse().map(f => ({ fecha: f, recetas: g[f] }));
+        },
+        get delMes() { return this.R.filter(r => r.fecha.slice(0, 7) === this.hoy.slice(0, 7)); },
+        get nombreMes() { const t = new Date(this.hoy + 'T00:00:00').toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }); return t.charAt(0).toUpperCase() + t.slice(1); },
+        get masRecetado() {
+            const c = {};
+            this.delMes.forEach(r => r.detalles.forEach(d => { const k = d.medicamento.split(/\s+/)[0]; c[k] = (c[k] || 0) + 1; }));
+            const top = Object.entries(c).sort((a, b) => b[1] - a[1])[0];
+            return top && top[1] > 1 ? top[0] : '';
+        },
+        tituloFecha(f) {
+            if (f === this.hoy) return 'Hoy';
+            const a = new Date(this.hoy + 'T00:00:00'); a.setDate(a.getDate() - 1);
+            if (f === iso(a)) return 'Ayer';
+            return new Date(f + 'T00:00:00').toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
+        },
+        fechaLarga(f) { return new Date(f + 'T00:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }); },
+        nombrePaciente(id) { const p = this.PAC.find(x => String(x.id) === String(id)); return p ? p.nombre : ''; },
+        nombreMedico(id) { const m = this.MED.find(x => String(x.id) === String(id)); return m ? m.nombre : '—'; },
+
+        /* ---------- Selección ---------- */
+        seleccionar(r) { if (!this.editando) this.sel = r; },
+
+        /* ---------- Formulario ---------- */
+        formNuevo(d = {}) {
+            return Object.assign({ paciente_id: '', personal_id: D.medicoActual ? String(D.medicoActual) : (this.MED.length === 1 ? String(this.MED[0].id) : ''), diagnostico: '', indicaciones_generales: '', consulta_id: null, medicamentos: [medVacio()] }, d);
+        },
+        nueva() { if (this.editando) return; this.form = this.formNuevo(); this.abrirForm(); },
+        duplicar(r) {
+            if (!r || this.editando) return;
+            this.form = this.formNuevo({ paciente_id: String(r.paciente_id), personal_id: r.personal_id ? String(r.personal_id) : '', diagnostico: r.diagnostico || '', indicaciones_generales: r.indicaciones || '', medicamentos: r.detalles.map(d => medVacio(d)) });
+            this.abrirForm();
+        },
+        abrirForm() {
+            this.errores = {}; this.mensajeForm = 'Ctrl+Enter emite la receta'; this.bPac = { q: '', abierto: false, i: 0 }; this.popMed = false; this.verResumen = false;
+            this.editando = true;
+            this.$nextTick(() => { const h = document.querySelector('.rx .rx-hoja'); h && h.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' }); });
+            setTimeout(() => {
+                const el = !this.form.paciente_id ? this.$refs.campoPaciente : (!this.form.diagnostico ? document.querySelector('.rx-form textarea') : document.querySelector('.rx-med-nom'));
+                el && el.focus({ preventScroll: true });
+            }, reduce ? 0 : 450);
+        },
+        cancelar() {
+            this.editando = false; this.guardando = false;
+            this.$nextTick(() => { const b = document.querySelector('.rx-acc .rx-btn'); if (b) b.focus({ preventScroll: true }); else if (document.activeElement) document.activeElement.blur(); });
+        },
+        get pacientesFiltrados() {
+            const q = norm(this.bPac.q);
+            return (q ? this.PAC.filter(p => norm(p.nombre + ' ' + (p.curp || '')).includes(q)) : this.PAC).slice(0, 8);
+        },
+        elegirPaciente(p) { this.form.paciente_id = String(p.id); this.bPac = { q: '', abierto: false, i: 0 }; this.errores.paciente_id = ''; },
+        get alergiasForm() { const p = this.PAC.find(x => String(x.id) === String(this.form.paciente_id)); return p ? p.alergias : []; },
+        alergiaDe(nombre) {
+            const n = norm(nombre); if (n.length < 3) return '';
+            const a = this.alergiasForm.find(x => { const k = norm(x); return k.length >= 3 && (n.includes(k) || k.includes(n.split(/\s+/)[0])); });
+            return a || '';
+        },
+        get hayAlertaAlergia() { return this.editando && this.form.medicamentos.some(m => this.alergiaDe(m.nombre)); },
+        sugerencias(t) {
+            const q = norm(t); if (q.length < 2) return [];
+            return this.PROD.filter(p => norm(p.nombre).includes(q) && norm(p.nombre) !== q).slice(0, 6);
+        },
+        agregarMed() { this.form.medicamentos.push(medVacio()); this.$nextTick(() => { const l = document.querySelectorAll('.rx-med-nom'); l.length && l[l.length - 1].focus(); }); },
+        quitarMed(i) { this.form.medicamentos.splice(i, 1); },
+
+        async emitir() {
+            if (this.guardando) return;
+            const f = this.form, e = {};
+            const meds = f.medicamentos.filter(m => m.nombre.trim());
+            if (!f.paciente_id) e.paciente_id = 'Elige al paciente.';
+            if (!f.personal_id) e.personal_id = 'Elige al médico que firma la receta.';
+            if (!String(f.diagnostico).trim()) e.diagnostico = 'Escribe el diagnóstico.';
+            if (!meds.length) e.medicamentos = 'Agrega al menos un medicamento.';
+            this.errores = e;
+            if (Object.keys(e).length) { this.mensajeForm = 'Revisa los datos marcados.'; window.mtSacudir && mtSacudir('.rx-form-c'); return; }
+            if (this.hayAlertaAlergia) {
+                const r = await Swal.fire({ title: 'Posible alergia', icon: 'warning', iconColor: '#c8102e', html: '<p style="font-size:14px">Un medicamento coincide con una alergia registrada del paciente. ¿Emitir de todos modos?</p>', showCancelButton: true, reverseButtons: true, focusCancel: true, confirmButtonText: 'Emitir de todos modos', cancelButtonText: 'Revisar', confirmButtonColor: '#c8102e', cancelButtonColor: '#0b5a54' });
+                if (!r.isConfirmed) return;
+            }
+            this.guardando = true; this.mensajeForm = 'Emitiendo…';
+            try {
+                const r = await fetch(URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF },
+                    body: JSON.stringify({ paciente_id: f.paciente_id, personal_id: f.personal_id || null, diagnostico: f.diagnostico, indicaciones_generales: f.indicaciones_generales, consulta_id: f.consulta_id, medicamentos: meds.map(m => ({ nombre: m.nombre, dosis: m.dosis, frecuencia: m.frecuencia, duracion: m.duracion })) })
+                });
+                const d = await r.json().catch(() => ({}));
+                if (r.status === 422) {
+                    Object.entries(d.errors || {}).forEach(([k, v]) => { this.errores[k.split('.')[0]] = v[0]; });
+                    this.mensajeForm = d.message || 'Revisa los datos.'; this.guardando = false; window.mtSacudir && mtSacudir('.rx-form-c'); return;
                 }
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    // Dispara la notificación flotante en la esquina superior derecha
-                    window.notificar(data.message || 'La receta ha sido eliminada del sistema.', 'success');
-                    
-                    // Recarga la pantalla tras unos milisegundos para actualizar la lista
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1000);
-                } else {
-                    window.notificar('No se pudo eliminar la receta.', 'error');
-                }
-            })
-            .catch(() => {
-                window.notificar('Ocurrió un error al procesar la solicitud.', 'error');
+                if (!r.ok) throw new Error(r.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (d.message || 'No se pudo emitir la receta.'));
+                this.R.unshift(d.receta); this.sel = this.R[0];
+                this.PREFILL = null; this.cancelar();
+                avisar((d.message || 'Receta emitida.') + ' Ya puedes imprimirla.');
+                this.$nextTick(() => window.mtDestello && mtDestello('.rx-fila.sel'));
+            } catch (err) { this.guardando = false; this.mensajeForm = err.message; avisar(err.message, 'error'); }
+        },
+        eliminar(r) {
+            if (!r) return;
+            Swal.fire({
+                title: '¿Eliminar la receta #' + r.folio + '?', icon: 'warning', iconColor: '#c8102e',
+                html: '<p style="font-size:14px">Se eliminará con todos sus medicamentos. Esta acción no se puede deshacer.</p>',
+                showCancelButton: true, reverseButtons: true, focusCancel: true, confirmButtonText: 'Eliminar receta', cancelButtonText: 'Cancelar', confirmButtonColor: '#c8102e', cancelButtonColor: '#56625f',
+                showLoaderOnConfirm: true,
+                preConfirm: async () => {
+                    try {
+                        const res = await fetch(`${URL}/${r.id}`, { method: 'DELETE', headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF } });
+                        const d = await res.json().catch(() => ({}));
+                        if (!res.ok) throw new Error(res.status === 419 ? 'Tu sesión expiró. Recarga la página.' : (d.message || 'No se pudo eliminar la receta.'));
+                        return d;
+                    } catch (err) { Swal.showValidationMessage(err.message); }
+                },
+                allowOutsideClick: () => !Swal.isLoading()
+            }).then(res => {
+                if (!res.isConfirmed) return;
+                const quitar = () => { const i = this.R.findIndex(x => x.id === r.id); this.R.splice(i, 1); this.sel = this.R[Math.min(i, this.R.length - 1)] || null; };
+                window.mtQuitar ? mtQuitar('.rx-fila.sel', quitar) : quitar();
+                avisar((res.value && res.value.message) || 'Receta eliminada.');
             });
+        },
+
+        /* ---------- Teclado ---------- */
+        tecla(e) {
+            if (this.editando) {
+                if (e.key === 'Escape') { e.preventDefault(); if (this.bPac.abierto || this.popMed || this.form.medicamentos.some(m => m.sug)) { this.bPac.abierto = false; this.popMed = false; this.form.medicamentos.forEach(m => m.sug = false); } else this.cancelar(); }
+                else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.emitir(); }
+                return;
+            }
+            const enCampo = /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.target.isContentEditable;
+            if (enCampo) { if (e.key === 'Escape' && e.target === this.$refs.buscar) { this.q = ''; e.target.blur(); } return; }
+            if (e.ctrlKey || e.metaKey || e.altKey || document.querySelector('.swal2-popup:not(.swal2-toast)') || document.querySelector('.ly-paleta:not([style*="none"])')) return;
+            const l = this.visibles, i = this.sel ? l.findIndex(r => r.id === this.sel.id) : -1;
+            if (e.key === '/') { e.preventDefault(); this.$refs.buscar.focus(); }
+            else if (e.key.toLowerCase() === 'n') { e.preventDefault(); this.nueva(); }
+            else if (e.key.toLowerCase() === 'p' && this.sel) { e.preventDefault(); window.open(this.sel.pdf, '_blank', 'noopener'); }
+            else if (e.key === 'ArrowDown' && l.length) { e.preventDefault(); this.sel = l[Math.min(l.length - 1, i + 1)]; }
+            else if (e.key === 'ArrowUp' && l.length) { e.preventDefault(); this.sel = l[Math.max(0, i - 1)]; }
         }
-    });
+    };
 }
 </script>
+@endverbatim
 @endsection

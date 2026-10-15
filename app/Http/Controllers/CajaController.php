@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\Auth;
 
 class CajaController extends Controller
 {
+    /**
+     * Muestra la pantalla principal de la Caja Central.
+     */
     public function index()
     {
         $ticketsPendientes = TicketVenta::with(['paciente', 'detalles.producto'])
@@ -18,14 +21,18 @@ class CajaController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
-        $cobrosHoy = MovimientoCaja::with(['ticket.paciente'])
-            ->whereDate('created_at', today())
+        // Carga los cobros realizados hoy junto con su ticket completo para poder reimprimir
+        $cobrosHoy = MovimientoCaja::with(['ticket.paciente', 'ticket.detalles.producto'])
+            ->whereDate('created_at', today('America/Mexico_City'))
             ->orderBy('created_at', 'desc')
             ->get();
 
         return view('caja.index', compact('ticketsPendientes', 'cobrosHoy'));
     }
 
+    /**
+     * Busca un ticket por su folio desde el lector de código de barras.
+     */
     public function buscarPorCodigo(string $codigo)
     {
         $codigo = strtoupper(str_replace("'", '-', trim($codigo)));
@@ -46,7 +53,7 @@ class CajaController extends Controller
         }
 
         $mensajes = [
-            'pagado'    => 'ESTE TICKET YA FUE PAGADO.',
+            'pagado'    => 'ESTE TICKET YA FUE PAGADO (PENDIENTE DE ENTREGA EN FARMACIA).',
             'entregado' => 'ESTE TICKET YA FUE PAGADO Y ENTREGADO.',
             'expirado'  => 'EL TICKET HA EXPIRADO. REVALIDAR EN TERMINAL POS.',
         ];
@@ -62,6 +69,10 @@ class CajaController extends Controller
         return response()->json(['status' => 'success', 'ticket' => $ticket]);
     }
 
+    /**
+     * Registra el pago del ticket en la Caja Central.
+     * Cambia a 'pagado' para que pase al área de entrega de Farmacia POS[cite: 1, 7].
+     */
     public function procesarPago(Request $request, $id)
     {
         $request->validate([
@@ -81,10 +92,10 @@ class CajaController extends Controller
                     return ['error' => 'ESTE TICKET YA FUE PROCESADO O CANCELADO.'];
                 }
 
-                // Marca como pagado
+                // 1. Marcar como pagado
                 $ticket->update(['status' => 'pagado']);
 
-                // Registra el ingreso financiero
+                // 2. Registrar el movimiento en la bitácora de Caja
                 MovimientoCaja::create([
                     'ticket_id'   => $ticket->id,
                     'user_id'     => Auth::id() ?? 1,
@@ -103,7 +114,7 @@ class CajaController extends Controller
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'PAGO REGISTRADO CORRECTAMENTE. TICKET LISTO PARA SURTIR EN POS.',
+                'message' => 'PAGO REGISTRADO CORRECTAMENTE. TICKET LISTO PARA SURTIR EN FARMACIA/POS.',
                 'ticket'  => $resultado['ticket'],
             ]);
 
