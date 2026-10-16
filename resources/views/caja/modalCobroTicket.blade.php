@@ -1,137 +1,74 @@
-<!-- MODAL DE COBRO / RECIBO OFICIAL PAGADO -->
+{{-- COMPROBANTE DE PAGO: vista previa en papel térmico e impresión (solo se imprime #comprobante-oficial-pago) --}}
+{{-- Usa de caja/index: openTicketPagadoModal, ticketCobrado, dinero(), titulo(), barras() e imprimirComprobante() --}}
 <template x-teleport="body">
-    <div x-show="openCobroModal" class="fixed inset-0 z-50 overflow-y-auto" x-cloak>
-        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-            
-            <div x-show="openCobroModal" 
-                 x-transition:enter="ease-out duration-300" 
-                 x-transition:enter-start="opacity-0" 
-                 x-transition:enter-end="opacity-100" 
-                 x-transition:leave="ease-in duration-200" 
-                 x-transition:leave-start="opacity-100" 
-                 x-transition:leave-end="opacity-0" 
-                 class="fixed inset-0 transition-opacity bg-slate-900/60 backdrop-blur-xs" 
-                 @click="openCobroModal = false"></div>
-
-            <div x-show="openCobroModal" 
-                 x-transition:enter="ease-out duration-300" 
-                 x-transition:enter-start="opacity-0 scale-95" 
-                 x-transition:enter-end="opacity-100 scale-100" 
-                 x-transition:leave="ease-in duration-200" 
-                 x-transition:leave-start="opacity-100 scale-100" 
-                 x-transition:leave-end="opacity-0 scale-95" 
-                 class="inline-block w-full max-w-sm my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-2xl rounded-3xl border border-gray-100 p-6 space-y-4">
-                
-                <div class="flex items-center justify-between border-b border-gray-100 pb-3 print:hidden">
-                    <div class="flex items-center gap-2 font-black text-xs text-teal-800 uppercase">
-                        <i class="bi bi-receipt text-base"></i>
-                        <span>RECIBO OFICIAL DE PAGO</span>
-                    </div>
-                    <button type="button" @click="openCobroModal = false" class="text-gray-400 hover:text-gray-600 font-bold focus:outline-none cursor-pointer">
-                        <i class="bi bi-x-lg"></i>
-                    </button>
-                </div>
-
-                <!-- CONTENIDO DEL COMPROBANTE TÉRMICO -->
-                <div id="seccion-recibo-imprimible" class="p-4 border border-dashed border-teal-300 bg-teal-50/40 rounded-2xl space-y-3 font-mono text-xs text-gray-800">
-                    
-                    <div class="text-center">
-                        <h2 class="font-black text-teal-950 text-sm tracking-wider uppercase">MEDITRACK CLÍNICA</h2>
-                        <p class="text-[9px] font-bold text-teal-700 uppercase">COMPROBANTE OFICIAL DE PAGO</p>
-                    </div>
-
-                    <div class="space-y-1 text-[11px] pt-1">
-                        <div class="flex justify-between">
-                            <span class="font-bold text-teal-900">FOLIO:</span>
-                            <span class="font-black text-teal-800" x-text="ticketSeleccionado?.codigo_ticket"></span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="font-bold text-teal-900">PACIENTE:</span>
-                            <span class="font-extrabold uppercase text-gray-700 truncate max-w-[170px]" 
-                                  x-text="ticketSeleccionado?.paciente ? (ticketSeleccionado.paciente.nombre_completo || ticketSeleccionado.paciente.primer_nombre) : 'PÚBLICO GENERAL'"></span>
-                        </div>
-                    </div>
-
-                    <!-- SELLO DE ESTADO PAGADO -->
-                    <div class="bg-emerald-100 border border-emerald-200 p-2 rounded-xl text-center">
-                        <span class="block text-xs font-black text-emerald-900 uppercase">*** PAGADO ***</span>
-                        <span class="text-[9px] font-bold text-emerald-700 uppercase" x-text="`MÉTODO: ${metodoPago}`"></span>
-                    </div>
-
-                    <!-- DESGLOSE DE PRODUCTOS -->
-                    <table class="w-full text-left text-[11px] border-y border-dashed border-teal-200 py-2">
-                        <thead>
-                            <tr class="font-bold text-teal-900 border-b border-teal-200">
-                                <th class="pb-1">CANT</th>
-                                <th class="pb-1">CONCEPTO</th>
-                                <th class="pb-1 text-right">TOTAL</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-teal-100">
-                            <template x-for="det in ticketSeleccionado?.detalles" :key="det.id">
-                                <tr>
-                                    <td class="py-1 font-bold" x-text="`${det.cantidad}x`"></td>
-                                    <td class="py-1 uppercase truncate max-w-[130px]" x-text="det.producto ? det.producto.nombre : 'MEDICAMENTO'"></td>
-                                    <td class="py-1 text-right font-bold text-gray-900" x-text="`$${parseFloat(det.subtotal).toFixed(2)}`"></td>
-                                </tr>
-                            </template>
-                        </tbody>
-                    </table>
-
-                    <div class="flex justify-between items-baseline pt-1">
-                        <span class="font-black text-teal-950 text-xs">TOTAL PAGADO:</span>
-                        <span class="text-base font-black text-teal-800" x-text="`$${parseFloat(ticketSeleccionado?.monto_total || 0).toFixed(2)}`"></span>
-                    </div>
-
-                    <div class="pt-2 text-center">
-                        <p class="text-[9px] font-extrabold text-teal-800 uppercase">
-                            PRESENTAR EN VENTANILLA DE FARMACIA PARA RECOGER SU MEDICAMENTO
-                        </p>
-                    </div>
-                </div>
-
-                <!-- BOTONES DE ACCIÓN -->
-                <div class="flex gap-2 pt-2 border-t border-gray-100 print:hidden">
-                    <template x-if="ticketSeleccionado?.status === 'pendiente'">
-                        <button type="button" 
-                                @click="procesarCobroDirecto(ticketSeleccionado.id, metodoPago)" 
-                                :disabled="procesandoPago"
-                                class="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white font-black text-xs uppercase rounded-2xl shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer">
-                            <i class="bi bi-wallet2"></i>
-                            <span x-text="procesandoPago ? 'PROCESANDO PAGO...' : 'CONFIRMAR COBRO'"></span>
-                        </button>
-                    </template>
-
-                    <template x-if="ticketSeleccionado?.status !== 'pendiente'">
-                        <div class="flex gap-2 w-full">
-                            <button type="button" @click="openCobroModal = false" 
-                                    class="w-1/2 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-extrabold rounded-2xl text-xs uppercase transition-all cursor-pointer">
-                                CERRAR
-                            </button>
-                            <button type="button" @click="imprimirComprobante()" 
-                                    class="w-1/2 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-extrabold rounded-2xl text-xs uppercase shadow-md shadow-teal-600/20 flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer">
-                                <i class="bi bi-printer-fill"></i> IMPRIMIR
-                            </button>
-                        </div>
-                    </template>
-                </div>
-
+    <div x-show="openTicketPagadoModal" x-cloak class="cjm-velo" @keydown.escape.window="openTicketPagadoModal && (openTicketPagadoModal = false)"
+         x-transition:enter="cjm-t" x-transition:enter-start="cjm-0" x-transition:enter-end="cjm-1"
+         x-transition:leave="cjm-t-s" x-transition:leave-start="cjm-1" x-transition:leave-end="cjm-0">
+        <div class="cjm" role="dialog" aria-modal="true" aria-label="Comprobante de pago" @click.outside="openTicketPagadoModal = false">
+            <div id="comprobante-oficial-pago" class="cjm-papel">
+                <p class="cjm-marca">MediTrack</p>
+                <p class="cjm-sub">Comprobante de pago</p>
+                <p class="cjm-sello">Pagado</p>
+                <dl class="cjm-datos">
+                    <div><dt>Folio</dt><dd x-text="ticketCobrado ? ticketCobrado.codigo : ''"></dd></div>
+                    <div><dt>Fecha</dt><dd x-text="new Date().toLocaleDateString('es-MX') + ' ' + (ticketCobrado ? ticketCobrado.hora : '')"></dd></div>
+                    <div><dt>Paciente</dt><dd x-text="ticketCobrado && ticketCobrado.paciente ? ticketCobrado.paciente : 'Público general'"></dd></div>
+                    <div><dt>Método</dt><dd x-text="ticketCobrado ? ticketCobrado.metodo : ''"></dd></div>
+                </dl>
+                <table class="cjm-tabla">
+                    <thead><tr><th>Cant.</th><th>Concepto</th><th>Importe</th></tr></thead>
+                    <tbody>
+                        <template x-for="det in (ticketCobrado ? ticketCobrado.detalles : [])" :key="'c' + det.id">
+                            <tr><td x-text="det.cantidad"></td><td x-text="titulo(det.nombre)"></td><td x-text="dinero(det.subtotal)"></td></tr>
+                        </template>
+                    </tbody>
+                </table>
+                <p class="cjm-tot"><span>Total pagado</span><b x-text="dinero(ticketCobrado ? ticketCobrado.total : 0)"></b></p>
+                <p class="cjm-cambio" x-show="ticketCobrado && ticketCobrado.cambio !== null && ticketCobrado.cambio !== undefined">
+                    <span x-text="'Recibido ' + dinero(ticketCobrado ? ticketCobrado.recibido : 0)"></span><span x-text="'Cambio ' + dinero(ticketCobrado ? ticketCobrado.cambio : 0)"></span>
+                </p>
+                <span class="cjm-bar" x-html="ticketCobrado ? barras(ticketCobrado.codigo) : ''"></span>
+                <p class="cjm-pie">Presenta este comprobante en farmacia para recibir tus productos.</p>
+            </div>
+            <div class="cjm-acc">
+                <button type="button" @click="openTicketPagadoModal = false">Cerrar</button>
+                <button type="button" class="prim" @click="imprimirComprobante()"><i class="bi bi-printer"></i>Imprimir</button>
             </div>
         </div>
     </div>
 </template>
 
+@verbatim
 <style>
+.cjm-velo { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; padding: 16px; background: rgba(4, 18, 17, .62); backdrop-filter: blur(4px); font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
+.cjm-t { transition: opacity .2s cubic-bezier(.2, .8, .2, 1); } .cjm-t-s { transition: opacity .13s ease-in; } .cjm-0 { opacity: 0; } .cjm-1 { opacity: 1; }
+.cjm { width: min(360px, 100%); display: grid; gap: 12px; }
+.cjm-papel { position: relative; padding: 22px 22px 18px; background: #fffef9; color: #0b1e1c; border-radius: 6px; box-shadow: 0 30px 60px -25px rgba(0, 0, 0, .6); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12px; max-height: 70vh; overflow-y: auto; }
+.cjm-marca { text-align: center; font: 800 22px 'Bricolage Grotesque', ui-sans-serif, sans-serif; color: #0b5a54; }
+.cjm-sub { text-align: center; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #56625f; }
+.cjm-sello { width: max-content; margin: 10px auto 0; padding: 2px 12px; border: 2px solid #08734f; border-radius: 6px; color: #08734f; font: 800 15px 'Bricolage Grotesque', ui-sans-serif, sans-serif; letter-spacing: .12em; text-transform: uppercase; rotate: -4deg; }
+.cjm-datos { margin-top: 12px; padding: 10px 0; border-top: 1px dashed #d8d4c6; display: grid; gap: 3px; }
+.cjm-datos div { display: flex; justify-content: space-between; gap: 10px; }
+.cjm-datos dt { color: #56625f; }
+.cjm-datos dd { text-align: right; font-weight: 600; }
+.cjm-tabla { width: 100%; border-collapse: collapse; border-top: 1px dashed #d8d4c6; border-bottom: 1px dashed #d8d4c6; }
+.cjm-tabla th { padding: 6px 0 4px; text-align: left; font-weight: 600; font-size: 10.5px; color: #56625f; text-transform: uppercase; letter-spacing: .08em; }
+.cjm-tabla td { padding: 3px 0; vertical-align: top; }
+.cjm-tabla th:last-child, .cjm-tabla td:last-child { text-align: right; }
+.cjm-tabla td:first-child { width: 38px; }
+.cjm-tot { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }
+.cjm-tot b { font: 800 24px 'Bricolage Grotesque', ui-sans-serif, sans-serif; }
+.cjm-cambio { display: flex; justify-content: space-between; margin-top: 4px; color: #56625f; }
+.cjm-bar { display: block; margin-top: 12px; }
+.cjm-bar svg { display: block; width: 100%; height: 44px; }
+.cjm-pie { margin-top: 10px; text-align: center; font-family: 'Geist', ui-sans-serif, sans-serif; font-size: 11px; color: #56625f; }
+.cjm-acc { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cjm-acc button { height: 44px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: #fff; border: 1px solid #dbe4e1; font: 600 14px 'Geist', ui-sans-serif, sans-serif; color: #0b1e1c; cursor: pointer; }
+.cjm-acc button.prim { background: #0b1e1c; border-color: #0b1e1c; color: #fff; }
 @media print {
     body * { visibility: hidden; }
-    #seccion-recibo-imprimible, #seccion-recibo-imprimible * { visibility: visible; }
-    #seccion-recibo-imprimible { 
-        position: absolute; 
-        left: 0; 
-        top: 0; 
-        width: 100%; 
-        border: none !important;
-        background: transparent !important;
-    }
+    #comprobante-oficial-pago, #comprobante-oficial-pago * { visibility: visible; }
+    #comprobante-oficial-pago { position: absolute; left: 0; top: 0; width: 80mm; max-height: none; overflow: visible; box-shadow: none; border-radius: 0; }
 }
 </style>
+@endverbatim

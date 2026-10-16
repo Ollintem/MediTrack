@@ -77,7 +77,7 @@ class InventarioController extends Controller
                 'categoria_id'     => $request->categoria_id,
                 'codigo'           => $codigo,
                 'nombre'           => mb_strtoupper(trim($request->nombre), 'UTF-8'),
-                'descripcion'      => $request->descripcion ? mb_strtoupper(trim($request->descripcion), 'UTF-8') : null,
+                'descripcion'      => $request->descripcion ? mb_strtoupper(trim($request->descripcion), 'UTF-8') : '', // la columna no acepta NULL
                 'precio_compra'    => $request->precio_compra,
                 'precio_venta'     => $request->precio_venta,
                 'stock_actual'     => $stockActual,
@@ -133,7 +133,7 @@ class InventarioController extends Controller
             'precio_venta'  => $request->precio_venta,
             'stock_minimo'  => $stockMinimo,
             'stock_maximo'  => $stockMinimo * 5,
-            'descripcion'   => $request->descripcion ? mb_strtoupper(trim($request->descripcion), 'UTF-8') : null,
+            'descripcion'   => $request->descripcion ? mb_strtoupper(trim($request->descripcion), 'UTF-8') : '', // la columna no acepta NULL
             'estado'        => $estado,
         ]);
 

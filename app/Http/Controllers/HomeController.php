@@ -313,7 +313,7 @@ class HomeController extends Controller
     private function alertasStock(): array
     {
         if (!Schema::hasTable('productos_inventario')) {
-            return ['disponible' => false, 'total' => 0, 'agotados' => 0, 'items' => []];
+            return ['disponible' => false, 'total' => 0, 'agotados' => 0, 'items' => [], 'galeria' => [], 'productos' => 0];
         }
 
         // El disponible descuenta lo apartado en tickets vigentes (atributo calculado del modelo).
@@ -322,8 +322,30 @@ class HomeController extends Controller
             ->sortBy([['stock_disponible', 'asc'], ['nombre', 'asc']])
             ->values();
 
+        // Galería 3D del dashboard: primero lo que hay que surtir (menos existencias primero), luego el resto
+        $todos = ProductoInventario::query()->with('categoria')->orderBy('nombre')->get()->map(function ($p) {
+            $disponible = (int) $p->stock_disponible;
+            $minimo     = (int) $p->stock_minimo;
+            return [
+                'id'          => $p->id,
+                'nombre'      => (string) ($p->nombre ?? 'Producto'),
+                'codigo'      => strtoupper((string) $p->codigo),
+                'categoria'   => data_get($p, 'categoria.nombre') ?: 'General',
+                'descripcion' => (string) ($p->descripcion ?? ''),
+                'venta'       => (float) ($p->precio_venta ?? 0),
+                'disponible'  => $disponible,
+                'minimo'      => $minimo,
+                'estado'      => $disponible <= 0 ? 'agotado' : ($disponible <= $minimo ? 'bajo' : 'ok'),
+            ];
+        });
+        $galeria = $todos->where('estado', '!=', 'ok')->sortBy('disponible')
+            ->concat($todos->where('estado', 'ok'))
+            ->take(24)->values()->all();
+
         return [
             'disponible' => true,
+            'galeria'    => $galeria,
+            'productos'  => $todos->count(),
             'total'      => $bajos->count(),
             'agotados'   => $bajos->filter(fn ($p) => (int) $p->stock_disponible <= 0)->count(),
             'items'      => $bajos->take(5)->map(fn ($p) => [

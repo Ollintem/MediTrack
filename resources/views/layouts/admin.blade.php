@@ -248,6 +248,224 @@ function layoutMeditrack() {
         }
     };
 }
+
+// ---------- Caja 3D de medicamentos e insumos (la usan Inventario y el Dashboard) ----------
+window.MTCaja = (() => {
+    const LUZ = (() => { const v = [-0.35, -0.7, 0.62], m = Math.hypot(...v); return v.map(x => x / m); })();
+    const NORMALES = { fr: [0, 0, 1], re: [0, 0, -1], de: [1, 0, 0], iz: [-1, 0, 0], ar: [0, -1, 0], ab: [0, 1, 0] };
+    const cachePartes = new Map(), cacheTipo = new Map();
+    // Dibujos de insumos (planos, para la ventana del sobre y lo que sale al abrir)
+    const ITEMS = {
+        jeringa: '<svg viewBox="0 0 180 48" aria-hidden="true"><rect x="4" y="12" width="5" height="24" rx="1.5" fill="#9fb3b9"/><rect x="9" y="21" width="40" height="6" fill="#c9d6da"/><rect x="47" y="7" width="5" height="34" rx="1.5" fill="#9fb3b9"/><rect x="52" y="13" width="78" height="22" rx="3" fill="#f3f8f9" stroke="#8aa1a8" stroke-width="1.5"/><rect x="88" y="15" width="40" height="18" rx="2" fill="var(--k)" opacity=".38"/><rect x="62" y="15" width="7" height="18" fill="#3c4f54"/><path d="M74 13v6M82 13v4M90 13v6M98 13v4M106 13v6M114 13v4M122 13v6" stroke="#6f8a91" stroke-width="1.2"/><path d="M130 19h8v10h-8z" fill="#cfdadd"/><path d="M138 22.5h10v3h-10z" fill="var(--k)"/><path d="M148 24h28" stroke="#8c9da2" stroke-width="1.6" stroke-linecap="round"/></svg>',
+        aguja: '<svg viewBox="0 0 180 48" aria-hidden="true"><rect x="20" y="14" width="40" height="20" rx="4" fill="var(--k)"/><rect x="24" y="18" width="32" height="2" fill="#fff" opacity=".4"/><path d="M60 19h14v10H60z" fill="#d8e2e4"/><path d="M74 24h92" stroke="#8c9da2" stroke-width="2" stroke-linecap="round"/><rect x="74" y="16" width="70" height="16" rx="8" fill="none" stroke="#b9c8cc" stroke-dasharray="3 3"/></svg>',
+        gasa: '<svg viewBox="0 0 120 90" aria-hidden="true"><rect x="14" y="10" width="92" height="70" rx="3" fill="#fbfcfc" stroke="#d3dcdf"/><path d="M14 22h92M14 34h92M14 46h92M14 58h92M14 70h92M26 10v70M38 10v70M50 10v70M62 10v70M74 10v70M86 10v70M98 10v70" stroke="#e1e8ea" stroke-width="1.4"/><path d="M106 10l-14 14V10z" fill="#e7edef"/></svg>',
+        venda: '<svg viewBox="0 0 150 90" aria-hidden="true"><path d="M58 28h80v34H58z" fill="#f6f2ea" stroke="#d9d1c2"/><path d="M68 28v34M80 28v34M92 28v34M104 28v34M116 28v34M128 28v34" stroke="#e8e1d3" stroke-width="1.5"/><circle cx="46" cy="45" r="32" fill="#f3eee4" stroke="#d6cdbd"/><circle cx="46" cy="45" r="20" fill="none" stroke="#e2d9c8" stroke-width="2"/><circle cx="46" cy="45" r="9" fill="#d9cfbd"/></svg>',
+        curita: '<svg viewBox="0 0 160 60" aria-hidden="true"><rect x="8" y="14" width="144" height="32" rx="16" fill="#e8c9a8"/><rect x="58" y="16" width="44" height="28" rx="4" fill="#fbf3e9"/><g fill="#d6b08a"><circle cx="24" cy="24" r="1.6"/><circle cx="34" cy="30" r="1.6"/><circle cx="24" cy="36" r="1.6"/><circle cx="44" cy="24" r="1.6"/><circle cx="44" cy="36" r="1.6"/><circle cx="116" cy="24" r="1.6"/><circle cx="126" cy="30" r="1.6"/><circle cx="136" cy="24" r="1.6"/><circle cx="116" cy="36" r="1.6"/><circle cx="136" cy="36" r="1.6"/></g></svg>',
+        sonda: '<svg viewBox="0 0 160 80" aria-hidden="true"><path d="M20 40c0-16 20-24 40-24s40 8 40 24-20 24-40 24-30-6-30-16 14-14 30-14 24 4 24 10" fill="none" stroke="#c9dde2" stroke-width="5" stroke-linecap="round"/><path d="M104 40h40" stroke="#c9dde2" stroke-width="5" stroke-linecap="round"/><rect x="136" y="30" width="18" height="20" rx="4" fill="var(--k)"/></svg>',
+        termometro: '<svg viewBox="0 0 160 50" aria-hidden="true"><rect x="10" y="14" width="120" height="22" rx="11" fill="#f2f6f7" stroke="#9fb2b8" stroke-width="1.5"/><rect x="24" y="19" width="40" height="12" rx="2" fill="#20363a"/><text x="44" y="28.5" text-anchor="middle" font-family="monospace" font-size="9" fill="#9ff0d8">36.5</text><path d="M130 25h20" stroke="#8c9da2" stroke-width="5" stroke-linecap="round"/><circle cx="100" cy="25" r="5" fill="var(--k)"/></svg>',
+        guante: '<svg viewBox="0 0 100 130" aria-hidden="true"><path d="M30 128V78c-6-5-14-14-18-24-2-6 4-9 8-4l10 12V24c0-5 7-5 7 0v34h3V12c0-5 7-5 7 0v46h3V16c0-5 7-5 7 0v42h3V26c0-5 7-5 7 0v52c0 10-4 18-10 22v28z" fill="var(--guante, #7fb4e8)" stroke="rgba(0,0,0,.18)" stroke-width="1.2"/><path d="M36 128v-20h30v20" fill="rgba(255,255,255,.25)"/></svg>',
+        cubrebocas: '<svg viewBox="0 0 140 90" aria-hidden="true"><path d="M8 30c8-8 16-8 22-2M132 30c-8-8-16-8-22-2M8 60c8 8 16 8 22 2M132 60c-8 8-16 8-22 2" fill="none" stroke="#e7eef0" stroke-width="3"/><path d="M28 22c28-8 56-8 84 0v46c-28 8-56 8-84 0z" fill="#8fd0e6" stroke="#6bb6cf"/><path d="M28 36c28-6 56-6 84 0M28 48c28-6 56-6 84 0M28 60c28-6 56-6 84 0" stroke="#74bdd6" stroke-width="1.4" fill="none"/><path d="M50 18c14-3 26-3 40 0" stroke="#c9d6da" stroke-width="3" fill="none"/></svg>',
+        toalla: '<svg viewBox="0 0 120 110" aria-hidden="true"><path d="M20 106V40c0-14 8-28 40-34 32 6 40 20 40 34v66z" fill="#ffffff" stroke="#d8e2e4"/><path d="M34 106V46M48 106V40M62 106V36M76 106V40M90 106V46" stroke="#eef3f4" stroke-width="2"/></svg>',
+        generico: '<svg viewBox="0 0 120 90" aria-hidden="true"><rect x="22" y="12" width="76" height="66" rx="10" fill="#fbfcfc" stroke="#d3dcdf"/><path d="M54 28h12v12h12v12H66v12H54V52H42V40h12z" fill="var(--k)"/></svg>',
+    };
+    const COLORES = ['#0e7c72', '#1d5fa8', '#4b3fa0', '#8a2f6b', '#2f7a3a', '#0e6e8c', '#2f4b7c', '#6a4c93'];
+
+    const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const MINUS = new Set(['de', 'del', 'con', 'y', 'en', 'para', 'la', 'el', 'por', 'sin', 'a']);
+    const titulo = t => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim()
+        .split(' ').map((w, i) => (i && MINUS.has(w)) || /^\d/.test(w) || /^(mg|mcg|g|ml|ui|µg|kg|l|cm|mm|m|x)$/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+    // ----- Códigos de barras -----
+    function ean13(cod) {
+        if (!/^\d{13}$/.test(cod)) return '';
+        const L = ['0001101', '0011001', '0010011', '0111101', '0100011', '0110001', '0101111', '0111011', '0110111', '0001011'];
+        const G = ['0100111', '0110011', '0011011', '0100001', '0011101', '0111001', '0000101', '0010001', '0001001', '0010111'];
+        const R = L.map(s => s.replace(/./g, b => b === '1' ? '0' : '1'));
+        const PAR = ['LLLLLL', 'LLGLGG', 'LLGGLG', 'LLGGGL', 'LGLLGG', 'LGGLLG', 'LGGGLL', 'LGLGLG', 'LGLGGL', 'LGGLGL'];
+        const d = cod.split('').map(Number), par = PAR[d[0]];
+        // Dígito verificador: si no cuadra, se usa Code 128 para que el lector lea el texto tal cual
+        const suma = d.slice(0, 12).reduce((s, n, i) => s + n * (i % 2 ? 3 : 1), 0);
+        if ((10 - suma % 10) % 10 !== d[12]) return '';
+        let bits = '101';
+        for (let i = 1; i <= 6; i++) bits += (par[i - 1] === 'L' ? L : G)[d[i]];
+        bits += '01010';
+        for (let i = 7; i <= 12; i++) bits += R[d[i]];
+        bits += '101';
+        return trazar(bits, 7);
+    }
+    function code128(texto) {
+        const P = ['212222','222122','222221','121223','121322','131222','122213','122312','132212','221213','221312','231212','112232','122132','122231','113222','123122','123221','223211','221132','221231','213212','223112','312131','311222','321122','321221','312212','322112','322211','212123','212321','232121','111323','131123','131321','112313','132113','132311','211313','231113','231311','112133','112331','132131','113123','113321','133121','313121','211331','231131','213113','213311','213131','311123','311321','331121','312113','312311','332111','314111','221411','431111','111224','111422','121124','121421','141122','141221','112214','112412','122114','122411','142112','142211','241211','221114','413111','241112','134111','111242','121142','121241','114212','124112','124211','411212','421112','421211','212141','214121','412121','111143','111341','131141','114113','114311','411113','411311','113141','114131','311141','411131','211412','211214','211232','2331112'];
+        const t = String(texto || '').replace(/[^\x20-\x7E]/g, '');
+        if (!t) return '';
+        const vals = [104];
+        for (const ch of t) vals.push(ch.charCodeAt(0) - 32);
+        let suma = 104;
+        for (let i = 1; i < vals.length; i++) suma += vals[i] * i;
+        vals.push(suma % 103, 106);
+        let bits = '';
+        vals.forEach(v => { const w = P[v]; for (let i = 0; i < w.length; i++) bits += (i % 2 ? '0' : '1').repeat(Number(w[i])); });
+        return trazar(bits, 10);
+    }
+    function trazar(bits, q) {
+        let d = '', x = q;
+        for (let i = 0; i < bits.length;) {
+            let n = 0; const b = bits[i];
+            while (bits[i] === b) { n++; i++; }
+            if (b === '1') d += 'M' + x + ' 0h' + n + 'v40h-' + n + 'z';
+            x += n;
+        }
+        return '<svg viewBox="0 0 ' + (x + q) + ' 40" preserveAspectRatio="none" shape-rendering="crispEdges" aria-hidden="true"><path d="' + d + '" fill="#0b1e1c"/></svg>';
+    }
+    const barras = cod => ean13(cod) || code128(cod);
+    const api = {
+        esc, titulo, barras,
+        normalizar(s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(); },
+        dinero(n, dec = 2) { return '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: dec, maximumFractionDigits: dec }); },
+        textoEstado(p) { return { ok: 'Suficiente', bajo: 'Por surtir', agotado: 'Agotado' }[p.estado] || ''; },
+        descripcionUtil(p) { const d = String(p.descripcion || '').trim(); return d.length > 2 ? titulo(d).replace(/^./, c => c.toUpperCase()) : ''; },
+        colorDe(p) { let h = 0; for (const ch of String(p.categoria || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return COLORES[h % COLORES.length]; },
+        iniciales(p) { return this.partes(p).principal.replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g, '').slice(0, 2) || '·'; },
+        itemSVG(item) { return ITEMS[item] || ITEMS.generico; },
+        partes(p) {
+            const n = p.nombre || '';
+            if (cachePartes.has(n)) return cachePartes.get(n);
+            const m = /((?:\d+(?:[.,]\d+)?\s*x\s*)?\d+(?:[.,]\d+)?\s*(?:mg|mcg|µg|g|ml|ui|%|cm|mm)(?:\s*\/\s*\d*(?:[.,]\d+)?\s*(?:ml|g|dosis))?)(?![a-z])/i.exec(n);
+            let principal = m ? n.slice(0, m.index) : n, dosis = m ? m[1] : '', forma = m ? n.slice(m.index + m[1].length) : '';
+            principal = titulo(principal.replace(/[\s,.-]+$/, '')) || titulo(n);
+            dosis = dosis.toLowerCase().replace(/\s+/g, ' ').replace(/(\d)\s*(mg|mcg|µg|g|ml|ui|cm|mm)/g, '$1 $2').replace(/ui/, 'UI');
+            forma = titulo(forma.replace(/^[\s,.-]+/, ''));
+            const r = { principal, dosis, forma };
+            cachePartes.set(n, r);
+            return r;
+        },
+        tipoDe(p) {
+            const clave = (p.nombre || '') + '|' + (p.categoria || '');
+            if (cacheTipo.has(clave)) return cacheTipo.get(clave);
+            const n = this.normalizar(p.nombre), c = this.normalizar(p.categoria), t = n + ' ' + c;
+            const catInsumo = /insumo|material|curacion|desechable|equipo|quirurg|consumible/.test(c);
+            let r = { clase: 'medicamento', item: '' };
+            const hay = (re) => re.test(n) || (catInsumo && re.test(t));
+            if (/guante|cubrebocas|mascarilla|tapabocas|toallita|panuelo|cofia|gorro/.test(n)) r = { clase: 'dispensador', item: /guante/.test(n) ? 'guante' : (/toallita|panuelo/.test(n) ? 'toalla' : 'cubrebocas') };
+            else if (/jeringa/.test(n)) r = { clase: 'sobre', item: 'jeringa' };
+            else if (/aguja|lanceta|punzocat|bisturi/.test(n)) r = { clase: 'sobre', item: 'aguja' };
+            else if (/gasa|aposito|compresa|torunda|algodon/.test(n)) r = { clase: 'sobre', item: 'gasa' };
+            else if (/venda|tela adhesiva|micropore|esparadrapo|cinta/.test(n)) r = { clase: 'sobre', item: 'venda' };
+            else if (/curita|bandita|tirita/.test(n)) r = { clase: 'sobre', item: 'curita' };
+            else if (/cateter|sonda|venoclisis|equipo de|canula|sutura|electrodo|tubo/.test(n)) r = { clase: 'sobre', item: 'sonda' };
+            else if (/alcohol|oxigenada|antisep|isodine|yodopovidona|benzal|clorhexidina|jabon|gel antibac|sanitizante/.test(n)) r = { clase: 'frasco', item: '' };
+            else if (catInsumo || /termometro|abatelengua|hisopo|tira reactiva|bolsa|campo|bata|cubreboca/.test(n)) r = { clase: 'sobre', item: /termometro/.test(n) ? 'termometro' : 'generico' };
+            r.insumo = r.clase !== 'medicamento';
+            cacheTipo.set(clave, r);
+            return r;
+        },
+        contenidoHTML(p) {
+            const tipo = this.tipoDe(p);
+            if (tipo.insumo) {
+                const svg = this.itemSVG(tipo.item);
+                return '<div class="ca iv-it">' + svg + '</div><div class="cb iv-it">' + svg + '</div>';
+            }
+            const pt = this.partes(p), forma = this.normalizar(pt.forma + ' ' + p.nombre);
+            const liquido = /jarabe|suspension|solucion|gotas|ampolleta|ampula|inyectable|crema|pomada|gel|unguento|spray|aerosol|frasco|ovulo|supositorio/.test(forma);
+            const nom = esc(pt.principal + (pt.dosis ? ' ' + pt.dosis : ''));
+            if (liquido) {
+                return '<div class="ca iv-hoja"><b>' + nom + '</b>' + '<i></i>'.repeat(11) + '</div><div class="cb iv-hoja"><b>Instructivo</b>' + '<i></i>'.repeat(11) + '</div>';
+            }
+            const capsula = /capsula/.test(forma);
+            const una = capsula ? '<i><span class="cap"></span></i>' : '<i><span class="tb"></span></i>';
+            return '<div class="ca iv-bl' + (capsula ? '' : ' tab') + '">' + una.repeat(10) + '</div>'
+                + '<div class="cb iv-blb">' + ('<span>' + nom + ' · ' + nom + ' · ' + nom + '</span>').repeat(5) + '</div>';
+        },
+        cajaHTML(p, completo) {
+            const tipo = this.tipoDe(p);
+            const pt = this.partes(p), nom = pt.principal, cod = p.codigo;
+            const sello = p.estado === 'agotado' ? '<i class="sello">Agotado</i>' : (p.estado === 'bajo' ? '<i class="sello bajo">Por surtir</i>' : '');
+            const desc = this.descripcionUtil(p) || pt.forma || p.categoria;
+            const reverso = '<div class="iv-cara f-re"><i class="franja"></i>'
+                +   '<div class="txt"><b>' + esc(nom + (pt.dosis ? ' ' + pt.dosis : '')) + '</b><span>' + esc(desc) + '</span>'
+                +     '<dl><dt>Precio</dt><dd>' + esc(this.dinero(p.venta)) + '</dd><dt>Existencias</dt><dd>' + p.disponible + ' pzas</dd><dt>Mínimo</dt><dd>' + p.minimo + ' pzas</dd></dl></div>'
+                +   '<div class="bar">' + barras(cod) + '<span>' + esc(cod) + '</span></div></div>';
+            const lados = '<div class="iv-cara f-de"><span class="v">' + esc(pt.dosis || nom) + (pt.dosis ? '<small> · ' + esc(nom) + '</small>' : '') + '</span></div>'
+                + '<div class="iv-cara f-iz"><span class="v">' + esc(nom) + (pt.dosis ? ' <i>' + esc(pt.dosis) + '</i>' : '') + '</span></div>'
+                + '<div class="iv-cara f-ab"><span>' + esc(p.categoria) + '</span><span>' + esc(this.textoEstado(p)) + '</span></div>';
+            const etq = /insumo/i.test(p.categoria) ? p.categoria : 'Insumo · ' + p.categoria;
+            const arriba = '<i class="tapa"></i><b>' + esc(nom) + '</b><span>' + esc(cod) + '</span>';
+            const interior = '<div class="iv-in in-fr"></div><div class="iv-in in-re"></div><div class="iv-in in-de"></div><div class="iv-in in-iz"></div><div class="iv-in in-ab"></div>';
+
+            if (tipo.clase === 'sobre') {
+                // Sobre de insumo: papel grado médico con ventana transparente y borde sellado
+                const frente = '<div class="iv-cara f-fr s-fr' + (sello ? ' con-sello' : '') + '">' + sello
+                    + '<span class="cat">' + esc(etq) + '</span>'
+                    + '<b class="nom">' + esc(nom) + '</b>' + (pt.dosis ? '<span class="dosis">' + esc(pt.dosis) + '</span>' : '')
+                    + '<span class="ventana">' + this.itemSVG(tipo.item) + '</span>'
+                    + '<span class="pie">' + esc(cod) + '</span></div>';
+                return frente + reverso + lados
+                    + (completo ? '<div class="iv-cont">' + this.contenidoHTML(p) + '</div>'
+                        + '<div class="iv-tapa"><div class="iv-cara f-ar"></div><div class="iv-cara f-ar-in"></div></div>'
+                        : '<div class="iv-cara f-ar"></div>');
+            }
+            if (tipo.clase === 'dispensador') {
+                // Caja dispensadora (guantes, cubrebocas): ranura arriba y la pieza asomándose
+                const frente = '<div class="iv-cara f-fr d-fr' + (sello ? ' con-sello' : '') + '">' + sello
+                    + '<span class="cat">' + esc(etq) + '</span>'
+                    + '<b class="nom">' + esc(nom) + '</b>' + (pt.dosis ? '<span class="dosis">' + esc(pt.dosis) + '</span>' : '') + (pt.forma ? '<span class="forma">' + esc(pt.forma) + '</span>' : '')
+                    + '<span class="dibujo">' + this.itemSVG(tipo.item) + '</span>'
+                    + '<span class="pie">' + esc(cod) + '</span></div>';
+                return frente + reverso + lados
+                    + (completo ? '<div class="iv-cont asoma">' + this.contenidoHTML(p) + '</div>' : '')
+                    + '<div class="iv-cara f-ar d-ar"><i class="ranura"></i></div>';
+            }
+            if (tipo.clase === 'frasco') {
+                // Frasco rectangular con tapa de rosca
+                const frente = '<div class="iv-cara f-fr fr-fr' + (sello ? ' con-sello' : '') + '">' + sello
+                    + '<span class="cat">Insumo</span><b class="nom">' + esc(nom) + '</b>'
+                    + (pt.dosis ? '<span class="dosis">' + esc(pt.dosis) + '</span>' : '')
+                    + '<span class="gota"></span><span class="pie">' + esc(cod) + '</span></div>';
+                const tapon = '<div class="iv-tapon"><i class="tp tp-fr"></i><i class="tp tp-re"></i><i class="tp tp-de"></i><i class="tp tp-iz"></i><i class="tp tp-ar"></i></div>';
+                return frente + reverso + lados + '<div class="iv-cara f-ar fr-ar"></div>' + tapon;
+            }
+
+            // Medicamento: caja de cartón con tapa y blíster
+            const cruz = '<svg class="cruz" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" fill="currentColor"/></svg>';
+            const frente = '<div class="iv-cara f-fr' + (sello ? ' con-sello' : '') + '"><i class="ola2"></i><i class="ola"></i>' + cruz + sello
+                + '<span class="cat">' + esc(p.categoria) + '</span>'
+                + '<b class="nom' + (nom.length > 16 ? ' largo' : '') + '">' + esc(nom) + '</b>'
+                + (pt.dosis ? '<span class="dosis">' + esc(pt.dosis) + '</span>' : '')
+                + (pt.forma ? '<span class="forma">' + esc(pt.forma) + '</span>' : '')
+                + '<span class="pie">' + esc(cod) + '</span></div>';
+            return frente + reverso + lados
+                + (completo
+                    ? interior + '<div class="iv-cont">' + this.contenidoHTML(p) + '</div>'
+                      + '<div class="iv-tapa"><div class="iv-cara f-ar">' + arriba + '</div><div class="iv-cara f-ar-in"></div></div>'
+                    : '<div class="iv-cara f-ar">' + arriba + '</div>');
+        },
+        // Sombra y brillo de cada cara según el giro (devuelve variables CSS)
+        luces(rx, ry) {
+            const a = rx * Math.PI / 180, b = ry * Math.PI / 180;
+            const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
+            const H = [LUZ[0], LUZ[1], LUZ[2] + 1], hm = Math.hypot(...H);
+            const vars = [];
+            for (const k in NORMALES) {
+                const [x, y, z] = NORMALES[k];
+                const x1 = cb * x + sb * z, z1 = -sb * x + cb * z;
+                const n = [x1, ca * y - sa * z1, sa * y + ca * z1];
+                const d = n[0] * LUZ[0] + n[1] * LUZ[1] + n[2] * LUZ[2];
+                const sp = Math.max(0, (n[0] * H[0] + n[1] * H[1] + n[2] * H[2]) / hm);
+                const g = Math.min(.75, Math.pow(sp, 14) * .85 + Math.max(0, n[2]) * .06);
+                const pos = 50 + Math.max(-60, Math.min(60, Math.atan2(n[0], n[2]) * 57.3)) * 1.3;
+                vars.push('--s-' + k + ':' + Math.max(0, Math.min(.38, (.86 - d) * .36)).toFixed(3), '--g-' + k + ':' + g.toFixed(3), '--p-' + k + ':' + pos.toFixed(1) + '%');
+            }
+            return vars.join(';');
+        },
+        // Aplica giro y luces a un elemento .iv-caja (conserva sus otros estilos)
+        girar(el, rx, ry, tz = 0) {
+            if (!el) return;
+            el.style.cssText = el.style.cssText.replace(/--[sgp]-(fr|re|de|iz|ar|ab):[^;]*;?/g, '').replace(/transform:[^;]*;?/g, '') + ';' + this.luces(rx, ry);
+            el.style.transform = 'translateZ(' + tz.toFixed(1) + 'px) rotateX(' + rx.toFixed(2) + 'deg) rotateY(' + ry.toFixed(2) + 'deg)';
+        },
+    };
+    return api;
+})();
+
 </script>
 @endverbatim
 
@@ -651,6 +869,169 @@ a.ly-link:hover .bi { color: var(--ly-foil); }
 .swal2-container.swal2-top-right { top: 1.25rem !important; right: 1.25rem !important; left: auto !important; bottom: auto !important; width: auto !important; max-width: 380px !important; background: transparent !important; pointer-events: none !important; }
 .swal2-popup.swal2-toast { display: flex !important; align-items: center !important; width: 100% !important; max-width: 360px !important; background: rgba(255, 255, 255, .98) !important; border-radius: 14px !important; padding: .75rem 1rem !important; pointer-events: auto !important; box-shadow: 0 20px 40px -20px rgba(11, 30, 28, .45) !important; font-family: var(--ly-ui) !important; }
 .swal2-toast .swal2-title { font-size: .85rem !important; font-weight: 600 !important; color: var(--ly-tinta) !important; margin: 0 0 0 .5rem !important; }
+/* ---------- CAJA 3D (Inventario y Dashboard): geometría, caras, insumos, tapa y contenido ---------- */
+/* La caja: --w ancho, --h alto, --d fondo. Las caras se colocan alrededor del centro. */
+.iv-caja { --w: 236px; --h: 130px; --d: 58px; --k: #0b5a54; --tinta: #0b1e1c; --e: cubic-bezier(.2, .8, .2, 1);
+    --disp: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif; --ui: 'Geist', ui-sans-serif, system-ui, sans-serif; --mono: 'Geist Mono', ui-monospace, monospace;
+    position: relative; width: var(--w); height: var(--h); transform-style: preserve-3d; transform: rotateX(-16deg) rotateY(-32deg); will-change: transform; }
+.iv-cara { position: absolute; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; background: #fbfdfc; color: var(--tinta);
+    font-family: var(--ui); line-height: 1.15; }
+.iv-cara:before { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none;
+    background: linear-gradient(112deg, transparent 36%, rgba(255, 255, 255, .8) 50%, transparent 64%); background-size: 280% 100%; background-position: var(--p, 50%) 0; opacity: var(--g, 0); }
+.iv-cara:after { content: ""; position: absolute; inset: 0; z-index: 4; background: #021614; opacity: var(--s, 0); pointer-events: none; box-shadow: inset 0 0 0 .6px rgba(255, 255, 255, .55); }
+.f-fr, .f-re { width: var(--w); height: var(--h); left: 0; top: 0; }
+.f-fr { transform: translateZ(calc(var(--d) / 2)); --s: var(--s-fr); --g: var(--g-fr); --p: var(--p-fr); }
+.f-re { transform: rotateY(180deg) translateZ(calc(var(--d) / 2)); --s: var(--s-re); --g: var(--g-re); --p: var(--p-re); }
+.f-de, .f-iz { width: var(--d); height: var(--h); left: calc((var(--w) - var(--d)) / 2); top: 0; }
+.f-de { transform: rotateY(90deg) translateZ(calc(var(--w) / 2)); --s: var(--s-de); --g: var(--g-de); --p: var(--p-de); }
+.f-iz { transform: rotateY(-90deg) translateZ(calc(var(--w) / 2)); --s: var(--s-iz); --g: var(--g-iz); --p: var(--p-iz); }
+.f-ar, .f-ab { width: var(--w); height: var(--d); left: 0; top: calc((var(--h) - var(--d)) / 2); }
+.f-ar { transform: rotateX(90deg) translateZ(calc(var(--h) / 2)); --s: var(--s-ar); --g: var(--g-ar); --p: var(--p-ar); }
+.f-ab { transform: rotateX(-90deg) translateZ(calc(var(--h) / 2)); --s: var(--s-ab); }
+
+/* Caja completa (visor): tapa con bisagra, paredes interiores y contenido que sale al abrir */
+.iv-tapa { position: absolute; left: 0; top: 0; width: var(--w); height: var(--d); transform-origin: 50% 0; transform-style: preserve-3d;
+    transform: translateZ(calc(var(--d) / -2)) rotateX(90deg); transition: transform .5s var(--e) .12s; }
+.abierta .iv-tapa { transform: translateZ(calc(var(--d) / -2)) rotateX(212deg); transition-delay: 0s; }
+.iv-tapa > .f-ar { left: 0; top: 0; transform: none; }
+.iv-tapa > .f-ar-in { left: 0; top: 0; width: var(--w); height: var(--d); transform: rotateY(180deg); background: linear-gradient(180deg, #dbe5e2, #c9d6d2); }
+.iv-in { position: absolute; backface-visibility: hidden; -webkit-backface-visibility: hidden; background: linear-gradient(180deg, #b9c8c4, #dfe8e5); }
+.in-fr, .in-re { width: var(--w); height: var(--h); left: 0; top: 0; }
+.in-fr { transform: translateZ(calc(var(--d) / 2 - 1px)) rotateY(180deg); }
+.in-re { transform: translateZ(calc(var(--d) / -2 + 1px)); background: linear-gradient(180deg, #a9bab5, #d3dedb); }
+.in-de, .in-iz { width: var(--d); height: var(--h); left: calc((var(--w) - var(--d)) / 2); top: 0; background: linear-gradient(180deg, #a3b5b0, #ccd8d5); }
+.in-de { transform: rotateY(90deg) translateZ(calc(var(--w) / 2 - 1px)) rotateY(180deg); }
+.in-iz { transform: rotateY(-90deg) translateZ(calc(var(--w) / 2 - 1px)) rotateY(180deg); }
+.in-ab { width: var(--w); height: var(--d); left: 0; top: calc((var(--h) - var(--d)) / 2); transform: rotateX(90deg) translateZ(calc(var(--h) / -2 + 1px)); background: #c3d1cd; }
+.iv-cont { position: absolute; left: 12px; top: 9px; width: calc(var(--w) - 24px); height: calc(var(--h) - 16px); transform-style: preserve-3d; transition: transform .45s var(--e); }
+.abierta .iv-cont { transform: translateY(calc(var(--h) * -.62)) rotateX(-4deg); transition: transform .7s var(--e) .3s; }
+.iv-cont > div { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 7px; overflow: hidden; }
+.iv-cont > .cb { transform: rotateY(180deg); }
+.iv-bl { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 7px 9px; padding: 11px 13px;
+    background: linear-gradient(128deg, #f6f9fa 0%, #c3ced2 26%, #f3f7f8 48%, #b2bfc4 72%, #eef3f4 100%); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .8); }
+.iv-bl i { display: grid; place-items: center; border-radius: 999px;
+    background: radial-gradient(circle at 34% 28%, rgba(255, 255, 255, .98), rgba(255, 255, 255, .3) 38%, rgba(170, 188, 194, .4) 72%);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .8), 0 2px 4px rgba(0, 0, 0, .18); }
+.iv-bl.tab i { border-radius: 50%; aspect-ratio: 1; align-self: center; }
+.iv-bl .cap { width: 46%; height: 80%; border-radius: 999px; background: linear-gradient(180deg, var(--k) 50%, #f7f7f2 50%); box-shadow: inset -2px 0 3px rgba(0, 0, 0, .18), inset 2px 0 2px rgba(255, 255, 255, .5); }
+.iv-bl .tb { width: 74%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #ffffff, #e9ebe4 70%); box-shadow: inset 0 -2px 3px rgba(0, 0, 0, .12); position: relative; }
+.iv-bl .tb:after { content: ""; position: absolute; left: 18%; right: 18%; top: 50%; border-top: 1px solid rgba(0, 0, 0, .12); }
+.iv-blb { display: grid; align-content: center; gap: 8px; padding: 10px; background: linear-gradient(128deg, #eef2f3 0%, #c5cfd3 30%, #f2f5f6 52%, #b9c5c9 78%, #e9eef0 100%); }
+.iv-blb span { font: 700 11px var(--disp); color: var(--k); opacity: .7; white-space: nowrap; letter-spacing: .02em; }
+.iv-blb span:nth-child(even) { margin-left: -30px; }
+.iv-hoja { padding: 12px 14px; background: #fdfdfb; display: flex; flex-direction: column; gap: 5px; box-shadow: inset 0 0 0 1px #e3e8e6; }
+.iv-hoja b { font: 700 12px var(--disp); color: var(--tinta); }
+.iv-hoja i { height: 4px; border-radius: 2px; background: #dfe5e3; }
+.iv-hoja i:nth-child(3n) { width: 70%; } .iv-hoja i:nth-child(4n) { width: 86%; }
+
+/* ---------- Insumos: sobre, caja dispensadora y frasco ---------- */
+.iv-caja.t-sobre { --w: 250px; --h: 112px; --d: 12px; }
+.iv-caja.t-dispensador { --w: 206px; --h: 104px; --d: 112px; }
+.iv-caja.t-frasco { --w: 100px; --h: 168px; --d: 64px; }
+.t-sobre .iv-cara { background: #f6f8f7; }
+.t-sobre .f-de .v, .t-sobre .f-iz .v, .t-sobre .f-ab span, .t-frasco .f-de .v, .t-frasco .f-iz .v, .t-frasco .f-ab span { display: none; }
+.t-sobre .f-de, .t-sobre .f-iz { background: #e3eae7; }
+.f-fr.s-fr { padding: 12px 14px; border: 7px solid #e3eae7; border-image: repeating-linear-gradient(45deg, #d8e1de 0 2px, #eef3f1 2px 4px) 7; }
+.iv-cara.s-fr .cat { max-width: 44%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.iv-cara.s-fr .cat, .iv-cara.d-fr .cat, .iv-cara.fr-fr .cat { font: 600 7.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--k); }
+.iv-cara.s-fr .nom { margin-top: 4px; max-width: 42%; font: 750 14.5px/1.05 var(--disp); overflow-wrap: break-word; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.iv-cara.s-fr .dosis { margin-top: 3px; font: 700 12px var(--ui); color: var(--k); }
+.iv-cara.s-fr .pie { position: absolute; left: 14px; bottom: 7px; margin: 0; }
+.iv-cara.s-fr .ventana { position: absolute; right: 8px; top: 8px; bottom: 8px; width: 50%; border-radius: 8px; display: grid; place-items: center; padding: 4px;
+    background: linear-gradient(135deg, rgba(214, 233, 240, .75), rgba(240, 248, 250, .55) 50%, rgba(206, 226, 234, .7)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .95), inset 0 0 12px rgba(120, 160, 175, .25); }
+.iv-cara.s-fr .ventana svg { width: 100%; max-height: 100%; }
+.iv-cara.d-fr { padding: 12px 14px 10px; display: flex; flex-direction: column; background: linear-gradient(180deg, #fbfdfc 62%, var(--k) 62%) !important; }
+.iv-cara.d-fr .nom { margin-top: 5px; max-width: 112px; font: 750 19px/1 var(--disp); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.iv-cara.d-fr .dosis { margin-top: 4px; font: 700 12px var(--ui); color: var(--k); }
+.iv-cara.d-fr .forma { font-size: 9px; color: #56625f; }
+.iv-cara.d-fr .pie { position: absolute; left: 14px; bottom: 9px; color: rgba(255, 255, 255, .85); margin: 0; }
+.iv-cara.d-fr .dibujo { position: absolute; right: 8px; bottom: 6px; width: 74px; height: 86px; display: grid; place-items: end center; }
+.iv-cara.d-fr .dibujo svg { width: 100%; height: 100%; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .2)); }
+.d-ar { background: #fbfdfc; }
+.d-ar .ranura { position: absolute; left: 22%; right: 22%; top: 28%; bottom: 28%; border-radius: 50%; background: radial-gradient(closest-side, #12201e 60%, #33433f); box-shadow: 0 0 0 3px #e3eae7; }
+.t-dispensador .f-de { background: var(--k); }
+.t-dispensador .f-iz { background: #fbfdfc; }
+.iv-cont.asoma { left: 24%; top: 0; width: 52%; height: var(--h); transform: translateY(-30%); }
+.abierta .iv-cont.asoma { transform: translateY(-64%); }
+.iv-cont > .iv-it { display: grid; place-items: center; background: none; border-radius: 0; overflow: visible; }
+.iv-it svg { width: 100%; max-height: 100%; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .25)); }
+.iv-cont.asoma > .iv-it { place-items: start center; }
+.iv-cara.fr-fr { padding: 30px 7px 10px; display: flex; flex-direction: column; align-items: center; text-align: center;
+    background: linear-gradient(180deg, #f4f6f5 0 18%, #fff 18% 82%, #f4f6f5 82%) !important; }
+.iv-cara.fr-fr .nom { margin-top: 4px; font: 750 13px/1.05 var(--disp); overflow-wrap: break-word; }
+.iv-cara.fr-fr .dosis { margin-top: 3px; font: 700 11px var(--ui); color: var(--k); }
+.iv-cara.fr-fr .gota { margin-top: 8px; width: 22px; height: 22px; border-radius: 50% 0 50% 50%; transform: rotate(-45deg); background: var(--k); opacity: .85; }
+.iv-cara.fr-fr .pie { margin-top: auto; font: 500 6.5px var(--mono); color: #56625f; }
+.iv-cara.fr-fr .sello { left: 50%; translate: -50% 0; }
+.t-frasco .f-de, .t-frasco .f-iz, .fr-ar { background: #eef2f1; }
+.t-frasco .f-re { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; padding: 10px 8px; }
+.t-frasco .f-re .bar svg { width: 76px; height: 30px; }
+.iv-tapon { position: absolute; left: calc((var(--w) - 40px) / 2); top: -24px; width: 40px; height: 24px; transform-style: preserve-3d; transition: transform .6s var(--e); }
+.abierta .iv-tapon { transform: translateY(-46px) rotateY(150deg); }
+.iv-tapon .tp { position: absolute; left: 0; top: 0; width: 40px; height: 24px; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+    background: repeating-linear-gradient(90deg, var(--k) 0 3px, color-mix(in srgb, var(--k), #000 18%) 3px 5px); }
+.tp-fr { transform: translateZ(20px); } .tp-re { transform: rotateY(180deg) translateZ(20px); }
+.tp-de { transform: rotateY(90deg) translateZ(20px); } .tp-iz { transform: rotateY(-90deg) translateZ(20px); }
+.iv-tapon .tp-ar { height: 40px; top: -8px; background: var(--k); transform: rotateX(90deg) translateZ(20px); border-radius: 4px; }
+.iv-pk.ins { place-items: center; padding: 0; }
+.iv-pk.ins:before { opacity: .25; }
+.iv-pk.ins span { position: relative; width: 34px; display: grid; place-items: center; }
+.iv-pk.ins svg { width: 100%; max-height: 30px; }
+.iv-ficha-cat em { margin-left: auto; font-style: normal; padding: 2px 8px; border-radius: 999px; background: var(--niebla); color: var(--texto); letter-spacing: .06em; }
+
+/* Frente */
+.f-fr { padding: 12px 14px 10px; display: flex; flex-direction: column; }
+.f-fr .ola { position: absolute; right: -40px; bottom: -52px; width: 150px; height: 112px; border-radius: 50%; background: var(--k); }
+.f-fr .ola2 { position: absolute; right: 30px; bottom: -74px; width: 150px; height: 100px; border-radius: 50%; background: var(--k); opacity: .18; }
+.f-fr .cat { font: 600 8px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--k); }
+.f-fr .nom { margin-top: 6px; max-width: 168px; font: 750 21px/1 var(--disp); letter-spacing: -.01em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.f-fr .nom.largo { font-size: 16px; }
+.f-fr .dosis { margin-top: 5px; font: 750 15px/1 var(--ui); color: var(--k); }
+.f-fr .forma { margin-top: 3px; font-size: 10px; font-weight: 500; color: #56625f; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.f-fr .pie { margin-top: auto; position: relative; display: flex; align-items: center; gap: 6px; font: 500 7.5px var(--mono); letter-spacing: .08em; color: #56625f; }
+.f-fr .cruz { position: absolute; right: 14px; bottom: 12px; width: 26px; height: 26px; color: #fff; z-index: 1; }
+.f-fr .sello { position: absolute; z-index: 2; left: 11px; bottom: 8px; padding: 2px 7px; border: 2px solid #c8102e; border-radius: 5px; color: #c8102e; font: 800 10.5px var(--disp); font-style: normal; letter-spacing: .08em; text-transform: uppercase; transform: rotate(-5deg); background: rgba(255, 255, 255, .9); }
+.f-fr.con-sello .pie { visibility: hidden; }
+.iv-caja.mini .sello { display: none; }
+.iv-caja.mini .f-fr.con-sello .pie { visibility: visible; }
+.f-fr .sello.bajo { border-color: #9a5800; color: #9a5800; }
+
+/* Reverso */
+.f-re { padding: 11px 13px; display: grid; grid-template-columns: minmax(0, 1fr) 104px; gap: 10px; }
+.f-re .txt { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.f-re .txt b { font: 700 11px/1.15 var(--disp); }
+.f-re .txt span { font-size: 8px; color: #56625f; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.f-re dl { margin-top: auto; display: grid; grid-template-columns: auto 1fr; gap: 1px 8px; font-size: 8px; }
+.f-re dt { color: #56625f; }
+.f-re dd { font: 600 8.5px var(--mono); text-align: right; }
+.f-re .bar { align-self: end; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 4px 3px; background: #fff; border-radius: 3px; }
+.f-re .bar svg { display: block; width: 96px; height: 38px; }
+.f-re .bar span { font: 500 7.5px var(--mono); letter-spacing: .06em; color: #0b1e1c; }
+.f-re .franja { position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--k); }
+
+/* Lados */
+.f-de { background: var(--k); color: #fff; display: grid; place-items: center; }
+.f-de .v, .f-iz .v { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: 116px; }
+.f-de .v { font: 750 15px var(--disp); }
+.f-de .v small { font: 600 9px var(--ui); opacity: .8; margin-top: 6px; }
+.f-iz { display: grid; place-items: center; }
+.f-iz .v { font: 700 13px var(--disp); color: var(--tinta); }
+.f-iz .v i { font-style: normal; color: var(--k); }
+.f-ar { display: flex; align-items: center; gap: 10px; padding: 0 14px; }
+.f-ar .tapa { position: absolute; left: 10px; right: 10px; top: 50%; border-top: 1px dashed #c3d2ce; }
+.f-ar b { position: relative; background: #fbfdfc; padding-right: 8px; font: 700 12px var(--disp); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.f-ar span { position: relative; margin-left: auto; background: #fbfdfc; padding-left: 8px; font: 500 8px var(--mono); color: #56625f; }
+.f-ab { display: flex; align-items: center; justify-content: space-between; padding: 0 14px; font: 500 8.5px var(--mono); color: #56625f; background: #f1f6f4; }
+
+/* Caja pequeña del anaquel */
+.iv-hueco-caja { position: relative; display: block; height: 104px; perspective: 700px; }
+.iv-caja.mini { position: absolute; left: 50%; top: 50%; margin: calc(var(--h) / -2) 0 0 calc(var(--w) / -2);
+    transform: scale(.5) rotateX(-14deg) rotateY(-30deg); transition: transform .35s var(--e); }
+.iv-caja.mini .iv-cara:after { opacity: 0; }
+.iv-caja.mini .f-de:after { opacity: .28; }
+.iv-caja.mini .f-ar:after { opacity: .04; }
+.iv-hueco:hover .iv-caja.mini, .iv-hueco.sel .iv-caja.mini { transform: scale(.54) rotateX(-12deg) rotateY(-14deg); }
+
 </style>
 @endverbatim
 </head>

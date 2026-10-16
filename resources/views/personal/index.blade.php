@@ -102,10 +102,6 @@
                                     <div class="ancho" x-show="sel.direccion"><dt>Domicilio</dt><dd x-text="sel.direccion"></dd></div>
                                 </dl>
                                 <p class="pe-act t" x-show="sel.citasHoy || sel.atendidasMes" x-text="'Hoy ' + sel.citasHoy + (sel.citasHoy === 1 ? ' cita' : ' citas') + ' · ' + sel.atendidasMes + ' atendidas este mes'"></p>
-                                <figure class="pe-codigo" :title="'Código 128 · ' + sel.folio">
-                                    <span class="pe-barras" x-html="barras(sel.folio)"></span>
-                                    <figcaption class="t" x-text="sel.folio"></figcaption>
-                                </figure>
                                 <footer class="pe-franja">
                                     <i></i>
                                     <span x-text="(sel.activo ? 'Activo' : 'Inactivo') + ' · ' + (sel.acceso ? sel.email : 'Sin acceso al sistema')"></span>
@@ -365,12 +361,12 @@
 
 /* ---------- Gafete ---------- */
 .pe-gafete { perspective: 1500px; }
-.pe-gafete-in { position: relative; min-height: 500px; transform-style: preserve-3d; transition: transform .45s var(--flip), height .3s var(--e); }
+.pe-gafete-in { position: relative; min-height: 440px; transform-style: preserve-3d; transition: transform .45s var(--flip), height .3s var(--e); }
 .pe-gafete.volteado .pe-gafete-in { transform: rotateY(180deg); height: 1180px; }
 .pe-cara { position: absolute; inset: 0; border-radius: 22px; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
-.pe-frente { position: relative; inset: auto; min-height: 500px; background: var(--papel); border: 1px solid var(--linea); box-shadow: 0 30px 50px -34px rgba(11, 30, 28, .6); }
+.pe-frente { position: relative; inset: auto; min-height: 440px; background: var(--papel); border: 1px solid var(--linea); box-shadow: 0 30px 50px -34px rgba(11, 30, 28, .6); }
 .pe-ranura { position: absolute; z-index: 3; top: 14px; left: 50%; width: 62px; height: 12px; margin-left: -31px; border-radius: 99px; background: var(--niebla); box-shadow: inset 0 2px 3px rgba(11, 30, 28, .25); }
-.pe-fr { position: relative; min-height: 500px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.pe-fr { position: relative; min-height: 440px; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .pe-fr-h { position: relative; width: 100%; height: 132px; padding: 38px 20px 0; overflow: hidden; color: #eafaf6; background: linear-gradient(160deg, #0d6a63, var(--cred) 50%, var(--cred2)); display: flex; justify-content: space-between; align-items: flex-start; text-align: left; }
 .pe-gl, .pe-gl svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .pe-fr-h p { position: relative; display: flex; flex-direction: column; min-width: 0; }
@@ -391,12 +387,8 @@
 .pe-fr-d .ancho { grid-column: 1 / -1; }
 .pe-fr-d .ancho dd { font-size: 13px; font-weight: 500; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .pe-fr-d dd .bi { color: var(--teal); }
-.pe-act { margin-top: 12px; font: 500 12.5px var(--mono); color: var(--ambar); }
-.pe-codigo { flex: none; margin: auto 0 10px; padding-top: 16px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.pe-barras { display: block; height: 40px; background: #fff; }
-.pe-barras svg { display: block; max-width: 100%; height: 40px; }
-.pe-codigo figcaption { font: 500 11.5px var(--mono); letter-spacing: .3em; color: var(--media); }
-.pe-franja { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 18px; font-size: 13px; font-weight: 600; color: #fff; background: var(--verde); }
+.pe .pe-act { margin: 12px 0 16px; font: 500 12.5px var(--mono); color: var(--ambar); }
+.pe-franja { margin-top: auto; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 18px; font-size: 13px; font-weight: 600; color: #fff; background: var(--verde); }
 .pe-franja i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #fff; }
 .pe-franja span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pe-frente.inactivo .pe-franja { background: #5d6a67; }
@@ -756,7 +748,6 @@ function modPersonal() {
         tecla(e) {
             const t = e.target.tagName, escribiendo = ['INPUT', 'TEXTAREA', 'SELECT'].includes(t) || e.target.isContentEditable;
             if (document.querySelector('.swal2-container')) return;
-            if (!this.editando && this.lector(e, escribiendo)) return;
             if (this.editando) {
                 if (e.key === 'Escape') { e.preventDefault(); this.cancelar(); }
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.guardar(); }
@@ -772,30 +763,6 @@ function modPersonal() {
                 const i = l.findIndex(p => this.sel && p.id === this.sel.id);
                 this.seleccionar(l[Math.max(0, Math.min(l.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))]);
             }
-        },
-
-        // Lector de códigos: teclea el folio muy rápido y termina con Enter (también si cae en el buscador)
-        _lec: '', _lecT: 0,
-        lector(e, escribiendo) {
-            const ahora = performance.now();
-            if (e.key === 'Enter') {
-                const leido = (escribiendo && e.target === this.$refs.buscar ? this.q : this._lec).trim().toUpperCase();
-                this._lec = '';
-                const m = leido.match(/^MT-?(\d{1,6})$/);
-                if (!m) return false;
-                const p = this.P.find(x => x.folio === 'MT-' + m[1].padStart(4, '0'));
-                e.preventDefault();
-                if (!p) { if (window.notificar) window.notificar('Ningún gafete con el folio ' + leido, 'warning'); return true; }
-                this.limpiar(); this.seleccionar(p);
-                if (escribiendo) e.target.blur();
-                if (window.notificar) window.notificar('Gafete leído: ' + p.nombre, 'success');
-                return true;
-            }
-            if (escribiendo || e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return false;
-            this._lec = (ahora - this._lecT > 80 ? '' : this._lec) + e.key;
-            this._lecT = ahora;
-            // Mientras llegan teclas de lector (rápidas), no se disparan los atajos N, E ni /
-            return this._lec.length > 1;
         },
 
         // ----- Formatos y dibujos -----
@@ -820,29 +787,6 @@ function modPersonal() {
         },
         roseta(seed, size) { return typeof mtRoseta === 'function' ? mtRoseta(seed, size) : ''; },
         guilloche(seed) { return typeof mtGuilloche === 'function' ? mtGuilloche(seed) : ''; },
-        // Código de barras Code 128 (juego B) con el folio: lo lee cualquier lector o app de códigos.
-        // Un lector USB que «teclea» el folio y Enter en esta pantalla selecciona a la persona.
-        barras(texto) {
-            const P = ['212222','222122','222221','121223','121322','131222','122213','122312','132212','221213','221312','231212','112232','122132','122231','113222','123122','123221','223211','221132','221231','213212','223112','312131','311222','321122','321221','312212','322112','322211','212123','212321','232121','111323','131123','131321','112313','132113','132311','211313','231113','231311','112133','112331','132131','113123','113321','133121','313121','211331','231131','213113','213311','213131','311123','311321','331121','312113','312311','332111','314111','221411','431111','111224','111422','121124','121421','141122','141221','112214','112412','122114','122411','142112','142211','241211','221114','413111','241112','134111','111242','121142','121241','114212','124112','124211','411212','421112','421211','212141','214121','412121','111143','111341','131141','114113','114311','411113','411311','113141','114131','311141','411131','211412','211214','211232','2331112'];
-            const t = String(texto || '').replace(/[^\x20-\x7E]/g, '');
-            if (!t) return '';
-            const vals = [104], q = 10;
-            for (const ch of t) vals.push(ch.charCodeAt(0) - 32);
-            let suma = 104;
-            for (let i = 1; i < vals.length; i++) suma += vals[i] * i;
-            vals.push(suma % 103, 106);
-            let x = q, d = '';
-            vals.forEach(v => {
-                const w = P[v];
-                for (let i = 0; i < w.length; i++) {
-                    const n = Number(w[i]);
-                    if (i % 2 === 0) d += 'M' + x + ' 0h' + n + 'v40h-' + n + 'z';
-                    x += n;
-                }
-            });
-            const ancho = x + q;
-            return '<svg viewBox="0 0 ' + ancho + ' 40" width="' + ancho * 2 + '" height="40" preserveAspectRatio="none" shape-rendering="crispEdges" role="img" aria-label="Código de barras ' + t + '"><path d="' + d + '" fill="#0b1e1c"/></svg>';
-        },
     };
 }
 </script>

@@ -339,32 +339,53 @@
                     <h2>Inventario</h2>
                     <a class="db-link" x-show="d.puede.inventario && d.urls.inventario" :href="d.urls.inventario">Surtir <i class="bi bi-arrow-right"></i></a>
                 </header>
+                <p class="db-stock-r" x-show="d.stock.total">
+                    <b class="t" x-text="d.stock.total"></b>
+                    <span x-text="d.stock.total === 1 ? 'producto por surtir' : 'productos por surtir'"></span>
+                    <em x-show="d.stock.agotados" x-text="d.stock.agotados + (d.stock.agotados === 1 ? ' agotado' : ' agotados')"></em>
+                </p>
                 <p class="db-ok" x-show="!d.stock.total"><i class="bi bi-check2-circle"></i> Todo por encima del mínimo.</p>
-                <template x-if="d.stock.total">
-                    <div>
-                        <p class="db-stock-r">
-                            <b class="t" x-text="d.stock.total"></b>
-                            <span x-text="d.stock.total === 1 ? 'producto por surtir' : 'productos por surtir'"></span>
-                            <em x-show="d.stock.agotados" x-text="d.stock.agotados + (d.stock.agotados === 1 ? ' agotado' : ' agotados')"></em>
-                        </p>
-                        <ul>
-                            <template x-for="p in d.stock.items" :key="'p' + p.nombre">
-                                <li :class="'s-' + nivelStock(p)">
-                                    <div class="db-st-n">
-                                        <b :title="p.nombre" x-text="p.nombre"></b>
-                                        <span x-text="{ agotado: 'Agotado', bajo: 'Bajo el mínimo', minimo: 'En el mínimo' }[nivelStock(p)]"></span>
-                                    </div>
-                                    <div class="db-st-b" role="img" :aria-label="p.disponible + ' en existencia, mínimo ' + p.minimo">
-                                        <i :style="'width:' + anchoStock(p) + '%'"></i>
-                                        <s :style="'left:' + marcaStock(p) + '%'" title="Mínimo"></s>
-                                    </div>
-                                    <small class="t"><b x-text="p.disponible"></b> en existencia · mínimo <span x-text="p.minimo"></span></small>
-                                </li>
-                            </template>
-                        </ul>
-                        <p class="db-stock-mas" x-show="d.stock.total > d.stock.items.length" x-text="'y ' + (d.stock.total - d.stock.items.length) + ' más en Inventario'"></p>
+
+                <!-- Galería 3D: las cajas del almacén en carrusel -->
+                <div class="db-gal" x-show="(d.stock.galeria || []).length" x-cloak>
+                    <div class="db-gal-tabs" role="group" aria-label="Qué mostrar" x-show="d.stock.total">
+                        <button type="button" @click="galCambiar('surtir')" :aria-pressed="(galVista === 'surtir').toString()">Por surtir <b class="t" x-text="d.stock.total"></b></button>
+                        <button type="button" @click="galCambiar('todo')" :aria-pressed="(galVista === 'todo').toString()">Todo <b class="t" x-text="(d.stock.galeria || []).length"></b></button>
                     </div>
-                </template>
+
+                    <div class="db-gal-esc" x-ref="galEsc" tabindex="0" role="group" aria-roledescription="carrusel" :aria-label="galActual ? 'Producto ' + (galI + 1) + ' de ' + galeria.length + ': ' + titulo(galActual.nombre) : 'Galería'"
+                         @pointerdown="galAgarrar($event)" @keydown.arrow-left.prevent="galMover(-1)" @keydown.arrow-right.prevent="galMover(1)">
+                        <span class="db-gal-luz" aria-hidden="true"></span>
+                        <span class="db-gal-piso" aria-hidden="true"></span>
+                        <template x-for="(p, i) in galeria" :key="'g' + galVista + p.id">
+                            <div class="db-gal-it" :class="i === galI && 'centro'" :style="galPos(i)" @click="galClic(i)" :data-i="i">
+                                <span class="iv-caja" :class="'t-' + tipoClase(p)" :style="'--k:' + colorCaja(p) + ';' + (i === galI ? '' : LUZ_LADO) + (i === galI ? '' : ';transform: rotateX(-12deg) rotateY(-32deg)')" x-html="cajaDe(p)"></span>
+                            </div>
+                        </template>
+                        <button type="button" class="db-gal-fl izq" @click.stop="galMover(-1)" @pointerdown.stop :disabled="galI <= 0" aria-label="Anterior"><i class="bi bi-chevron-left"></i></button>
+                        <button type="button" class="db-gal-fl der" @click.stop="galMover(1)" @pointerdown.stop :disabled="galI >= galeria.length - 1" aria-label="Siguiente"><i class="bi bi-chevron-right"></i></button>
+                        <span class="db-gal-n t" aria-hidden="true" x-text="(galI + 1) + ' / ' + galeria.length"></span>
+                    </div>
+
+                    <template x-if="galActual">
+                        <div class="db-gal-info" :class="'s-' + galActual.estado">
+                            <p class="db-gal-cat"><i :style="'background:' + colorCaja(galActual)"></i><span x-text="galActual.categoria"></span><em x-text="esInsumo(galActual) ? 'Insumo' : 'Medicamento'"></em></p>
+                            <b class="db-gal-nom" x-text="titulo(galActual.nombre)"></b>
+                            <div class="db-st-b" role="img" :aria-label="galActual.disponible + ' en existencia, mínimo ' + galActual.minimo">
+                                <i :style="'width:' + anchoGal(galActual) + '%'"></i>
+                                <s x-show="galActual.minimo > 0" :style="'left:' + marcaGal(galActual) + '%'" title="Mínimo"></s>
+                            </div>
+                            <p class="db-gal-dato">
+                                <span class="t"><b x-text="galActual.disponible"></b> en existencia · mínimo <span x-text="galActual.minimo"></span></span>
+                                <span class="db-gal-tag" x-text="{ agotado: 'Agotado', bajo: 'Por surtir', ok: 'Suficiente' }[galActual.estado]"></span>
+                            </p>
+                            <div class="db-gal-pie">
+                                <span class="db-gal-puntos" aria-hidden="true"><template x-for="(p, i) in galeria" :key="'d' + galVista + p.id"><i :class="i === galI && 'on'" @click="galIr(i)"></i></template></span>
+                                <a class="db-link" x-show="d.puede.inventario && d.urls.inventario" :href="d.urls.inventario + '?p=' + galActual.id">Ver en inventario <i class="bi bi-arrow-right"></i></a>
+                            </div>
+                        </div>
+                    </template>
+                </div>
             </section>
 
             <!-- Tipo de consulta -->
@@ -669,6 +690,44 @@
 .db-stock li small b { font-weight: 600; color: var(--tinta); }
 .db-stock-mas { margin-top: 6px; font-size: 12.5px; color: var(--media); }
 
+/* Galería 3D del inventario */
+.db-gal { display: grid; gap: 10px; }
+.db-gal-tabs { display: flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--niebla); justify-self: start; }
+.db-gal-tabs button { height: 28px; padding: 0 11px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; font: 600 12.5px var(--ui); color: var(--media); background: none; }
+.db-gal-tabs button b { font-weight: 650; font-size: 11.5px; color: var(--media); }
+.db-gal-tabs button[aria-pressed=true] { background: var(--papel); color: var(--tinta); box-shadow: 0 1px 3px rgba(11, 30, 28, .14); }
+.db-gal-esc { position: relative; height: 210px; border-radius: 14px; overflow: hidden; perspective: 760px; perspective-origin: 50% 40%; touch-action: pan-y; cursor: grab; user-select: none;
+    background: radial-gradient(85% 75% at 50% 28%, #134a45 0%, #0a2826 50%, #040d0c 100%); outline-offset: -3px; }
+.db-gal-esc.agarrando { cursor: grabbing; }
+.db-gal-luz { position: absolute; left: 50%; top: -20px; width: 300px; height: 210px; margin-left: -150px; pointer-events: none;
+    background: linear-gradient(180deg, rgba(196, 255, 244, .3), rgba(166, 239, 226, .04) 78%, transparent); clip-path: polygon(40% 0, 60% 0, 100% 100%, 0 100%); filter: blur(14px); }
+.db-gal-piso { position: absolute; left: 0; right: 0; top: 70%; bottom: 0; pointer-events: none; background: linear-gradient(180deg, rgba(166, 239, 226, .07), rgba(0, 0, 0, .5)); border-top: 1px solid rgba(166, 239, 226, .12); }
+.db-gal-it { position: absolute; left: 50%; top: 46%; width: 0; height: 0; transform-style: preserve-3d; transition: transform .45s var(--e), opacity .45s var(--e); cursor: pointer; }
+.db-gal-it.centro { cursor: grab; }
+.db-gal-it .iv-caja { position: absolute; left: 0; top: 0; margin: calc(var(--h) / -2) 0 0 calc(var(--w) / -2); }
+.db-gal-it:not(.centro) .iv-cara:after { opacity: calc(var(--s, 0) + .12); }
+.db-gal-fl { position: absolute; top: 50%; z-index: 20; width: 32px; height: 32px; margin-top: -16px; border-radius: 50%; display: grid; place-items: center; background: rgba(4, 22, 20, .55); color: #eafaf6; backdrop-filter: blur(6px); transition: background .15s, opacity .15s; }
+.db-gal-fl:hover:not(:disabled) { background: rgba(255, 255, 255, .18); }
+.db-gal-fl:disabled { opacity: .25; cursor: default; }
+.db-gal-fl.izq { left: 8px; } .db-gal-fl.der { right: 8px; }
+.db-gal-n { position: absolute; right: 12px; bottom: 9px; z-index: 20; font: 600 11px var(--mono); letter-spacing: .08em; color: rgba(166, 239, 226, .75); }
+.db-gal-info { --sc: var(--verde); --sv: var(--verdev); min-width: 0; }
+.db-gal-info.s-bajo { --sc: #c98a1e; --sv: var(--ambarv); }
+.db-gal-info.s-agotado { --sc: var(--rosa); --sv: var(--rosav); }
+.db-gal-cat { display: flex; align-items: center; gap: 7px; font: 600 10.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--media); }
+.db-gal-cat i { width: 8px; height: 8px; border-radius: 2px; }
+.db-gal-cat em { margin-left: auto; font-style: normal; padding: 1px 7px; border-radius: 99px; background: var(--niebla); color: var(--texto); }
+.db-gal-nom { display: block; margin-top: 3px; font: 700 16px/1.2 var(--disp); color: var(--tinta); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.db-gal-info .db-st-b { margin: 8px 0 6px; }
+.db-gal-dato { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--media); }
+.db-gal-dato b { font-weight: 600; color: var(--tinta); }
+.db-gal-tag { flex: none; padding: 1px 8px; border-radius: 99px; background: var(--sv); color: var(--sc); font-size: 11.5px; font-weight: 650; }
+.db-gal-info.s-bajo .db-gal-tag { color: var(--ambar); }
+.db-gal-pie { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.db-gal-puntos { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.db-gal-puntos i { width: 6px; height: 6px; border-radius: 50%; background: var(--linea); cursor: pointer; transition: background .15s, width .2s; }
+.db-gal-puntos i.on { width: 16px; border-radius: 3px; background: var(--teal); }
+
 /* Médicos de hoy */
 .db-meds > header { flex-wrap: wrap; }
 .db-meds .db-ley { font-size: 12px; }
@@ -805,7 +864,7 @@ function modDash() {
         medicosHoy: [],
         tiposMes: { 'Seguimiento': 0, 'Primera Vez': 0, 'Urgencia': 0 },
         grafica: { meses: [], hayIngresos: false },
-        stock: { disponible: false, total: 0, agotados: 0, items: [] },
+        stock: { disponible: false, total: 0, agotados: 0, items: [], galeria: [], productos: 0 },
     };
     const fusionar = (extra) => {
         const x = extra || {};
@@ -839,6 +898,9 @@ function modDash() {
         barra: null,
         ahora: new Date(),
         anim: { pacientes: 0, pendientes: 0, consultas: 0, ocupacion: 0 },
+        galVista: 'surtir',
+        galI: 0,
+        LUZ_LADO: window.MTCaja ? MTCaja.luces(-12, -32) : '',
         TIPOS: [
             { k: 'Seguimiento', t: 'Seguimiento', c: 't-seg' },
             { k: 'Primera Vez', t: 'Primera vez', c: 't-pri' },
@@ -857,6 +919,8 @@ function modDash() {
 
         init() {
             requestAnimationFrame(() => requestAnimationFrame(() => { this.montado = true; }));
+            if (!this.d.stock.total) this.galVista = 'todo';
+            this.galTornamesa();
             this.contar0();
             setInterval(() => { this.ahora = new Date(); }, 30000);
             if (this.d.urlDatos) {
@@ -871,7 +935,9 @@ function modDash() {
             try {
                 const res = await fetch(this.d.urlDatos, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
                 if (!res.ok) throw new Error('HTTP ' + res.status);
+                const antes = this.galActual ? this.galActual.id : null;
                 this.d = fusionar(await res.json());
+                if (antes) { const i = this.galeria.findIndex(p => p.id === antes); this.galI = i >= 0 ? i : Math.min(this.galI, Math.max(0, this.galeria.length - 1)); }
                 this.contar0();
                 if (this.sel) this.sel = this.d.agenda.find(c => c.id === this.sel.id) || null;
                 this.error = false;
@@ -984,6 +1050,80 @@ function modDash() {
         elegir(c) { this.sel = this.sel && this.sel.id === c.id ? null : c; window.mtRefresca && mtRefresca('.db-ficha-in'); },
 
         // ----- Inventario: la barra llega a 150% del mínimo y una marca indica el mínimo -----
+        // ----- Galería 3D del inventario (la caja la dibuja MTCaja, en el layout) -----
+        get galeria() {
+            const g = this.d.stock.galeria || [];
+            return this.galVista === 'surtir' && this.d.stock.total ? g.filter(p => p.estado !== 'ok') : g;
+        },
+        get galActual() { return this.galeria[Math.min(this.galI, this.galeria.length - 1)] || null; },
+        cajaDe(p) { return window.MTCaja ? MTCaja.cajaHTML(p) : ''; },
+        tipoClase(p) { return window.MTCaja ? MTCaja.tipoDe(p).clase : 'medicamento'; },
+        esInsumo(p) { return window.MTCaja ? MTCaja.tipoDe(p).insumo : false; },
+        colorCaja(p) { return window.MTCaja ? MTCaja.colorDe(p) : '#0b5a54'; },
+        titulo(t) { return window.MTCaja ? MTCaja.titulo(t) : t; },
+        anchoGal(p) { const tope = Math.max(1, p.minimo * 3, p.disponible); return this.montado ? (p.disponible <= 0 ? 0 : Math.max(3, Math.min(100, p.disponible / tope * 100))) : 0; },
+        marcaGal(p) { return Math.min(100, p.minimo / Math.max(1, p.minimo * 3, p.disponible) * 100); },
+        galPos(i) {
+            const k = i - this.galI, a = Math.abs(k);
+            if (a > 2) return 'opacity:0;pointer-events:none;transform:translateX(' + (k > 0 ? 260 : -260) + 'px) translateZ(-320px) scale(.4)';
+            const x = k * 104, z = -a * 150, ry = -k * 32, sc = a ? .46 : .6;
+            return 'z-index:' + (10 - a) + ';opacity:' + (a === 2 ? .45 : 1) + ';transform:translateX(' + x + 'px) translateZ(' + z + 'px) rotateY(' + ry + 'deg) scale(' + sc + ')';
+        },
+        galIr(i) {
+            const n = this.galeria.length;
+            if (!n) return;
+            this.galI = Math.max(0, Math.min(n - 1, i));
+            this._galRy = -32;
+            this._galDesde = -32 - 160;  // la caja del centro llega girando
+        },
+        galMover(paso) { this.galIr(this.galI + paso); },
+        galCambiar(v) { this.galVista = v; this.galI = 0; this._galRy = -32; },
+        galClic(i) { if (this._galArrastre) return; if (i !== this.galI) this.galIr(i); },
+        galAgarrar(e) {
+            if (e.button !== 0) return;
+            const el = this.$refs.galEsc, x0 = e.clientX;
+            let rx0 = this._galRy || -32, mov = 0;
+            this._galArrastre = false;
+            el.classList.add('agarrando');
+            const mover = ev => {
+                mov = ev.clientX - x0;
+                if (Math.abs(mov) > 6) this._galArrastre = true;
+                // Arrastrar sobre la caja del centro la gira; al soltar decide si cambia de producto
+                this._galRy = rx0 + mov * .6;
+                this._galMano = true;
+            };
+            const soltar = () => {
+                el.removeEventListener('pointermove', mover); el.removeEventListener('pointerup', soltar); el.removeEventListener('pointercancel', soltar);
+                el.classList.remove('agarrando');
+                this._galMano = false;
+                if (Math.abs(mov) > 70) { this._galRy = rx0; this.galMover(mov < 0 ? 1 : -1); }
+                setTimeout(() => { this._galArrastre = false; }, 0);
+            };
+            el.addEventListener('pointermove', mover); el.addEventListener('pointerup', soltar); el.addEventListener('pointercancel', soltar);
+        },
+        // La caja del centro gira despacio; se acomoda suave cuando llega una nueva
+        galTornamesa() {
+            const quieto = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            this._galRy = -32;
+            let actual = -32, visible = true, ultimo = 0;
+            this.$nextTick(() => {
+                const esc = this.$refs.galEsc;
+                if (esc && 'IntersectionObserver' in window) new IntersectionObserver(e => { visible = e[0].isIntersecting; }).observe(esc);
+            });
+            const paso = t => {
+                const dt = Math.min(48, t - (ultimo || t)); ultimo = t;
+                const esc = this.$refs.galEsc;
+                if (esc && visible && !document.hidden && window.MTCaja) {
+                    if (this._galDesde !== undefined && this._galDesde !== null) { actual = quieto ? this._galRy : this._galDesde; this._galDesde = null; }
+                    if (!quieto && !this._galMano) this._galRy += dt * .018;
+                    actual += (this._galRy - actual) * (quieto ? 1 : .1);
+                    const caja = esc.querySelector('.db-gal-it.centro .iv-caja');
+                    if (caja) MTCaja.girar(caja, -14, actual);
+                }
+                requestAnimationFrame(paso);
+            };
+            requestAnimationFrame(paso);
+        },
         nivelStock(p) { return p.disponible <= 0 ? 'agotado' : (p.disponible < p.minimo ? 'bajo' : 'minimo'); },
         anchoStock(p) { const tope = Math.max(1, p.minimo * 1.5); return this.montado ? Math.max(p.disponible > 0 ? 3 : 0, Math.min(100, p.disponible / tope * 100)) : 0; },
         marcaStock(p) { return Math.min(100, p.minimo / Math.max(1, p.minimo * 1.5) * 100); },

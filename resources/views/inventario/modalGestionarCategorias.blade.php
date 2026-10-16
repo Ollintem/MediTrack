@@ -22,7 +22,7 @@
              x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 translate-y-10 sm:translate-y-0 sm:scale-95">
 
             {{-- ===== Encabezado ===== --}}
-            <div class="relative px-6 py-5 bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-700 text-white shrink-0 overflow-hidden">
+            <div class="relative px-6 py-5 iv-modal-cab text-white shrink-0 overflow-hidden">
                 <div class="absolute -right-8 -top-10 w-36 h-36 rounded-full bg-white/5"></div>
                 <i class="bi bi-tags absolute right-14 -bottom-6 text-7xl text-white/5 -rotate-12 pointer-events-none gc-flotar"></i>
                 <div class="relative flex items-center gap-4">
