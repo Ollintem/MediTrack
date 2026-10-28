@@ -2,9 +2,8 @@
 
 {{--
     MÓDULO DE PERSONAL · MediTrack
-    Plantilla agrupada por cargo y, al lado, el gafete de la persona elegida.
-    El gafete se voltea para dar de alta o editar (a lo ancho, como la credencial de pacientes)
-    y se guarda por AJAX: PersonalController responde JSON. ?nuevo=1 abre el alta; ?p=ID elige a alguien.
+    Plantilla agrupada por cargo y gafete interactivo en la lateral.
+    El gafete gira a su reverso para registrar o editar vía AJAX hacia PersonalController.
 --}}
 
 @section('content')
@@ -23,7 +22,7 @@
         <button type="button" class="pe-dark" x-show="PUEDE.crear" @click="nueva()">Registrar personal <kbd>N</kbd></button>
     </header>
 
-    <!-- CABECERA: cifra e indicadores -->
+    <!-- CABECERA: Cifras e Indicadores -->
     <section class="pe-cab">
         <div class="pe-g">
             <b class="t" x-text="P.length"></b>
@@ -39,7 +38,9 @@
         <div class="pe-turnos" role="group" aria-label="Turno">
             <button type="button" :aria-pressed="(!turno).toString()" @click="turno = ''">Todos</button>
             <template x-for="t in TURNOS" :key="'ft' + t.v">
-                <button type="button" :aria-pressed="(turno === t.v).toString()" @click="turno = turno === t.v ? '' : t.v"><i class="bi" :class="t.i"></i><span x-text="t.v"></span></button>
+                <button type="button" :aria-pressed="(turno === t.v).toString()" @click="turno = turno === t.v ? '' : t.v">
+                    <i class="bi" :class="t.i"></i><span x-text="t.v"></span>
+                </button>
             </template>
         </div>
     </section>
@@ -52,7 +53,11 @@
                     <h3><span x-text="g.rol"></span><small class="t" x-text="g.items.length"></small></h3>
                     <template x-for="p in g.items" :key="'p' + p.id">
                         <button type="button" class="pe-fila" :class="{ 'sel': sel && sel.id === p.id, 'inactivo': !p.activo }" @click="seleccionar(p)">
-                            <span class="pe-av"><span x-html="roseta(p.nombre, 44)"></span><b x-text="iniciales(p)"></b><i :class="p.activo ? 'on' : ''"></i></span>
+                            <span class="pe-av">
+                                <span x-html="roseta(p.nombre, 44)"></span>
+                                <b x-text="iniciales(p)"></b>
+                                <i :class="p.activo ? 'on' : ''"></i>
+                            </span>
                             <span class="pe-fila-n">
                                 <b><span x-text="p.nombre"></span><em x-show="p.soyYo">Tú</em></b>
                                 <small x-text="[p.especialidad || p.rol, 'Turno ' + p.turno.toLowerCase()].filter(Boolean).join(' · ')"></small>
@@ -72,12 +77,12 @@
             </div>
         </div>
 
-        <!-- GAFETE (frente) Y SU FORMULARIO (reverso) -->
+        <!-- GAFETE (Frente) Y FORMULARIO (Reverso) -->
         <aside class="pe-lado">
             <div class="pe-gafete" :class="{ 'volteado': editando }">
                 <div class="pe-gafete-in">
 
-                    <!-- FRENTE: gafete del personal -->
+                    <!-- FRENTE: Gafete del personal -->
                     <article class="pe-cara pe-frente" :class="sel && !sel.activo ? 'inactivo' : ''" :aria-hidden="editando.toString()">
                         <span class="pe-ranura" aria-hidden="true"></span>
                         <template x-if="sel">
@@ -117,12 +122,12 @@
                         </template>
                     </article>
 
-                    <!-- REVERSO: alta o edición -->
+                    <!-- REVERSO: Formulario de Alta / Edición -->
                     <form class="pe-cara pe-reverso" @submit.prevent="guardar()" novalidate :aria-hidden="(!editando).toString()">
                         <p class="pe-rv-k" x-text="form.id ? 'Editando · ' + (sel ? sel.folio : '') : 'Alta de personal'"></p>
 
                         <div class="pe-rv-c">
-                            <!-- Columna A: identidad y puesto -->
+                            <!-- Columna A: Identidad y Puesto -->
                             <div class="pe-rv-a">
                                 <h4>Identidad</h4>
                                 <div class="pe-dos">
@@ -187,7 +192,7 @@
                                 </div>
                             </div>
 
-                            <!-- Columna B: acceso y nómina -->
+                            <!-- Columna B: Acceso y Nómina -->
                             <div class="pe-rv-b">
                                 <div class="pe-h4">
                                     <h4>Acceso al sistema</h4>
@@ -218,7 +223,10 @@
                                                 <button type="button" @click="verPass = !verPass" :aria-label="verPass ? 'Ocultar' : 'Mostrar'" :tabindex="editando ? 0 : -1"><i class="bi" :class="verPass ? 'bi-eye-slash' : 'bi-eye'"></i></button>
                                                 <button type="button" class="pe-gen" @click="generarPass()" :tabindex="editando ? 0 : -1"><i class="bi bi-magic"></i> Generar</button>
                                             </div>
-                                            <div class="pe-fuerza" x-show="form.password"><template x-for="n in 4" :key="'fz' + n"><i :class="n <= fuerza.nivel ? fuerza.clase : ''"></i></template><span x-text="form.password.length !== 8 ? 'Lleva ' + form.password.length + ' de 8' : fuerza.texto"></span></div>
+                                            <div class="pe-fuerza" x-show="form.password">
+                                                <template x-for="n in 4" :key="'fz' + n"><i :class="n <= fuerza.nivel ? fuerza.clase : ''"></i></template>
+                                                <span x-text="form.password.length !== 8 ? 'Lleva ' + form.password.length + ' de 8' : fuerza.texto"></span>
+                                            </div>
                                             <small x-show="errores.password" x-text="errores.password"></small>
                                         </div>
                                         <label class="pe-campo" x-show="form.password" :class="{ 'mal': form.password2 && form.password2 !== form.password }">
@@ -263,7 +271,7 @@
                 </div>
             </div>
 
-            <!-- Acciones del gafete -->
+            <!-- Acciones del Gafete -->
             <div class="pe-acc" x-show="!editando && sel">
                 <button type="button" class="pe-btn pe-prim" x-show="PUEDE.editar" @click="editar(sel)"><i class="bi bi-pencil"></i> Editar <kbd>E</kbd></button>
                 <a class="pe-btn" x-show="sel && sel.nomina" :href="sel ? sel.nomina : '#'"><i class="bi bi-receipt"></i> Nómina</a>
@@ -275,9 +283,9 @@
     </section>
 </div>
 
+<!-- INYECCIÓN DE DATOS INICIALES DESDE LARAVEL -->
 <script type="application/json" id="pe-datos">{!! json_encode(array_merge($datosPersonal ?? [], ['csrf' => csrf_token(), 'exito' => session('success'), 'error' => session('error')]), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) !!}</script>
 
-@verbatim
 <style>
 .pe {
     --tinta: #0b1e1c; --texto: #2c3d3a; --media: #56625f; --linea: #dbe4e1; --linea2: #edf2f1; --niebla: #eef3f1; --papel: #fff;
@@ -396,7 +404,7 @@
 .pe-fr-vacio h2 { margin-top: 70px; text-transform: none; font-size: 26px; }
 .pe-fr-vacio > p { margin-top: 8px; padding: 0 30px; color: var(--media); }
 
-/* Reverso: formulario */
+/* Reverso: Formulario */
 .pe-reverso { transform: rotateY(180deg); background: #fbfdfc; border: 1px solid var(--linea); box-shadow: 0 24px 44px -30px rgba(11, 30, 28, .55); display: flex; flex-direction: column; }
 .pe-rv-k { padding: 16px 18px 6px; font: 500 12px var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--cred); }
 .pe-rv-c { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 18px 16px; display: flex; flex-direction: column; gap: 12px; scrollbar-width: thin; }
@@ -427,7 +435,7 @@
 .pe-seg-2 { grid-template-columns: 1fr 1.6fr; }
 .pe-seg-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .pe-seg-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.pe-seg button { height: 38px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 6px; border-radius: 9px; border: 1px solid var(--linea); background: var(--papel); font: 600 12.5px var(--ui); color: var(--texto); white-space: nowrap; overflow: hidden; }
+.pe-seg button { height: 38px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 6px; border-radius: 99px; border: 1px solid var(--linea); background: var(--papel); font: 600 12.5px var(--ui); color: var(--texto); white-space: nowrap; overflow: hidden; }
 .pe-seg button .bi { color: var(--media); }
 .pe-seg button[aria-pressed=true] { border-color: var(--cred); background: var(--velo); color: var(--cred); }
 .pe-seg button[aria-pressed=true] .bi { color: var(--cred); }
@@ -491,10 +499,9 @@
 .pe-acc { display: flex; gap: 8px; }
 .pe-acc .pe-prim { flex: 1; }
 
-/* Captura: lo demás se atenúa */
+/* Estado Editando */
 .pe.editando .pe-lista, .pe.editando .pe-cab { opacity: .35; filter: saturate(.6); pointer-events: none; }
 
-/* Captura a lo ancho: como al crear un paciente, el gafete ocupa toda la vista */
 @container (min-width: 640px) {
     .pe.editando .pe-esc { grid-template-columns: minmax(0, 1fr); }
     .pe.editando .pe-lista, .pe.editando .pe-acc { display: none; }
@@ -530,7 +537,7 @@
 <script>
 function modPersonal() {
     const D = JSON.parse(document.getElementById('pe-datos').textContent || '{}');
-    const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const aviso = (m, i) => { if (window.notificar) window.notificar(m, i || 'success'); };
     const vacio = () => ({ id: null, nombre: '', apellido: '', telefono: '', rut: '', direccion: '', rol_id: '', especialidad: '', turno: 'Completo', estado: 'Activo', acceso: false, username: '', password: '', password2: '', salario_diario: '', tipo_pago: 'QUINCENAL' });
@@ -538,7 +545,7 @@ function modPersonal() {
     return {
         P: D.personal || [],
         ROLES: D.roles || [],
-        PUEDE: D.puede || {},
+        PUEDE: D.puede || { crear: true, editar: true, eliminar: true, roles: true },
         R: D.rutas || {},
         DOMINIO: D.dominio || 'meditrack.com',
         CLINICA: D.clinica || 'MediTrack',
@@ -570,7 +577,6 @@ function modPersonal() {
             this.$watch('form.apellido', () => this.sugerirUsuario());
         },
 
-        // ----- Lista -----
         cumple(p, k) {
             if (k === 'activos') return p.activo;
             if (k === 'inactivos') return !p.activo;
@@ -598,7 +604,6 @@ function modPersonal() {
             if (window.innerWidth < 1100) this.$nextTick(() => { const g = document.querySelector('.pe-gafete'); if (g) g.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' }); });
         },
 
-        // ----- Formulario -----
         nueva() {
             if (!this.PUEDE.crear || this.editando) return;
             this.form = vacio();
@@ -715,7 +720,6 @@ function modPersonal() {
             }
         },
 
-        // ----- Acciones del gafete -----
         async copiar(t) { try { await navigator.clipboard.writeText(t); aviso('Correo copiado: ' + t); } catch (e) { aviso('No se pudo copiar', 'warning'); } },
         eliminar(p) {
             if (!p || p.soyYo || !window.Swal) return;
@@ -744,7 +748,6 @@ function modPersonal() {
             });
         },
 
-        // ----- Teclado -----
         tecla(e) {
             const t = e.target.tagName, escribiendo = ['INPUT', 'TEXTAREA', 'SELECT'].includes(t) || e.target.isContentEditable;
             if (document.querySelector('.swal2-container')) return;
@@ -765,7 +768,6 @@ function modPersonal() {
             }
         },
 
-        // ----- Formatos y dibujos -----
         mayus(s) { return String(s || '').trim().replace(/\s+/g, ' ').toUpperCase(); },
         iniciales(p) {
             const n = String((p && (p.pila || p.nombre)) || '').replace(/\b(DR|DRA|ENF|LIC|ING)\.?\s+/gi, '').trim();
@@ -790,5 +792,4 @@ function modPersonal() {
     };
 }
 </script>
-@endverbatim
 @endsection

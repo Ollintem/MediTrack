@@ -10,6 +10,7 @@ return new class extends Migration
     {
         Schema::create('movimientos_caja', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('caja_id')->nullable()->constrained('cajas')->onDelete('cascade');
             $table->foreignId('ticket_id')->nullable()->constrained('tickets_venta')->onDelete('set null');
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null'); // Cajero
             $table->enum('tipo', ['Ingreso', 'Egreso']);

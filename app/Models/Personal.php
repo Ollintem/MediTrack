@@ -14,13 +14,24 @@ class Personal extends Model
     protected $fillable = [
         'user_id',
         'clinica_id',
-        'nombre_completo',
+        'fecha_nacimiento',
+        'fecha_ingreso',
         'rut',
+        'nombre_completo',
+        'genero',
         'telefono',
         'numero_registro',
+        'direccion',
+        'rut_profesional',
         'especialidad_principal',
         'turno',
         'estado',
+        'foto_url',
+    ];
+
+    protected $casts = [
+        'fecha_nacimiento' => 'date',
+        'fecha_ingreso'    => 'date',
     ];
 
     public function usuario()

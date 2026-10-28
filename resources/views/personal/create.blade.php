@@ -91,6 +91,40 @@
                         @error('apellido')<p class="ayuda text-rose-600">{{ $message }}</p>@enderror
                     </div>
 
+                    {{-- CAMPOS AGREGADOS: Género y Fecha de Nacimiento --}}
+                    <div>
+                        <label for="p-genero" class="etq">Género <span class="opc">(opcional)</span></label>
+                        <select id="p-genero" name="genero" x-model="f.genero" class="campo cursor-pointer">
+                            <option value="">SELECCIONAR...</option>
+                            <option value="Masculino">MASCULINO</option>
+                            <option value="Femenino">FEMENINO</option>
+                            <option value="Otro">OTRO</option>
+                        </select>
+                        @error('genero')<p class="ayuda text-rose-600">{{ $message }}</p>@enderror
+                    </div>
+
+                    <div>
+                        <label for="p-fecha-nacimiento" class="etq">Fecha de Nacimiento <span class="opc">(opcional)</span></label>
+                        <input id="p-fecha-nacimiento" type="date" name="fecha_nacimiento" x-model="f.fecha_nacimiento" class="campo">
+                        @error('fecha_nacimiento')<p class="ayuda text-rose-600">{{ $message }}</p>@enderror
+                    </div>
+
+                    {{-- CAMPOS AGREGADOS: Fecha de Ingreso y Cédula/RUT --}}
+                    <div>
+                        <label for="p-fecha-ingreso" class="etq">Fecha de Ingreso <span class="opc">(opcional)</span></label>
+                        <input id="p-fecha-ingreso" type="date" name="fecha_ingreso" x-model="f.fecha_ingreso" class="campo">
+                        @error('fecha_ingreso')<p class="ayuda text-rose-600">{{ $message }}</p>@enderror
+                    </div>
+
+                    <div>
+                        <label for="p-rut" class="etq">Cédula profesional / RUT <span class="opc">(opcional)</span></label>
+                        <input id="p-rut" type="text" name="rut" x-model="f.rut" maxlength="30" autocomplete="off"
+                               @blur="f.rut = f.rut.toUpperCase().replace(/\s/g, '')"
+                               class="campo font-mono tracking-wide" placeholder="12345678">
+                        <p class="ayuda text-slate-400">Se imprime en las recetas. Obligatoria en la práctica para médicos.</p>
+                        @error('rut')<p class="ayuda text-rose-600">{{ $message }}</p>@enderror
+                    </div>
+
                     <div>
                         <label for="p-tel" class="etq">Teléfono <span class="opc">(opcional)</span></label>
                         <input id="p-tel" type="tel" name="telefono" x-model="f.telefono" inputmode="numeric" maxlength="10" autocomplete="off"
@@ -100,15 +134,6 @@
                         <p class="ayuda" :class="f.telefono && f.telefono.length !== 10 ? 'text-amber-600' : 'text-slate-400'"
                            x-text="f.telefono && f.telefono.length !== 10 ? 'Faltan ' + (10 - f.telefono.length) + ' dígitos (10 en total)' : '10 dígitos, sin espacios ni guiones.'"></p>
                         @error('telefono')<p class="ayuda text-rose-600">{{ $message }}</p>@enderror
-                    </div>
-
-                    <div>
-                        <label for="p-rut" class="etq">Cédula profesional <span class="opc">(opcional)</span></label>
-                        <input id="p-rut" type="text" name="rut" x-model="f.rut" maxlength="30" autocomplete="off"
-                               @blur="f.rut = f.rut.toUpperCase().replace(/\s/g, '')"
-                               class="campo font-mono tracking-wide" placeholder="12345678">
-                        <p class="ayuda text-slate-400">Se imprime en las recetas. Obligatoria en la práctica para médicos.</p>
-                        @error('rut')<p class="ayuda text-rose-600">{{ $message }}</p>@enderror
                     </div>
 
                     {{-- ESPECIALIDAD MÉDICA --}}
@@ -233,7 +258,6 @@
                         @error('turno')<p class="ayuda text-rose-600">{{ $message }}</p>@enderror
                     </div>
 
-                    {{-- Nómina y estatus del empleado (DISTRIBUCIÓN ANCHA PARA NÓMINA 2/3 Y ESTATUS 1/3) --}}
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 pt-2 items-start">
                         <div class="lg:col-span-2">
                             @include('personal._campos-nomina')
@@ -272,7 +296,6 @@
 
                 <div class="p-6">
                     <div x-show="requiereAcceso" x-transition.opacity.duration.250ms class="space-y-5">
-                        {{-- Usuario --}}
                         <div>
                             <label for="p-usuario" class="etq">Usuario de acceso *</label>
                             <div class="flex rounded-2xl border-2 overflow-hidden transition-all focus-within:border-teal-500 focus-within:ring-4 focus-within:ring-teal-500/10"
@@ -295,7 +318,6 @@
                             @error('username')<p class="ayuda text-rose-600">{{ $message }}</p>@enderror
                         </div>
 
-                        {{-- Contraseñas --}}
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div>
                                 <div class="flex items-center justify-between mb-1.5">
@@ -464,22 +486,25 @@
             roles: @json($rolesJs),
             dominio: @js($dominio),
             f: {
-                nombre:       @js(mb_strtoupper((string) old('nombre', ''))),
-                apellido:     @js(mb_strtoupper((string) old('apellido', ''))),
-                telefono:     @js((string) old('telefono', '')),
-                rut:          @js(mb_strtoupper((string) old('rut', ''))),
-                especialidad: @js(mb_strtoupper((string) old('especialidad', ''))),
-                direccion:    @js(mb_strtoupper((string) old('direccion', ''))),
-                colonia:      @js(mb_strtoupper((string) old('colonia', ''))),
-                municipio:    @js(mb_strtoupper((string) old('municipio', ''))),
-                estado:       @js(mb_strtoupper((string) old('estado', ''))),
-                codigo_postal:@js((string) old('codigo_postal', '')),
-                rol_id:       @js((string) old('rol_id', '')),
-                turno:        @js((string) old('turno', 'Completo')),
-                estatus:      @js((string) old('estatus', 'Activo')),
-                username:     @js((string) old('username', '')),
-                password:     '',
-                password2:    ''
+                nombre:           @js(mb_strtoupper((string) old('nombre', ''))),
+                apellido:         @js(mb_strtoupper((string) old('apellido', ''))),
+                genero:           @js((string) old('genero', '')),
+                fecha_nacimiento: @js((string) old('fecha_nacimiento', '')),
+                fecha_ingreso:    @js((string) old('fecha_ingreso', date('Y-m-d'))),
+                telefono:         @js((string) old('telefono', '')),
+                rut:              @js(mb_strtoupper((string) old('rut', ''))),
+                especialidad:     @js(mb_strtoupper((string) old('especialidad', ''))),
+                direccion:        @js(mb_strtoupper((string) old('direccion', ''))),
+                colonia:          @js(mb_strtoupper((string) old('colonia', ''))),
+                municipio:        @js(mb_strtoupper((string) old('municipio', ''))),
+                estado:           @js(mb_strtoupper((string) old('estado', ''))),
+                codigo_postal:    @js((string) old('codigo_postal', '')),
+                rol_id:           @js((string) old('rol_id', '')),
+                turno:            @js((string) old('turno', 'Completo')),
+                estatus:          @js((string) old('estatus', 'Activo')),
+                username:         @js((string) old('username', '')),
+                password:         '',
+                password2:        ''
             },
             requiereAcceso: @js((bool) old('requiere_acceso', old('username') ? 1 : 0)),
             openModal: false,
@@ -622,7 +647,7 @@
                 this.f.municipio = this.mayus(this.f.municipio);
                 this.f.estado = this.mayus(this.f.estado);
 
-                ['nombre', 'apellido', 'rut', 'especialidad', 'direccion', 'colonia', 'municipio', 'estado'].forEach(c => {
+                ['nombre', 'apellido', 'genero', 'fecha_nacimiento', 'fecha_ingreso', 'rut', 'especialidad', 'direccion', 'colonia', 'municipio', 'estado'].forEach(c => {
                     const el = e.target.elements[c];
                     if (el) el.value = this.f[c];
                 });
