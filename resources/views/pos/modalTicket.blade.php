@@ -1,143 +1,96 @@
-<!-- MODAL DE IMPRESIÓN / COMPROBANTE DE FILTRO CON CÓDIGO DE BARRAS -->
+{{-- COMPROBANTE DEL TICKET: papel térmico con folio, vigencia en vivo y código de barras para caja central --}}
+{{-- Usa de pos/index: openTicketModal, ticketGenerado, CLINICA, folio(), nombrePaciente(), lineas(), restante(), avanceVigencia(), estadoDe(), barrasDe(), imprimirTicketModal() --}}
 <template x-teleport="body">
-    <div x-show="openTicketModal" class="fixed inset-0 z-50 overflow-y-auto" x-cloak>
-        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-            <div x-show="openTicketModal"
-                 x-transition:enter="ease-out duration-300"
-                 x-transition:enter-start="opacity-0"
-                 x-transition:enter-end="opacity-100"
-                 x-transition:leave="ease-in duration-200"
-                 x-transition:leave-start="opacity-100"
-                 x-transition:leave-end="opacity-0"
-                 class="fixed inset-0 transition-opacity bg-slate-900/60 backdrop-blur-xs"
-                 @click="openTicketModal = false"></div>
+    <div class="psm-velo" x-show="openTicketModal" x-cloak @keydown.escape.window="openTicketModal && (openTicketModal = false)"
+         x-transition:enter="psm-t" x-transition:enter-start="psm-0" x-transition:enter-end="psm-1"
+         x-transition:leave="psm-t-s" x-transition:leave-start="psm-1" x-transition:leave-end="psm-0">
+        <div class="pst" role="dialog" aria-modal="true" aria-label="Comprobante del ticket" @click.outside="openTicketModal = false">
+            <div id="seccion-ticket-imprimible" class="pst-papel">
+                <p class="pst-marca" x-text="CLINICA"></p>
+                <p class="pst-sub">Pedido de farmacia · pagar en caja</p>
 
-            <div x-show="openTicketModal"
-                 x-transition:enter="ease-out duration-300"
-                 x-transition:enter-start="opacity-0 scale-95"
-                 x-transition:enter-end="opacity-100 scale-100"
-                 x-transition:leave="ease-in duration-200"
-                 x-transition:leave-start="opacity-100 scale-100"
-                 x-transition:leave-end="opacity-0 scale-95"
-                 class="inline-block w-full max-w-xs my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-2xl rounded-3xl border border-gray-100 p-5 space-y-4">
+                <p class="pst-folio t" x-text="folio(ticketGenerado)"></p>
+                <span class="pst-bar" x-html="barrasDe(ticketGenerado)"></span>
 
-                <!-- ENCABEZADO DEL MODAL -->
-                <div class="flex items-center justify-between border-b border-gray-100 pb-2 print:hidden">
-                    <div class="flex items-center gap-2 font-black text-xs text-amber-900 uppercase">
-                        <i class="bi bi-receipt-cutoff text-base"></i>
-                        <span>COMPROBANTE DE FILTRO</span>
-                    </div>
-                    <button type="button" @click="openTicketModal = false" class="text-gray-400 hover:text-gray-600 font-bold focus:outline-none">
-                        <i class="bi bi-x-lg"></i>
-                    </button>
+                <div class="pst-vig" :class="ticketGenerado ? estadoDe(ticketGenerado) : ''">
+                    <template x-if="ticketGenerado && estadoDe(ticketGenerado) === 'pendiente'">
+                        <div>
+                            <p><span>Aparta las piezas</span><b class="t" x-text="restante(ticketGenerado)"></b></p>
+                            <i class="pst-barra"><i :style="'width:' + avanceVigencia(ticketGenerado) + '%'"></i></i>
+                            <small x-text="'Vence a las ' + hora(ticketGenerado.expires_at)"></small>
+                        </div>
+                    </template>
+                    <p x-show="ticketGenerado && estadoDe(ticketGenerado) !== 'pendiente'" class="pst-sello" x-text="ticketGenerado ? textoEstado(estadoDe(ticketGenerado)) : ''"></p>
                 </div>
 
-                <!-- CONTENIDO DEL COMPROBANTE -->
-                <div id="seccion-ticket-imprimible" class="p-4 border border-dashed border-amber-300 bg-amber-50/60 rounded-2xl space-y-3 font-mono text-xs text-gray-800">
-
-                    <div class="text-center">
-                        <h2 class="font-black text-amber-950 text-sm tracking-wider uppercase">MEDITRACK CLÍNICA</h2>
-                        <p class="text-[9px] font-bold text-amber-700 uppercase">COMPROBANTE DE PEDIDO / PAGAR EN CAJA</p>
-                    </div>
-
-                    <div class="space-y-1 text-[11px] pt-1">
-                        <div class="flex justify-between">
-                            <span class="font-bold text-amber-900">FOLIO:</span>
-                            <span class="font-black text-teal-800" x-text="ticketGenerado?.codigo_ticket"></span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="font-bold text-amber-900">PACIENTE:</span>
-                            <span class="font-extrabold uppercase text-gray-700 truncate max-w-[140px]" x-text="ticketGenerado?.paciente ? (ticketGenerado.paciente.nombre_completo || (ticketGenerado.paciente.primer_nombre + ' ' + (ticketGenerado.paciente.apellido_paterno || ''))) : 'PÚBLICO GENERAL'"></span>
-                        </div>
-                    </div>
-
-                    <!-- ALERTA DE VIGENCIA -->
-                    <div class="bg-amber-100/90 border border-amber-200/80 p-2 rounded-xl text-center space-y-0.5">
-                        <div class="flex justify-center items-center gap-1.5 text-amber-900 font-extrabold text-[11px]">
-                            <i class="bi bi-clock-history"></i>
-                            <span>VIGENCIA: 25 MINUTOS</span>
-                        </div>
-                        <p class="text-[9px] font-bold text-amber-700 uppercase">
-                            EXPIRA: <span x-text="formatearHoraExpiracion(ticketGenerado?.expires_at)"></span>
-                        </p>
-                    </div>
-
-                    <!-- TOTAL A PAGAR -->
-                    <div class="flex justify-between items-baseline pt-2 border-t border-dashed border-amber-200">
-                        <span class="font-black text-amber-950 text-xs">TOTAL A PAGAR:</span>
-                        <span class="text-lg font-black text-teal-800" x-text="`$${parseFloat(ticketGenerado?.monto_total || 0).toFixed(2)}`"></span>
-                    </div>
-
-                    <!-- CÓDIGO DE BARRAS (CODE128) CON EL FOLIO DEL TICKET -->
-                    <!--
-                        x-effect se vuelve a ejecutar cada vez que cambia openTicketModal o ticketGenerado,
-                        así funciona igual al generar un ticket nuevo que al reimprimir desde el historial.
-                        Se usa $el en lugar de buscar el componente con querySelector('[x-data]'),
-                        que podía tomar otro componente del layout y no dibujar nada.
-                    -->
-                    <div class="pt-2 text-center bg-white p-2 rounded-xl border border-amber-200 flex flex-col items-center justify-center">
-                        <svg id="codigo-barras-ticket"
-                             class="max-w-full h-auto"
-                             x-effect="
-                                const folio = ticketGenerado?.codigo_ticket;
-                                if (openTicketModal && folio) {
-                                    $nextTick(() => {
-                                        if (typeof JsBarcode === 'function') {
-                                            JsBarcode($el, folio, {
-                                                format: 'CODE128',
-                                                lineColor: '#000000',
-                                                background: '#ffffff',
-                                                width: 2,
-                                                height: 60,
-                                                margin: 10,
-                                                displayValue: true,
-                                                fontSize: 12,
-                                                fontOptions: 'bold',
-                                                font: 'monospace'
-                                            });
-                                        }
-                                    });
-                                }
-                             "></svg>
-                        <p class="text-[8px] font-extrabold text-amber-800/80 uppercase mt-1">
-                            PRESENTAR ESTE CÓDIGO EN CAJA CENTRAL
-                        </p>
-                    </div>
-                </div>
-
-                <!-- ACCIONES / BOTONES -->
-                <div class="flex gap-2 pt-1 border-t border-gray-100 print:hidden">
-                    <button type="button" @click="openTicketModal = false"
-                            class="w-1/2 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-extrabold rounded-2xl text-xs uppercase transition-all">
-                        CERRAR
-                    </button>
-                    <button type="button" @click="imprimirTicketModal()"
-                            class="w-1/2 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-extrabold rounded-2xl text-xs uppercase shadow-md shadow-teal-600/20 flex items-center justify-center gap-1.5 transition-all active:scale-95">
-                        <i class="bi bi-printer-fill"></i> IMPRIMIR
-                    </button>
-                </div>
-
+                <dl class="pst-datos">
+                    <div><dt>Paciente</dt><dd x-text="nombrePaciente(ticketGenerado)"></dd></div>
+                    <div><dt>Fecha</dt><dd x-text="ticketGenerado ? fecha(ticketGenerado.created_at) + ' ' + hora(ticketGenerado.created_at) : ''"></dd></div>
+                </dl>
+                <table class="pst-tabla">
+                    <thead><tr><th>Cant.</th><th>Producto</th><th>Importe</th></tr></thead>
+                    <tbody>
+                        <template x-for="l in lineas(ticketGenerado)" :key="'pt' + l.id">
+                            <tr><td class="t" x-text="l.cantidad"></td><td x-text="l.nombre"></td><td class="t" x-text="dinero(l.subtotal)"></td></tr>
+                        </template>
+                    </tbody>
+                </table>
+                <p class="pst-tot"><span>Total a pagar</span><b class="t" x-text="dinero(ticketGenerado ? ticketGenerado.monto_total : 0)"></b></p>
+                <p class="pst-pie">Presenta este código en caja central. Después de pagar, recoge tus productos en el mostrador.</p>
+            </div>
+            <div class="pst-acc">
+                <button type="button" @click="openTicketModal = false">Cerrar</button>
+                <button type="button" class="prim" @click="imprimirTicketModal()"><i class="bi bi-printer"></i>Imprimir</button>
             </div>
         </div>
     </div>
 </template>
 
-<!-- LIBRERÍA JSBARCODE -->
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-
+@verbatim
 <style>
+.pst { --tinta: #0b1e1c; --media: #56625f; --cred: #0b5a54; --verde: #08734f; --ambar: #9a5800; --foil: #a6efe2;
+    --disp: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif; --ui: 'Geist', ui-sans-serif, system-ui, sans-serif; --mono: 'Geist Mono', ui-monospace, monospace;
+    width: min(360px, 100%); display: grid; gap: 12px; font-family: var(--ui); animation: psm-in .2s cubic-bezier(.2, .8, .2, 1); }
+.pst p, .pst dl { margin: 0; }
+.pst .t { font-variant-numeric: tabular-nums; }
+.pst-papel { position: relative; max-height: calc(100vh - 110px); overflow-y: auto; padding: 22px 22px 18px; background: #fffef9; color: var(--tinta); border-radius: 6px;
+    box-shadow: 0 30px 60px -25px rgba(0, 0, 0, .6); font: 500 12px/1.45 var(--mono); }
+.pst-marca { text-align: center; font: 800 22px/1.1 var(--disp); color: var(--cred); }
+.pst-sub { text-align: center; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--media); }
+.pst-folio { margin-top: 14px; text-align: center; font: 700 24px var(--mono); letter-spacing: .06em; }
+.pst-bar { display: block; margin: 6px 0 2px; }
+.pst-bar svg { display: block; width: 100%; height: 54px; }
+.pst-vig { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #fdf3e1; color: var(--ambar); }
+.pst-vig p { display: flex; align-items: baseline; justify-content: space-between; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.pst-vig b { font: 800 26px/1 var(--disp); letter-spacing: -.01em; }
+.pst-vig small { display: block; margin-top: 4px; font-size: 11px; }
+.pst-barra { display: block; height: 5px; margin-top: 6px; border-radius: 9px; background: rgba(154, 88, 0, .16); overflow: hidden; }
+.pst-barra i { display: block; height: 100%; border-radius: inherit; background: var(--ambar); transition: width 1s linear; }
+.pst-vig.pagado, .pst-vig.entregado { background: #e5f4ee; color: var(--verde); }
+.pst-vig.expirado, .pst-vig.cancelado { background: #eef3f1; color: var(--media); }
+.pst-sello { justify-content: center !important; font: 800 15px var(--disp) !important; letter-spacing: .14em !important; }
+.pst-datos { margin-top: 12px; padding: 10px 0; border-top: 1px dashed #d8d4c6; display: grid; gap: 3px; }
+.pst-datos div { display: flex; justify-content: space-between; gap: 10px; }
+.pst-datos dt { color: var(--media); }
+.pst-datos dd { margin: 0; text-align: right; font-weight: 600; }
+.pst-tabla { width: 100%; border-collapse: collapse; border-top: 1px dashed #d8d4c6; border-bottom: 1px dashed #d8d4c6; }
+.pst-tabla th { padding: 6px 0 4px; text-align: left; font-weight: 600; font-size: 10.5px; color: var(--media); text-transform: uppercase; letter-spacing: .08em; }
+.pst-tabla td { padding: 3px 0; vertical-align: top; }
+.pst-tabla th:last-child, .pst-tabla td:last-child { text-align: right; white-space: nowrap; }
+.pst-tabla td:first-child { width: 38px; }
+.pst-tot { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px !important; }
+.pst-tot b { font: 800 26px var(--disp); }
+.pst-pie { margin-top: 10px !important; text-align: center; font: 500 11px/1.4 var(--ui); color: var(--media); }
+.pst-acc { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pst-acc button { height: 44px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: #fff; border: 1px solid #dbe4e1; font: 600 14px var(--ui); color: var(--tinta); cursor: pointer; }
+.pst-acc button.prim { background: var(--cred); border-color: var(--cred); color: #fff; }
+.pst-acc button.prim .bi { color: var(--foil); }
 @media print {
     body * { visibility: hidden; }
     #seccion-ticket-imprimible, #seccion-ticket-imprimible * { visibility: visible; }
-    #seccion-ticket-imprimible {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-        border: none !important;
-        background: transparent !important;
-    }
-    /* Barras negras sobre blanco puro: los lectores fallan con fondos de color */
-    #codigo-barras-ticket { background: #ffffff !important; }
+    #seccion-ticket-imprimible { position: absolute; left: 0; top: 0; width: 80mm; max-height: none; overflow: visible; box-shadow: none; border-radius: 0; background: #fff; }
+    .pst-vig { background: #fff !important; border: 1px solid #000; color: #000 !important; }
+    .pst-barra { display: none; }
 }
 </style>
+@endverbatim
