@@ -18,7 +18,6 @@ use App\Http\Controllers\CategoriaInventarioController;
 use App\Http\Controllers\NominaController;
 use App\Http\Controllers\PosController;
 use App\Http\Controllers\CajaController;
-use App\Http\Controllers\FarmaciaDespachoController;
 use App\Http\Controllers\ProveedorController;
 use App\Http\Controllers\ChatbotController;
 
@@ -55,141 +54,169 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/reiniciar', [ChatbotController::class, 'reiniciar'])->name('reiniciar');
     });
 
+    /*
+    |--------------------------------------------------------------------------
+    | PERMISOS POR RUTA
+    |--------------------------------------------------------------------------
+    | Cada ruta lleva el candado "permiso:Módulo,acción" (CheckPermission).
+    | Acciones: ver · crear · editar · eliminar. Si se listan varias, basta con una.
+    | Sin permiso: 403 en JSON (fetch/AJAX) o regreso con aviso de error en navegación normal.
+    | Los nombres de módulo son los de la tabla `modulos` / pantalla de Roles.
+    */
+
     // --- MÓDULO PACIENTES ---
-    Route::middleware(['permiso:Pacientes'])->group(function () {
+    Route::middleware('permiso:Pacientes,ver')->group(function () {
         Route::get('/pacientes/aviso-privacidad', [PacienteController::class, 'avisoPrivacidad'])->name('pacientes.aviso-privacidad');
-        Route::resource('pacientes', PacienteController::class);
+        Route::resource('pacientes', PacienteController::class)->only(['index']);
     });
+    Route::resource('pacientes', PacienteController::class)->only(['create', 'store'])->middleware('permiso:Pacientes,crear');
+    Route::resource('pacientes', PacienteController::class)->only(['edit', 'update'])->middleware('permiso:Pacientes,editar');
+    Route::resource('pacientes', PacienteController::class)->only(['destroy'])->middleware('permiso:Pacientes,eliminar');
 
     // --- MÓDULO CITAS ---
-    Route::middleware(['permiso:Citas'])->group(function () {
+    Route::middleware('permiso:Citas,ver')->group(function () {
         Route::get('/citas/eventos', [CitaController::class, 'getEventos'])->name('citas.eventos');
-        Route::resource('citas', CitaController::class);
+        Route::resource('citas', CitaController::class)->only(['index']);
     });
+    Route::resource('citas', CitaController::class)->only(['create', 'store'])->middleware('permiso:Citas,crear');
+    Route::resource('citas', CitaController::class)->only(['update'])->middleware('permiso:Citas,editar');
+    Route::resource('citas', CitaController::class)->only(['destroy'])->middleware('permiso:Citas,eliminar');
 
     // --- MÓDULO CONSULTAS ---
-    Route::middleware(['permiso:Consultas'])->group(function () {
+    Route::middleware('permiso:Consultas,ver')->group(function () {
         Route::get('/consultas/agenda', [ConsultaController::class, 'agenda'])->name('consultas.agenda');
         Route::get('/consultas/citas-asignadas', [ConsultaController::class, 'getCitasAsignadas'])->name('consultas.citas');
         Route::get('/consultas/detalle/{cita}', [ConsultaController::class, 'detalle'])->name('consultas.detalle');
+        Route::resource('consultas', ConsultaController::class)->only(['index']);
+    });
+    // Atender: iniciar/liberar la consulta y guardar la nota médica
+    Route::middleware('permiso:Consultas,crear')->group(function () {
         Route::post('/consultas/iniciar/{cita}', [ConsultaController::class, 'iniciar'])->name('consultas.iniciar');
         Route::post('/consultas/liberar/{cita}', [ConsultaController::class, 'liberar'])->name('consultas.liberar');
-        Route::resource('consultas', ConsultaController::class);
+        Route::resource('consultas', ConsultaController::class)->only(['store']);
     });
 
     // --- MÓDULO CONSULTORIOS ---
-    Route::middleware(['permiso:Consultorios'])->group(function () {
+    Route::middleware('permiso:Consultorios,ver')->group(function () {
         Route::get('/consultorios/estados', [ConsultorioController::class, 'estados'])->name('consultorios.estados');
-        Route::patch('/consultorios/{id}/posicion', [ConsultorioController::class, 'actualizarPosicion'])->name('consultorios.posicion');
-        Route::resource('consultorios', ConsultorioController::class);
+        Route::resource('consultorios', ConsultorioController::class)->only(['index']);
     });
+    Route::resource('consultorios', ConsultorioController::class)->only(['store'])->middleware('permiso:Consultorios,crear');
+    Route::middleware('permiso:Consultorios,editar')->group(function () {
+        Route::patch('/consultorios/{id}/posicion', [ConsultorioController::class, 'actualizarPosicion'])->name('consultorios.posicion');
+        Route::resource('consultorios', ConsultorioController::class)->only(['update']);
+    });
+    Route::resource('consultorios', ConsultorioController::class)->only(['destroy'])->middleware('permiso:Consultorios,eliminar');
 
     // --- MÓDULO RECETAS ---
-    Route::middleware(['permiso:Recetas'])->group(function () {
+    Route::middleware('permiso:Recetas,ver')->group(function () {
         Route::get('/recetas/{id}/pdf', [RecetaController::class, 'pdf'])->name('recetas.pdf');
-        Route::resource('recetas', RecetaController::class);
+        Route::resource('recetas', RecetaController::class)->only(['index']);
     });
+    Route::resource('recetas', RecetaController::class)->only(['create', 'store'])->middleware('permiso:Recetas,crear');
+    Route::resource('recetas', RecetaController::class)->only(['destroy'])->middleware('permiso:Recetas,eliminar');
 
     // --- MÓDULO INVENTARIO Y CATEGORÍAS ---
-    Route::middleware(['permiso:Inventario'])->group(function () {
-        // Catálogo principal de medicamentos
+    Route::middleware('permiso:Inventario,ver')->group(function () {
         Route::get('/inventario', [InventarioController::class, 'index'])->name('inventario.index');
+    });
+    Route::middleware('permiso:Inventario,crear')->group(function () {
         Route::post('/inventario', [InventarioController::class, 'store'])->name('inventario.store');
-        Route::get('/inventario/{id}', [InventarioController::class, 'show'])->name('inventario.show');
+        Route::post('/categorias-inventario', [CategoriaInventarioController::class, 'store'])->name('categorias-inventario.store');
+    });
+    Route::middleware('permiso:Inventario,editar')->group(function () {
         Route::put('/inventario/{id}', [InventarioController::class, 'update'])->name('inventario.update');
-        Route::delete('/inventario/{id}', [InventarioController::class, 'destroy'])->name('inventario.destroy');
-
-        // Acciones de Reabastecimiento de Stock
+        // Reabastecimiento de stock
         Route::post('/inventario/{id}/agregar-stock', [InventarioController::class, 'agregarStock'])->name('inventario.agregar-stock');
         Route::post('/inventario/surtir-lote', [InventarioController::class, 'surtirLote'])->name('inventario.surtir-lote');
-
-        // CRUD AJAX de Categorías dentro del Modal
-        Route::post('/categorias-inventario', [CategoriaInventarioController::class, 'store'])->name('categorias-inventario.store');
+    });
+    Route::middleware('permiso:Inventario,eliminar')->group(function () {
+        Route::delete('/inventario/{id}', [InventarioController::class, 'destroy'])->name('inventario.destroy');
         Route::delete('/categorias-inventario/{id}', [CategoriaInventarioController::class, 'destroy'])->name('categorias-inventario.destroy');
     });
 
     // --- MÓDULO PROVEEDORES ---
-    Route::resource('proveedores', ProveedorController::class)->except(['create', 'show', 'edit']);
+    Route::resource('proveedores', ProveedorController::class)->only(['index'])->middleware('permiso:Proveedores,ver');
+    Route::resource('proveedores', ProveedorController::class)->only(['store'])->middleware('permiso:Proveedores,crear');
+    Route::resource('proveedores', ProveedorController::class)->only(['update'])->middleware('permiso:Proveedores,editar');
+    Route::resource('proveedores', ProveedorController::class)->only(['destroy'])->middleware('permiso:Proveedores,eliminar');
 
     // --- MÓDULO POS / PUNTO DE VENTA ---
-    Route::middleware(['permiso:POS'])->group(function () {
+    Route::middleware('permiso:POS,ver')->group(function () {
         Route::get('/pos', [PosController::class, 'index'])->name('pos.index');
         Route::post('/pos/buscar-producto', [PosController::class, 'buscarProducto'])->name('pos.buscar-producto');
-        Route::post('/pos/procesar-venta', [PosController::class, 'procesarVenta'])->name('pos.procesar-venta');
-        Route::post('/pos/generar-ticket', [PosController::class, 'generarTicket'])->name('pos.generar-ticket');
-        
-        // RUTA 1: Procesar la entrega física pasando el ID numérico
+    });
+    // Vender = generar el ticket
+    Route::post('/pos/generar-ticket', [PosController::class, 'generarTicket'])->name('pos.generar-ticket')->middleware('permiso:POS,crear');
+    // Entregar lo vendido (el despacho de farmacia vive en el POS)
+    Route::middleware('permiso:POS,editar')->group(function () {
+        // Procesar la entrega física pasando el ID numérico
         Route::post('/pos/marcar-entregado/{id}', [PosController::class, 'marcarEntregado'])->name('pos.marcar-entregado');
-
-        // RUTA 2: Entrega rápida escaneando/ingresando el código de ticket (ej. TCK-XOFNZS)
+        // Entrega rápida escaneando/ingresando el código de ticket (ej. TCK-XOFNZS)
         Route::post('/pos/entregar-ticket/{codigo}', [PosController::class, 'entregarTicket'])->name('pos.entregar-ticket');
-
-        // Rutas para ver/imprimir tickets de venta
-        Route::get('/pos/ticket/{venta?}', [PosController::class, 'generarTicket'])->name('pos.generar-ticket-get');
-        Route::get('/pos/ticket/{venta}/imprimir', [PosController::class, 'ticket'])->name('pos.ticket');
     });
 
     // --- MÓDULO CAJA CENTRAL ---
-    Route::middleware(['permiso:Caja Central'])->group(function () {
+    Route::middleware('permiso:Caja Central,ver')->group(function () {
         Route::get('/caja', [CajaController::class, 'index'])->name('caja.index');
         Route::get('/caja/ticket/{codigo}', [CajaController::class, 'buscarPorCodigo'])->name('caja.buscar-ticket');
+    });
+    // Operar la caja = registrar movimientos de dinero (cobros, apertura, cierre)
+    Route::middleware('permiso:Caja Central,crear')->group(function () {
         Route::post('/caja/procesar-pago/{id}', [CajaController::class, 'procesarPago'])->name('caja.procesar-pago');
         Route::post('/caja/aperturar', [CajaController::class, 'aperturar'])->name('caja.aperturar');
         Route::post('/caja/cerrar', [CajaController::class, 'cerrar'])->name('caja.cerrar');
-        Route::post('/caja/movimiento', [CajaController::class, 'movimiento'])->name('caja.movimiento');
-        Route::get('/caja/corte/{id}', [CajaController::class, 'cortePdf'])->name('caja.corte-pdf');
     });
 
-    // --- MÓDULO DESPACHO DE FARMACIA ---
-    Route::middleware(['permiso:Inventario'])->group(function () {
-        Route::get('/farmacia/despacho', [FarmaciaDespachoController::class, 'index'])->name('farmacia.despacho');
-        Route::post('/farmacia/marcar-entregado/{id}', [FarmaciaDespachoController::class, 'marcarEntregado'])->name('farmacia.marcar-entregado');
-    });
-
-    // --- MÓDULO ADMINISTRACIÓN Y ROLES ---
-    Route::middleware(['permiso:Personal'])->group(function () {
+    // --- MÓDULO PERSONAL (incluye Nómina) ---
+    Route::middleware('permiso:Personal,ver')->group(function () {
         // Acceso directo por menú
         Route::get('/nomina', [NominaController::class, 'index'])->name('nomina.index');
+    });
 
-        // Nómina (sección del módulo de Personal)
-        Route::prefix('personal/nomina')->name('personal.nomina.')->group(function () {
+    Route::prefix('personal/nomina')->name('personal.nomina.')->group(function () {
+        Route::middleware('permiso:Personal,ver')->group(function () {
             Route::get('/', [NominaController::class, 'index'])->name('index');
-            Route::post('/', [NominaController::class, 'store'])->name('store');
-
-            // Ficha de nómina de cada empleado
+            // Ficha de nómina de cada empleado y recibos en PDF
             Route::get('/empleado/{personal}', [NominaController::class, 'empleado'])->name('empleado');
-
-            // Recibos individuales
-            Route::put('/recibo/{recibo}', [NominaController::class, 'updateRecibo'])->name('recibo.update');
-            Route::delete('/recibo/{recibo}', [NominaController::class, 'quitarRecibo'])->name('recibo.quitar');
-            Route::post('/recibo/{recibo}/revertir', [NominaController::class, 'revertirPago'])->name('recibo.revertir');
             Route::get('/recibo/{recibo}/pdf', [NominaController::class, 'pdf'])->name('recibo.pdf');
-
-            // Periodos
             Route::get('/{periodo}', [NominaController::class, 'show'])->name('show');
-            Route::delete('/{periodo}', [NominaController::class, 'destroy'])->name('destroy');
+        });
+
+        Route::post('/', [NominaController::class, 'store'])->name('store')->middleware('permiso:Personal,crear');
+
+        Route::middleware('permiso:Personal,editar')->group(function () {
+            Route::put('/recibo/{recibo}', [NominaController::class, 'updateRecibo'])->name('recibo.update');
+            Route::post('/recibo/{recibo}/revertir', [NominaController::class, 'revertirPago'])->name('recibo.revertir');
             Route::post('/{periodo}/empleado', [NominaController::class, 'agregarEmpleado'])->name('agregar');
             Route::post('/{periodo}/pagar', [NominaController::class, 'pagar'])->name('pagar');
             Route::post('/{periodo}/estado', [NominaController::class, 'cambiarEstado'])->name('estado');
         });
 
-        Route::resource('personal', PersonalController::class);
+        // Quitar un recibo: el controlador decide si basta "editar" o requiere "eliminar" (recibo pagado/periodo cerrado)
+        Route::delete('/recibo/{recibo}', [NominaController::class, 'quitarRecibo'])->name('recibo.quitar')->middleware('permiso:Personal,editar,eliminar');
+        Route::delete('/{periodo}', [NominaController::class, 'destroy'])->name('destroy')->middleware('permiso:Personal,eliminar');
     });
 
-    Route::middleware(['permiso:Roles'])->group(function () {
-        Route::resource('roles', RolController::class);
-    });
+    // "create" va antes que "show" para que /personal/create no se tome como /personal/{id}
+    Route::resource('personal', PersonalController::class)->only(['create', 'store'])->middleware('permiso:Personal,crear');
+    Route::resource('personal', PersonalController::class)->only(['index'])->middleware('permiso:Personal,ver');
+    Route::resource('personal', PersonalController::class)->only(['edit', 'update'])->middleware('permiso:Personal,editar');
+    Route::resource('personal', PersonalController::class)->only(['destroy'])->middleware('permiso:Personal,eliminar');
+
+    // --- MÓDULO ROLES Y PERMISOS ---
+    Route::resource('roles', RolController::class)->only(['index'])->middleware('permiso:Roles,ver');
+    Route::resource('roles', RolController::class)->only(['store'])->middleware('permiso:Roles,crear');
+    Route::resource('roles', RolController::class)->only(['update'])->middleware('permiso:Roles,editar');
+    Route::resource('roles', RolController::class)->only(['destroy'])->middleware('permiso:Roles,eliminar');
 
     // --- MÓDULO CONFIGURACIÓN ---
-    Route::middleware(['permiso:Configuración'])->group(function () {
+    Route::middleware('permiso:Configuración,ver')->group(function () {
         Route::get('/configuracion', [ConfiguracionController::class, 'index'])->name('configuracion.index');
-        Route::put('/configuracion', [ConfiguracionController::class, 'update'])->name('configuracion.update');
+        // Credenciales propias del usuario en sesión (pide su contraseña actual)
         Route::post('/configuracion/cuenta', [ConfiguracionController::class, 'actualizarCuenta'])->name('configuracion.cuenta.update');
     });
-
-    Route::middleware(['permiso:Bitácora'])->group(function () {
-        Route::get('/bitacora', [BitacoraController::class, 'index'])->name('bitacora.index');
-    });
+    Route::put('/configuracion', [ConfiguracionController::class, 'update'])->name('configuracion.update')->middleware('permiso:Configuración,editar');
 
     // --- UTILIDAD Y MONITOR DE ESTADO ---
     Route::get('/ping', function () {

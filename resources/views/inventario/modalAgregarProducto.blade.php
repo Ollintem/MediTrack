@@ -620,7 +620,7 @@
                 const c = Number(this.f.precio_compra);
                 if (c > 0) this.f.precio_venta = (Math.round(c * (1 + pct / 100) * 100) / 100).toFixed(2);
             },
-            dinero(n) { return '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
+            dinero(n) { return MTCaja.dinero(n); },
 
             // ----- Validación -----
             get faltantes() {

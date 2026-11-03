@@ -13,7 +13,7 @@ class ProveedorController extends Controller
     public function index()
     {
         $proveedores = Proveedor::orderBy('razon_social', 'asc')->get();
-        return view('proveedores.index', compact('proveedores'));
+        return view('Proveedores.index', compact('proveedores'));
     }
 
     /**
@@ -81,11 +81,18 @@ class ProveedorController extends Controller
                 'success' => true,
                 'message' => 'El proveedor ha sido eliminado correctamente.'
             ]);
-        } catch (\Exception $e) {
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Tiene compras u otros registros vinculados
             return response()->json([
                 'success' => false,
                 'message' => 'No se pudo eliminar el proveedor debido a registros vinculados.'
-            ], 422);
+            ], 409);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json([
+                'success' => false,
+                'message' => 'Ocurrió un error al eliminar el proveedor.'
+            ], 500);
         }
     }
 }

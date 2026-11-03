@@ -1077,7 +1077,6 @@ a.ly-link:hover .bi { color: var(--ly-foil); }
             ['titulo' => 'Farmacia y finanzas', 'items' => [
                 ['texto' => 'Terminal POS',      'ruta' => 'pos.index',           'activo' => 'pos.*',           'icono' => 'bi-shop',                   'permiso' => 'POS',           'claves' => 'venta vender cobrar punto de venta'],
                 ['texto' => 'Caja central',      'ruta' => 'caja.index',          'activo' => 'caja.*',          'icono' => 'bi-cash-coin',              'permiso' => 'Caja Central',  'claves' => 'corte apertura dinero pagos'],
-                ['texto' => 'Despacho farmacia', 'ruta' => 'farmacia.despacho',   'activo' => 'farmacia.*',      'icono' => 'bi-bag-check',              'permiso' => 'Inventario',    'claves' => 'entregar medicamentos surtir'],
                 ['texto' => 'Inventario',        'ruta' => 'inventario.index',    'activo' => 'inventario.*',    'icono' => 'bi-box-seam',               'permiso' => 'Inventario',    'claves' => 'stock productos existencias lotes'],
                 ['texto' => 'Proveedores',       'ruta' => 'proveedores.index',   'activo' => 'proveedores.*',   'icono' => 'bi-truck',                  'permiso' => 'Proveedores',   'claves' => 'compras laboratorios'],
                 ['texto' => 'Recetas',           'ruta' => 'recetas.index',       'activo' => 'recetas.*',       'icono' => 'bi-file-earmark-medical',   'permiso' => 'Recetas',       'claves' => 'prescripcion medicamentos'],
@@ -1122,7 +1121,7 @@ a.ly-link:hover .bi { color: var(--ly-foil); }
         if (\Illuminate\Support\Facades\Route::has('citas.index') && $puede('Citas', 'crear')) {
             $accionesJs[] = ['t' => 'Agendar una cita', 'd' => 'Abre la agenda de citas', 'i' => 'bi-calendar-plus', 'u' => route('citas.index'), 'k' => 'nueva cita calendario'];
         }
-        if (\Illuminate\Support\Facades\Route::has('pos.index') && $puede('POS')) {
+        if (\Illuminate\Support\Facades\Route::has('pos.index') && $puede('POS', 'crear')) {
             $accionesJs[] = ['t' => 'Cobrar una venta', 'd' => 'Abre la terminal POS', 'i' => 'bi-upc-scan', 'u' => route('pos.index'), 'k' => 'vender ticket'];
         }
 

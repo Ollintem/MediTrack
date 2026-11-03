@@ -213,6 +213,14 @@ class InventarioController extends Controller
             $producto->save();
         });
 
+        // El modal de lotes envía cada renglón por fetch y espera JSON
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Lote de medicamento surtido correctamente en el almacén.',
+            ]);
+        }
+
         return redirect()->route('inventario.index')
             ->with('success', 'Lote de medicamento surtido correctamente en el almacén.');
     }

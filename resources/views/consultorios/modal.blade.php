@@ -92,8 +92,8 @@
     <div class="co-acc" x-show="!editando">
         <template x-if="sel">
             <div class="co-acc-in">
-                <p class="co-acc-t">Cambiar estado</p>
-                <div class="co-seg" role="radiogroup" aria-label="Cambiar estado del consultorio">
+                <p class="co-acc-t" x-show="PUEDE.editar">Cambiar estado</p>
+                <div class="co-seg" x-show="PUEDE.editar" role="radiogroup" aria-label="Cambiar estado del consultorio">
                     <template x-for="op in opciones" :key="'a' + op.valor">
                         <button type="button" role="radio" :class="'e-' + op.slug" :aria-checked="(sel.estado === op.slug).toString()"
                                 @click="cambiarEstado(op)" :disabled="guardando">
@@ -101,12 +101,12 @@
                         </button>
                     </template>
                 </div>
-                <button type="button" class="co-btn co-prim co-ancho" @click="editar(sel)">Editar placa <kbd>E</kbd></button>
-                <button type="button" class="co-btn co-borrar co-ancho" @click="eliminar(sel)">Eliminar consultorio</button>
+                <button type="button" class="co-btn co-prim co-ancho" x-show="PUEDE.editar" @click="editar(sel)">Editar placa <kbd>E</kbd></button>
+                <button type="button" class="co-btn co-borrar co-ancho" x-show="PUEDE.eliminar" @click="eliminar(sel)">Eliminar consultorio</button>
             </div>
         </template>
         <template x-if="!sel">
-            <button type="button" class="co-btn co-prim co-ancho" @click="nuevo()">Registrar el primer consultorio</button>
+            <button type="button" class="co-btn co-prim co-ancho" x-show="PUEDE.crear" @click="nuevo()">Registrar el primer consultorio</button>
         </template>
     </div>
 </aside>

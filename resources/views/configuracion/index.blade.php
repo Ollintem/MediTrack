@@ -79,9 +79,12 @@
 
     @if($esAdmin)
         <!-- FORMULARIO GENERAL (PERFIL DE LA CLÍNICA Y PREFERENCIAS - SOLO ADMIN) -->
+        @php $puedeEditarConfig = auth()->user()->tienePermiso('Configuración', 'editar'); @endphp
         <form action="{{ route('configuracion.update') }}" method="POST" x-show="tab === 'perfil' || tab === 'preferencias'">
             @csrf
             @method('PUT')
+            {{-- Sin permiso de editar: los datos se ven pero no se pueden cambiar (la ruta también lo bloquea) --}}
+            <fieldset @disabled(!$puedeEditarConfig) style="border: 0; padding: 0; margin: 0; min-width: 0;">
 
             <!-- PESTAÑA 1: PERFIL DE LA CLÍNICA -->
             <div x-show="tab === 'perfil'" class="space-y-6">
@@ -208,13 +211,14 @@
             </div>
 
             <!-- BOTÓN GUARDAR CONFIGURACIÓN DE LA CLÍNICA -->
-            <div class="mt-6 flex justify-end">
+            <div class="mt-6 flex justify-end" @if(!$puedeEditarConfig) hidden @endif>
                 <button type="submit" 
                         class="px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-600/20 transition-all flex items-center gap-2 cursor-pointer">
                     <i class="bi bi-floppy-fill text-sm"></i>
                     <span>Guardar Cambios de la Clínica</span>
                 </button>
             </div>
+            </fieldset>
         </form>
     @endif
 

@@ -252,17 +252,17 @@
 <div class="ci-acc" x-show="!editando">
     <template x-if="sel">
         <div class="ci-acc-in">
-            <button type="button" class="ci-btn ci-prim ci-ancho" x-show="siguientePaso(sel)" @click="cambiarEstado(sel, siguientePaso(sel).valor)" :disabled="guardando">
+            <button type="button" class="ci-btn ci-prim ci-ancho" x-show="PUEDE.editar && siguientePaso(sel)" @click="cambiarEstado(sel, siguientePaso(sel).valor)" :disabled="guardando">
                 <span x-text="siguientePaso(sel) ? siguientePaso(sel).accion : ''"></span>
             </button>
-            <div class="ci-acc-fila">
-                <button type="button" class="ci-btn" @click="editar(sel)">Editar <kbd>E</kbd></button>
-                <button type="button" class="ci-btn" x-show="!['Cancelada', 'Finalizada'].includes(sel.estado)" @click="cambiarEstado(sel, 'Cancelada')" :disabled="guardando">Cancelar cita</button>
-                <button type="button" class="ci-btn ci-borrar" @click="eliminar(sel)" aria-label="Eliminar cita"><i class="bi bi-trash3"></i></button>
+            <div class="ci-acc-fila" x-show="PUEDE.editar || PUEDE.eliminar">
+                <button type="button" class="ci-btn" x-show="PUEDE.editar" @click="editar(sel)">Editar <kbd>E</kbd></button>
+                <button type="button" class="ci-btn" x-show="PUEDE.editar && !['Cancelada', 'Finalizada'].includes(sel.estado)" @click="cambiarEstado(sel, 'Cancelada')" :disabled="guardando">Cancelar cita</button>
+                <button type="button" class="ci-btn ci-borrar" x-show="PUEDE.eliminar" @click="eliminar(sel)" aria-label="Eliminar cita"><i class="bi bi-trash3"></i></button>
             </div>
         </div>
     </template>
     <template x-if="!sel">
-        <button type="button" class="ci-btn ci-prim ci-ancho" @click="nueva()">Agendar cita <kbd>N</kbd></button>
+        <button type="button" class="ci-btn ci-prim ci-ancho" x-show="PUEDE.crear" @click="nueva()">Agendar cita <kbd>N</kbd></button>
     </template>
 </div>

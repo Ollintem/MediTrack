@@ -93,10 +93,12 @@
             </div>
 
             <div class="flex items-center gap-3">
+                @permiso('Proveedores', 'crear')
                 <button @click="nuevoProveedor()" type="button" class="group bg-white text-teal-800 hover:bg-teal-50 font-bold px-5 py-3 rounded-2xl text-sm shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2 transform hover:-translate-y-0.5 cursor-pointer">
                     <i class="bi bi-plus-circle-fill text-teal-600 group-hover:scale-110 transition-transform duration-300 text-base"></i>
                     <span>Nuevo Proveedor</span>
                 </button>
+                @endpermiso
             </div>
         </div>
     </div>
@@ -184,7 +186,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100 text-gray-700 font-semibold">
-                    @forelse ($proveedores as$prov)
+                    @forelse ($proveedores as $prov)
                         @php
                             $razon = strtolower($prov->razon_social);
                             $comercial = strtolower($prov->nombre_comercial ?? '');
@@ -241,13 +243,17 @@
 
                             <td class="p-4 text-center">
                                 <div class="flex items-center justify-center gap-1.5">
+                                    @permiso('Proveedores', 'editar')
                                     <button type="button" @click="editarProveedor({{ json_encode($prov) }})" class="bg-teal-600 hover:bg-teal-700 text-white p-2 rounded-xl text-xs font-bold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center justify-center cursor-pointer" title="Editar">
                                         <i class="bi bi-pencil-square"></i>
                                     </button>
+                                    @endpermiso
 
-                                    <button type="button" onclick="confirmarEliminacionProveedor({{ $prov->id }}, '{{$prov->razon_social }}')" class="bg-rose-500 hover:bg-rose-600 text-white p-2 rounded-xl text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center justify-center cursor-pointer" title="Eliminar">
+                                    @permiso('Proveedores', 'eliminar')
+                                    <button type="button" onclick="confirmarEliminacionProveedor({{ $prov->id }}, @js($prov->razon_social))" class="bg-rose-500 hover:bg-rose-600 text-white p-2 rounded-xl text-xs font-semibold shadow-xs hover:shadow-md transition-all active:scale-95 flex items-center justify-center cursor-pointer" title="Eliminar">
                                         <i class="bi bi-trash"></i>
                                     </button>
+                                    @endpermiso
                                 </div>
                             </td>
                         </tr>
@@ -265,7 +271,7 @@
 
         <!-- TARJETAS GRID -->
         <div x-show="viewMode === 'grid'" class="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            @forelse ($proveedores as$prov)
+            @forelse ($proveedores as $prov)
                 @php
                     $razon = strtolower($prov->razon_social);
                     $comercial = strtolower($prov->nombre_comercial ?? '');
@@ -306,12 +312,16 @@
                     </div>
 
                     <div class="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                        @permiso('Proveedores', 'editar')
                         <button type="button" @click="editarProveedor({{ json_encode($prov) }})" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1 transition cursor-pointer">
                             <i class="bi bi-pencil-square"></i> Editar
                         </button>
-                        <button onclick="confirmarEliminacionProveedor({{ $prov->id }}, '{{$prov->razon_social }}')" type="button" class="bg-rose-500 hover:bg-rose-600 text-white p-1.5 rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer" title="Eliminar">
+                        @endpermiso
+                        @permiso('Proveedores', 'eliminar')
+                        <button onclick="confirmarEliminacionProveedor({{ $prov->id }}, @js($prov->razon_social))" type="button" class="bg-rose-500 hover:bg-rose-600 text-white p-1.5 rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer" title="Eliminar">
                             <i class="bi bi-trash"></i>
                         </button>
+                        @endpermiso
                     </div>
                 </div>
             @empty
@@ -323,7 +333,7 @@
     </div>
 
     <!-- INCLUIR MODAL DE CREACIÓN / EDICIÓN -->
-    @include('proveedores.modalProveedores')
+    @include('Proveedores.modalProveedores')
 </div>
 
 <script>

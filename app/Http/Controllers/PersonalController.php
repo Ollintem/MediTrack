@@ -99,6 +99,11 @@ class PersonalController extends Controller
         $request->validate($this->reglas(), $this->mensajes());
 
         $rol = Rol::findOrFail($request->rol_id);
+
+        if ($motivo = $this->protegerRoles(null, $rol)) {
+            return $this->prohibido($request, $motivo);
+        }
+
         $nombreCompleto = $this->nombreCompleto($request);
         $datosNomina = $this->datosNomina($request);
         $personalId = null;
@@ -177,6 +182,11 @@ class PersonalController extends Controller
         $request->validate($this->reglas($personal->id), $this->mensajes());
 
         $rol = Rol::findOrFail($request->rol_id);
+
+        if ($motivo = $this->protegerRoles($usuario, $rol)) {
+            return $this->prohibido($request, $motivo);
+        }
+
         $nombreCompleto = $this->nombreCompleto($request);
         $datosNomina = $this->datosNomina($request);
         $salarioAnterior = (float) ($personal->salario_diario ?? 0);
@@ -246,18 +256,32 @@ class PersonalController extends Controller
 
     public function destroy($id)
     {
-        $personal = Personal::where('id', $id)->orWhere('user_id', $id)->first();
+        // Solo por el id de personal: con orWhere('user_id') un mismo número podía coincidir con OTRA persona
+        $personal = Personal::find($id);
 
         if ($personal) {
             $userId = $personal->user_id;
             $personalId = $personal->id;
             $nombreEliminado = $personal->nombre_completo;
 
+            if ((int) $userId === 1) {
+                $mensaje = 'El Super Admin inicial no se puede eliminar.';
+
+                return request()->expectsJson()
+                    ? response()->json(['success' => false, 'message' => $mensaje], 409)
+                    : redirect()->route('personal.index')->with('error', $mensaje);
+            }
+
+            $usuarioEliminado = $userId ? User::with('rol')->find($userId) : null;
+            if ($usuarioEliminado && !auth()->user()->tieneAccesoTotal() && $usuarioEliminado->tieneAccesoTotal()) {
+                return $this->prohibido(request(), 'Solo un administrador puede eliminar a un administrador.');
+            }
+
             if ($userId && (int) $userId === (int) auth()->id()) {
                 $mensaje = 'No puedes eliminar tu propia cuenta.';
 
                 return request()->expectsJson()
-                    ? response()->json(['success' => false, 'message' => $mensaje], 422)
+                    ? response()->json(['success' => false, 'message' => $mensaje], 409)
                     : redirect()->route('personal.index')->with('error', $mensaje);
             }
 
@@ -291,6 +315,42 @@ class PersonalController extends Controller
     // =====================================================================
     //  AYUDANTES
     // =====================================================================
+
+    /**
+     * Evita subir de rol desde Personal a quien no tiene acceso total:
+     *  - no puede asignar un rol con acceso total (Administrador, Admin...);
+     *  - no puede modificar la cuenta de un administrador (ni la del Super Admin);
+     *  - no puede cambiarse su propio rol.
+     * Devuelve el motivo del rechazo o null si puede continuar.
+     */
+    private function protegerRoles(?User $usuario, Rol $rolNuevo): ?string
+    {
+        $yo = auth()->user();
+        if ($yo->tieneAccesoTotal()) {
+            return null;
+        }
+
+        if ($rolNuevo->esTotal()) {
+            return 'Solo un administrador puede asignar el rol «' . $rolNuevo->nombre . '».';
+        }
+
+        if ($usuario && $usuario->tieneAccesoTotal()) {
+            return 'Solo un administrador puede modificar la cuenta de un administrador.';
+        }
+
+        if ($usuario && (int) $usuario->id === (int) $yo->id && (int) $usuario->rol_id !== (int) $rolNuevo->id) {
+            return 'No puedes cambiar tu propio rol.';
+        }
+
+        return null;
+    }
+
+    private function prohibido(Request $request, string $mensaje)
+    {
+        return $request->expectsJson()
+            ? response()->json(['ok' => false, 'success' => false, 'status' => 'error', 'message' => $mensaje], 403)
+            : redirect()->route('personal.index')->with('error', $mensaje);
+    }
 
     /** Datos de una persona como los usa la vista (gafete y lista). */
     private function presentar(Personal $p, $citasHoy = null, $atendidasMes = null): array

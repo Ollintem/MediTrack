@@ -35,6 +35,11 @@
     ])->values();
 
     $datosPos = [
+        // Permisos del rol: vender = crear, entregar = editar (la ruta lo vuelve a revisar)
+        'puede' => [
+            'vender'   => auth()->user()->tienePermiso('POS', 'crear'),
+            'entregar' => auth()->user()->tienePermiso('POS', 'editar'),
+        ],
         'productos' => $productosPos,
         'pacientes' => $pacientesPos,
         'tickets'   => $ticketsRecientes ?? $tickets ?? [],
@@ -71,7 +76,7 @@
         <div class="ps-ent-cab">
             <i class="bi bi-bag-check"></i>
             <div><b x-text="porEntregar.length === 1 ? '1 pedido pagado por entregar' : porEntregar.length + ' pedidos pagados por entregar'"></b><span>Al entregar se descuentan del inventario.</span></div>
-            <form class="ps-folio" @submit.prevent="entregarPorCodigo()">
+            <form class="ps-folio" x-show="PUEDE.entregar" @submit.prevent="entregarPorCodigo()">
                 <span>TCK-</span>
                 <input type="text" x-model="codigoRapido" maxlength="12" placeholder="Folio" aria-label="Folio del ticket a entregar" autocomplete="off">
                 <button type="submit" :disabled="!codigoRapido.trim() || entregando"><i class="bi bi-box-arrow-right"></i>Entregar</button>
@@ -85,7 +90,7 @@
                         <span x-text="[nombrePaciente(t), piezas(t)].filter(Boolean).join(' · ')"></span>
                     </div>
                     <span class="ps-din t" x-text="dinero(t.monto_total)"></span>
-                    <button type="button" class="ps-mini" @click="entregar(t)" :disabled="entregando === t.id">
+                    <button type="button" class="ps-mini" x-show="PUEDE.entregar" @click="entregar(t)" :disabled="entregando === t.id">
                         <i class="bi" :class="entregando === t.id ? 'bi-hourglass-split' : 'bi-check2'"></i><span x-text="entregando === t.id ? 'Surtiendo' : 'Entregar'"></span>
                     </button>
                 </article>
@@ -183,7 +188,7 @@
                 <footer class="ps-p-pie">
                     <p class="ps-p-res t" x-show="carrito.length"><span x-text="piezasCarrito + (piezasCarrito === 1 ? ' pieza' : ' piezas')"></span><span x-text="carrito.length + (carrito.length === 1 ? ' producto' : ' productos')"></span></p>
                     <p class="ps-total"><span>Total a pagar en caja</span><b class="t" x-html="cifra(total)"></b></p>
-                    <button type="button" class="ps-generar" @click="generar()" :disabled="!carrito.length || cargando">
+                    <button type="button" class="ps-generar" x-show="PUEDE.vender" @click="generar()" :disabled="!carrito.length || cargando">
                         <i class="bi" :class="cargando ? 'bi-hourglass-split' : 'bi-ticket-perforated'"></i>
                         <span x-text="cargando ? 'Generando…' : 'Generar ticket'"></span>
                         <kbd x-show="!cargando">Ctrl ↵</kbd>
@@ -234,7 +239,7 @@
                                 <span x-text="nombrePaciente(t) + ' · ' + hora(t.created_at) + (estadoDe(t) === 'pendiente' ? ' · vence en ' + restante(t) : '')"></span>
                             </div>
                             <span class="ps-din t" x-text="dinero(t.monto_total)"></span>
-                            <button type="button" class="ps-mini" x-show="estadoDe(t) === 'pagado'" @click="entregar(t)" :disabled="entregando === t.id"><i class="bi bi-check2"></i>Entregar</button>
+                            <button type="button" class="ps-mini" x-show="PUEDE.entregar && estadoDe(t) === 'pagado'" @click="entregar(t)" :disabled="entregando === t.id"><i class="bi bi-check2"></i>Entregar</button>
                             <button type="button" class="ps-ico" @click="ver(t)" title="Ver comprobante" aria-label="Ver comprobante"><i class="bi bi-eye"></i></button>
                         </article>
                     </template>
@@ -478,6 +483,7 @@ function posApp() {
 
     return {
         P: D.productos, PAC: D.pacientes, T: D.tickets, CLINICA: D.clinica,
+        PUEDE: D.puede || {},
         ESTADOS: [{ k: '', t: 'Todos' }, { k: 'pendiente', t: 'Por cobrar' }, { k: 'pagado', t: 'Pagados' }, { k: 'entregado', t: 'Entregados' }, { k: 'expirado', t: 'Vencidos' }],
         q: '', cat: '', soloDisp: false,
         carrito: [], paciente: null, pacAbierto: false, pacQ: '',
@@ -560,7 +566,7 @@ function posApp() {
         elegirPaciente(p) { this.paciente = p; this.pacAbierto = false; this.pacQ = ''; },
 
         async generar() {
-            if (!this.carrito.length || this.cargando) return;
+            if (!this.carrito.length || this.cargando || !this.PUEDE.vender) return;
             this.cargando = true;
             try {
                 const r = await fetch(D.url.generar, {
@@ -608,6 +614,7 @@ function posApp() {
         },
         async entregar(t) { this.entregando = t.id; await this.entregarCodigo(this.folio(t), t); this.entregando = null; },
         async entregarCodigo(codigo, t = null) {
+            if (!this.PUEDE.entregar) return false;
             if (!t) this.entregando = true;
             try {
                 const r = await fetch(D.url.entregar + '/' + encodeURIComponent(codigo), {

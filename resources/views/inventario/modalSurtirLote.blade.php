@@ -247,7 +247,7 @@
             nivelAntes(r) { return Math.min(100, Math.round(r.p.fisico / this.escala(r) * 100)); },
             nivelDespues(r) { return Math.min(100, Math.round((r.p.fisico + (Number(r.cantidad) || 0)) / this.escala(r) * 100)); },
             bloqueado(r) { return this.enviando || r.estadoEnvio === 'ok'; },
-            dinero(n) { return '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
+            dinero(n) { return MTCaja.dinero(n); },
 
             // ----- Totales -----
             get pendientes() { return this.renglones.filter(r => r.estadoEnvio !== 'ok'); },

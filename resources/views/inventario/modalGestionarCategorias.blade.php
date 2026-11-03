@@ -147,10 +147,12 @@
                                                         <i class="bi bi-pencil-fill"></i>
                                                     </button>
                                                 @endif
+                                                @permiso('Inventario', 'eliminar')
                                                 <button type="button" @click="eliminar(c)" title="Eliminar"
                                                         class="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white flex items-center justify-center text-xs transition-all cursor-pointer">
                                                     <i class="bi bi-trash-fill"></i>
                                                 </button>
+                                                @endpermiso
                                             </div>
                                         </div>
                                     </template>

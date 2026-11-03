@@ -61,6 +61,8 @@ class HomeController extends Controller
             ->orderBy('hora')
             ->get();
 
+        $veAgenda = $puede['citas'] || $puede['consultas'];
+
         return [
             'generado'     => now()->format('H:i'),
             'hoy'          => $hoy->toDateString(),
@@ -80,7 +82,8 @@ class HomeController extends Controller
                 'consultasMes' => $this->kpiConsultasMes($hoy),
                 'ocupacion'    => $this->kpiOcupacion(),
             ],
-            'agenda'       => $citasHoy->map(fn ($c) => $this->citaParaAgenda($c))->values()->all(),
+            // Datos de pacientes (nombres, alergias) solo para quien puede ver Citas o Consultas
+            'agenda'       => $veAgenda ? $citasHoy->map(fn ($c) => $this->citaParaAgenda($c))->values()->all() : [],
             'resumenHoy'   => [
                 'total'       => $citasHoy->count(),
                 'finalizadas' => $citasHoy->where('estado', 'Finalizada')->count(),
@@ -89,13 +92,16 @@ class HomeController extends Controller
                 'porAtender'  => $citasHoy->whereIn('estado', self::ESTADOS_POR_ATENDER)->count(),
             ],
             'actividad'    => $this->actividadHoy($hoy),
-            'proximas'     => $this->proximas($hoy),
+            'proximas'     => $veAgenda ? $this->proximas($hoy) : [],
             'consultorios' => $this->consultoriosAhora($citasHoy),
             'grafica'      => $this->grafica($hoy),
             'diario'       => $this->serieDiaria($hoy),
             'medicosHoy'   => $this->medicosHoy($citasHoy),
             'tiposMes'     => $this->tiposMes($hoy),
-            'stock'        => $this->alertasStock(),
+            // Existencias y precios solo para quien puede ver Inventario
+            'stock'        => $puede['inventario']
+                ? $this->alertasStock()
+                : ['disponible' => false, 'total' => 0, 'agotados' => 0, 'items' => [], 'galeria' => [], 'productos' => 0],
         ];
     }
 

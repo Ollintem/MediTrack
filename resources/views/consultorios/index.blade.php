@@ -13,6 +13,12 @@
         'url'          => url('consultorios'),
         'csrf'         => csrf_token(),
         'consultorios' => $consultoriosJs ?? collect(),
+        // Permisos del rol (la ruta los vuelve a revisar en el servidor)
+        'puede'        => [
+            'crear'    => auth()->user()->tienePermiso('Consultorios', 'crear'),
+            'editar'   => auth()->user()->tienePermiso('Consultorios', 'editar'),
+            'eliminar' => auth()->user()->tienePermiso('Consultorios', 'eliminar'),
+        ],
     ];
 @endphp
 
@@ -26,7 +32,7 @@
             <input type="search" x-ref="buscar" x-model="q" autocomplete="off" placeholder="Busca un consultorio por nombre o piso">
             <kbd aria-hidden="true">/</kbd>
         </label>
-        <button type="button" class="co-dark" @click="nuevo()">Nuevo consultorio <kbd>N</kbd></button>
+        <button type="button" class="co-dark" x-show="PUEDE.crear" @click="nuevo()">Nuevo consultorio <kbd>N</kbd></button>
     </header>
 
     <!-- CIFRA E INDICADORES (también filtran) -->
@@ -64,11 +70,11 @@
                                 <small class="t" x-text="contarPiso(p)"></small>
                                 <i x-show="enConsultaPiso(p) > 0" :title="enConsultaPiso(p) + ' en consulta'"></i>
                             </button>
-                            <button type="button" class="co-elev-x" @click.stop="eliminarPiso(p)" :aria-label="'Quitar ' + etiquetaPiso(p)" :title="'Quitar ' + etiquetaPiso(p)"><i class="bi bi-x"></i></button>
+                            <button type="button" class="co-elev-x" x-show="PUEDE.editar && PUEDE.eliminar" @click.stop="eliminarPiso(p)" :aria-label="'Quitar ' + etiquetaPiso(p)" :title="'Quitar ' + etiquetaPiso(p)"><i class="bi bi-x"></i></button>
                         </div>
                     </template>
                 </div>
-                <button type="button" class="co-elev-mas" @click="abrirPisoNuevo()" x-show="!pisoNuevo.abierto" aria-label="Agregar piso">
+                <button type="button" class="co-elev-mas" @click="abrirPisoNuevo()" x-show="PUEDE.crear && !pisoNuevo.abierto" aria-label="Agregar piso">
                     <i class="bi bi-plus-lg"></i>
                 </button>
                 <form class="co-elev-nuevo" x-show="pisoNuevo.abierto" x-cloak @submit.prevent="agregarPiso()" @keydown.escape.stop="pisoNuevo.abierto = false">
@@ -87,7 +93,7 @@
 
                     <div class="co-vacio-piso" x-show="!planoVisible.length" x-cloak>
                         <p><b>Este piso aún no tiene consultorios</b>Registra el primero y aparecerá aquí.</p>
-                        <button type="button" class="co-btn co-prim" @click="nuevo()">Agregar consultorio aquí</button>
+                        <button type="button" class="co-btn co-prim" x-show="PUEDE.crear" @click="nuevo()">Agregar consultorio aquí</button>
                     </div>
 
                     <div class="co-losa">
@@ -146,8 +152,8 @@
                         <span class="co-medico" x-text="c.estado === 'ocupado' ? (c.ocupadoPor ? 'Con ' + c.ocupadoPor : 'En uso') : '—'"></span>
                     </button>
                     <span class="co-fila-acc">
-                        <button type="button" class="co-ico" @click="editar(c)" :aria-label="'Editar ' + c.nombre"><i class="bi bi-pencil"></i></button>
-                        <button type="button" class="co-ico co-ico-r" @click="eliminar(c)" :aria-label="'Eliminar ' + c.nombre"><i class="bi bi-trash3"></i></button>
+                        <button type="button" class="co-ico" x-show="PUEDE.editar" @click="editar(c)" :aria-label="'Editar ' + c.nombre"><i class="bi bi-pencil"></i></button>
+                        <button type="button" class="co-ico co-ico-r" x-show="PUEDE.eliminar" @click="eliminar(c)" :aria-label="'Eliminar ' + c.nombre"><i class="bi bi-trash3"></i></button>
                     </span>
                 </div>
             </template>
@@ -431,6 +437,7 @@ function modConsultorios() {
 
     return {
         P: (DATOS.consultorios || []).map(c => Object.assign({ ocupadoPor: null }, c)),
+        PUEDE: DATOS.puede || {},   // crear / editar / eliminar según el rol
         sel: null,
         piso: '',
         pisosExtra: [],
@@ -542,6 +549,7 @@ function modConsultorios() {
             if (!reduce) { this.animarPiso = false; this.$nextTick(() => { this.animarPiso = true; }); }
         },
         abrirPisoNuevo() {
+            if (!this.PUEDE.crear) return;
             this.pisoNuevo = { abierto: true, valor: '', error: '' };
             this.$nextTick(() => this.$refs.pisoNuevo.focus());
         },
@@ -557,7 +565,7 @@ function modConsultorios() {
 
         /* Quitar un piso: si tiene consultorios, se mueven a otro piso o se eliminan junto con él */
         async eliminarPiso(p) {
-            if (this.editando || this.arrastre) return;
+            if (this.editando || this.arrastre || !this.PUEDE.editar || !this.PUEDE.eliminar) return;
             const esc = t => String(t).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
             const nombre = this.etiquetaPiso(p);
             const enPiso = this.P.filter(c => c.piso === p);
@@ -662,7 +670,7 @@ function modConsultorios() {
             return `left:${a.sx}px;top:${a.sy}px;width:${this.tam}px;height:${this.tam}px;background:rgba(${c},.14);border:2px dashed rgba(${c},.8);`;
         },
         iniciarArrastre(e, c) {
-            if (this.editando || e.button > 0) return;
+            if (this.editando || e.button > 0 || !this.PUEDE.editar) return;   // mover en el plano = editar
             e.currentTarget.setPointerCapture(e.pointerId);
             this.arrastre = { id: c.id, cx: e.clientX, cy: e.clientY, x0: c.x, y0: c.y, sx: c.x, sy: c.y, movio: false, choque: false };
         },
@@ -746,12 +754,12 @@ function modConsultorios() {
 
         /* ---------- Alta y edición (la placa se voltea) ---------- */
         nuevo() {
-            if (this.editando) return;
+            if (this.editando || !this.PUEDE.crear) return;
             this.form = { id: null, nombre: '', piso: this.piso || (this.pisos[0] ?? '1'), estado: 'Disponible' };
             this.abrirForm();
         },
         editar(c) {
-            if (this.editando || !c) return;
+            if (this.editando || !c || !this.PUEDE.editar) return;
             this.seleccionar(c);
             this.form = { id: c.id, nombre: c.nombre, piso: c.piso, estado: (this.opciones.find(o => o.slug === c.estado) || this.opciones[0]).valor };
             this.abrirForm();
@@ -816,7 +824,7 @@ function modConsultorios() {
         },
         async cambiarEstado(op) {
             const c = this.sel;
-            if (!c || c.estado === op.slug || this.guardando) return;
+            if (!c || c.estado === op.slug || this.guardando || !this.PUEDE.editar) return;
             const antes = c.estado;
             c.estado = op.slug; this.guardando = true;
             try {
@@ -836,7 +844,7 @@ function modConsultorios() {
             this.guardando = false;
         },
         eliminar(c) {
-            if (!c || this.editando) return;
+            if (!c || this.editando || !this.PUEDE.eliminar) return;
             Swal.fire({
                 title: '¿Eliminar este consultorio?',
                 html: `<p style="font-size:14px">Se eliminará <b>${String(c.nombre).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))}</b>. Si tiene citas registradas no se podrá eliminar.</p>`,

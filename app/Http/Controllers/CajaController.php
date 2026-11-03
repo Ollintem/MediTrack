@@ -18,27 +18,11 @@ class CajaController extends Controller
     {
         $fechaHoy = today('America/Mexico_City');
 
-        // 1. Obtener la última apertura y el último cierre registrados
-        $ultimaApertura = MovimientoCaja::where('tipo', 'Ingreso')
-            ->where('concepto', 'APERTURA DE CAJA CENTRAL - FONDO INICIAL')
-            ->latest()
-            ->first();
-
-        $ultimoCierre = MovimientoCaja::where('tipo', 'Egreso')
-            ->where('concepto', 'like', 'CIERRE DE CAJA CENTRAL%')
-            ->latest()
-            ->first();
-
-        // La caja está ABIERTA solo si existe una apertura y esta es posterior al último cierre
-        $cajaAbierta = null;
-        if ($ultimaApertura) {
-            if (!$ultimoCierre || $ultimaApertura->id > $ultimoCierre->id) {
-                $cajaAbierta = $ultimaApertura;
-            }
-        }
+        $estadoCaja = $this->obtenerEstadoCaja();
+        $cajaAbierta = $estadoCaja['abierta'] ? $estadoCaja['apertura'] : null;
 
         // Sugerir el monto dejado en el último cierre
-        $montoAnterior = $ultimoCierre ? (float) $ultimoCierre->monto : 0.00;
+        $montoAnterior = $estadoCaja['cierre'] ? (float) $estadoCaja['cierre']->monto : 0.00;
 
         // Tickets pendientes de cobro
         $ticketsPendientes = TicketVenta::with(['paciente', 'detalles.producto'])
@@ -91,18 +75,7 @@ class CajaController extends Controller
             'monto_inicial.min'      => 'EL FONDO INICIAL NO PUEDE SER NEGATIVO.',
         ]);
 
-        // Verificar si la caja ya está abierta actualmente
-        $ultimaApertura = MovimientoCaja::where('tipo', 'Ingreso')
-            ->where('concepto', 'APERTURA DE CAJA CENTRAL - FONDO INICIAL')
-            ->latest()
-            ->first();
-
-        $ultimoCierre = MovimientoCaja::where('tipo', 'Egreso')
-            ->where('concepto', 'like', 'CIERRE DE CAJA CENTRAL%')
-            ->latest()
-            ->first();
-
-        if ($ultimaApertura && (!$ultimoCierre || $ultimaApertura->id > $ultimoCierre->id)) {
+        if ($this->obtenerEstadoCaja()['abierta']) {
             return back()->with('error', 'LA CAJA YA SE ENCUENTRA APERTURADA Y ACTIVA.');
         }
 
@@ -139,21 +112,12 @@ class CajaController extends Controller
             return back()->with('error', 'CONTRASEÑA DE AUTORIZACIÓN INCORRECTA.');
         }
 
-        $ultimaApertura = MovimientoCaja::where('tipo', 'Ingreso')
-            ->where('concepto', 'APERTURA DE CAJA CENTRAL - FONDO INICIAL')
-            ->latest()
-            ->first();
-
-        $ultimoCierre = MovimientoCaja::where('tipo', 'Egreso')
-            ->where('concepto', 'like', 'CIERRE DE CAJA CENTRAL%')
-            ->latest()
-            ->first();
-
-        $estaAbierta = $ultimaApertura && (!$ultimoCierre || $ultimaApertura->id > $ultimoCierre->id);
-
-        if (!$estaAbierta) {
+        $estadoCaja = $this->obtenerEstadoCaja();
+        if (!$estadoCaja['abierta']) {
             return back()->with('error', 'LA CAJA NO SE ENCUENTRA APERTURADA.');
         }
+
+        $ultimaApertura = $estadoCaja['apertura'];
 
         try {
             // Calcular total en efectivo del turno activo
@@ -215,7 +179,7 @@ class CajaController extends Controller
                 'status'  => 'error',
                 'message' => $mensajes[$ticket->status] ?? 'ESTE TICKET YA FUE PROCESADO O CANCELADO.',
                 'ticket'  => $ticket,
-            ], 422);
+            ], 409);
         }
 
         return response()->json(['status' => 'success', 'ticket' => $ticket]);
@@ -226,23 +190,11 @@ class CajaController extends Controller
      */
     public function procesarPago(Request $request, $id)
     {
-        $ultimaApertura = MovimientoCaja::where('tipo', 'Ingreso')
-            ->where('concepto', 'APERTURA DE CAJA CENTRAL - FONDO INICIAL')
-            ->latest()
-            ->first();
-
-        $ultimoCierre = MovimientoCaja::where('tipo', 'Egreso')
-            ->where('concepto', 'like', 'CIERRE DE CAJA CENTRAL%')
-            ->latest()
-            ->first();
-
-        $estaAbierta = $ultimaApertura && (!$ultimoCierre || $ultimaApertura->id > $ultimoCierre->id);
-
-        if (!$estaAbierta) {
+        if (!$this->obtenerEstadoCaja()['abierta']) {
             return response()->json([
                 'status'  => 'error',
                 'message' => 'LA CAJA DEBE ESTAR APERTURADA PARA PROCESAR PAGOS.',
-            ], 422);
+            ], 409);
         }
 
         $request->validate([
@@ -279,7 +231,7 @@ class CajaController extends Controller
             });
 
             if (isset($resultado['error'])) {
-                return response()->json(['status' => 'error', 'message' => $resultado['error']], 422);
+                return response()->json(['status' => 'error', 'message' => $resultado['error']], 409);
             }
 
             return response()->json([
@@ -292,8 +244,27 @@ class CajaController extends Controller
             report($e);
             return response()->json([
                 'status'  => 'error',
-                'message' => 'ERROR AL PROCESAR EL COBRO: ' . $e->getMessage(),
+                'message' => 'ERROR AL PROCESAR EL COBRO.' . (config('app.debug') ? ' ' . $e->getMessage() : ''),
             ], 500);
         }
+    }
+
+    private function obtenerEstadoCaja(): array
+    {
+        $ultimaApertura = MovimientoCaja::where('tipo', 'Ingreso')
+            ->where('concepto', 'APERTURA DE CAJA CENTRAL - FONDO INICIAL')
+            ->latest()
+            ->first();
+
+        $ultimoCierre = MovimientoCaja::where('tipo', 'Egreso')
+            ->where('concepto', 'like', 'CIERRE DE CAJA CENTRAL%')
+            ->latest()
+            ->first();
+
+        return [
+            'apertura' => $ultimaApertura,
+            'cierre' => $ultimoCierre,
+            'abierta' => $ultimaApertura && (!$ultimoCierre || $ultimaApertura->id > $ultimoCierre->id),
+        ];
     }
 }

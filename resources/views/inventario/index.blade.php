@@ -68,8 +68,11 @@
                    placeholder="Busca por nombre, sustancia o escanea el código" @keydown.enter.prevent="buscarExacto()">
             <kbd aria-hidden="true">/</kbd>
         </label>
-        @if ($puedeCrear)
+        {{-- Surtir lote suma existencias: es "editar" (igual que la ruta inventario.surtir-lote) --}}
+        @if ($puedeEditar)
             <button type="button" class="iv-claro" @click="openLoteModal = true"><i class="bi bi-boxes"></i><span>Surtir lote</span></button>
+        @endif
+        @if ($puedeCrear)
             <button type="button" class="iv-dark" @click="openCreateModal = true"><span x-text="hayInsumos ? 'Registrar producto' : 'Registrar medicamento'">Registrar medicamento</span> <kbd>N</kbd></button>
         @endif
     </header>
@@ -245,7 +248,7 @@
                 <span x-show="!!categoriaFiltro" class="iv-chip"><i class="bi bi-tag"></i><span x-text="categoriaFiltro"></span></span>
                 <span x-show="q.trim() !== ''" class="iv-chip"><i class="bi bi-search"></i><span x-text="'«' + q.trim() + '»'"></span></span>
                 <button type="button" @click="limpiarFiltros()">Quitar filtros</button>
-                @if ($puedeCrear)
+                @if ($puedeEditar)
                     <button type="button" class="iv-surtir-lote" x-show="estadoFiltro === 'bajo' || estadoFiltro === 'agotado'" @click="openLoteModal = true"><i class="bi bi-boxes"></i>Reabastecer en lote</button>
                 @endif
             </div>
@@ -711,7 +714,7 @@ function moduloInventario() {
         },
 
         // ----- Formato -----
-        dinero(n, dec = 2) { return '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: dec, maximumFractionDigits: dec }); },
+        dinero(n, dec = 2) { return MTCaja.dinero(n, dec); },
         numero(n) { return Number(n || 0).toLocaleString('es-MX'); },
         titulo,
         partes(p) { return MTCaja.partes(p); },

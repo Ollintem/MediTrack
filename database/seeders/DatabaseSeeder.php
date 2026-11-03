@@ -39,31 +39,9 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // 2. Crear Módulos Reales y Activos del Sistema (Mismo orden que el Sidebar)
-       $modulos = [
-    'Dashboard',
-    'Pacientes', 
-    'Citas', 
-    'Consultas', 
-    'Consultorios', 
-    'Recetas', 
-    'POS', 
-    'Caja central', 
-    'Inventario', 
-    'Personal', 
-    'Roles', 
-    'Configuración', 
-    'Bitácora'
-];
-
-foreach ($modulos as $mod) {
-    Modulo::firstOrCreate(['nombre' => $mod]);
-}
-
-// Eliminar de la BD módulos obsoletos si existen
-Modulo::whereNotIn('nombre', $modulos)->delete();
-        // Eliminar de la BD módulos viejos o deshabilitados si existen
-        Modulo::whereNotIn('nombre', $modulos)->delete();
+        // 2. Módulos con permisos: el catálogo vive en Modulo::CATALOGO (mismo que la pantalla de Roles).
+        //    Solo crea los que falten; NO borra, porque borrar un módulo elimina en cascada sus permisos.
+        Modulo::sincronizar();
 
         // 3. Crear Roles por defecto
         $rolDoctor = Rol::firstOrCreate(['nombre' => 'Doctor']);

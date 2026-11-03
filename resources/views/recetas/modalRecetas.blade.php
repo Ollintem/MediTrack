@@ -170,6 +170,6 @@
 <!-- Acciones de la receta elegida -->
 <div class="rx-acc" x-show="!editando && sel">
     <a class="rx-btn rx-prim" :href="sel ? sel.pdf : '#'" target="_blank" rel="noopener"><i class="bi bi-printer"></i> Imprimir / PDF <kbd>P</kbd></a>
-    <button type="button" class="rx-btn" @click="duplicar(sel)"><i class="bi bi-copy"></i> Repetir</button>
-    <button type="button" class="rx-btn rx-borrar" @click="eliminar(sel)" aria-label="Eliminar receta"><i class="bi bi-trash3"></i></button>
+    <button type="button" class="rx-btn" x-show="PUEDE.crear" @click="duplicar(sel)"><i class="bi bi-copy"></i> Repetir</button>
+    <button type="button" class="rx-btn rx-borrar" x-show="PUEDE.eliminar" @click="eliminar(sel)" aria-label="Eliminar receta"><i class="bi bi-trash3"></i></button>
 </div>

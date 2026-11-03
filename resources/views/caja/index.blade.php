@@ -15,6 +15,8 @@
             'anterior' => (float) ($montoAnterior ?? 0),
             'inicial'  => old('monto_inicial'),
             'ahora'    => now()->toIso8601String(),
+            // Abrir la caja = registrar un movimiento (crear). La ruta lo vuelve a revisar.
+            'puede'    => auth()->user()->tienePermiso('Caja Central', 'crear'),
         ];
     @endphp
     <script type="application/json" id="cj-apertura">{!! json_encode($datosApertura, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) !!}</script>
@@ -40,7 +42,7 @@
             </article>
 
             <!-- Conteo del fondo -->
-            <form action="{{ route('caja.aperturar') }}" method="POST" class="cj-ab-form" x-ref="form" @submit="enviando = true">
+            <form action="{{ route('caja.aperturar') }}" method="POST" class="cj-ab-form" x-ref="form" @submit="if (!D.puede) { $event.preventDefault(); return; } enviando = true">
                 @csrf
                 <div class="cj-ab-cab">
                     <h1>Abrir caja</h1>
@@ -80,7 +82,8 @@
 
                 <div class="cj-ab-pie">
                     <a href="{{ route('home') }}" class="cj-btn">Cancelar</a>
-                    <button type="submit" class="cj-cobrar" :disabled="enviando">
+                    <span class="cj-btn" x-show="!D.puede">Tu rol no puede abrir la caja</span>
+                    <button type="submit" class="cj-cobrar" x-show="D.puede" :disabled="enviando">
                         <i class="bi" :class="enviando ? 'bi-hourglass-split' : 'bi-unlock'"></i>
                         <span x-text="enviando ? 'Abriendo…' : 'Abrir caja con ' + dinero(fondo)"></span>
                         <kbd x-show="!enviando">Ctrl ↵</kbd>
@@ -113,9 +116,9 @@
             get reloj() { return new Date(this.ahora).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); },
             sumar(v, d) { this.conteo[v] = Math.max(0, (Number(this.conteo[v]) || 0) + d); this.manual = null; },
             usarAnterior() { BILLETES.forEach(b => { this.conteo[b.v] = 0; }); this.monedas = ''; this.manual = this.D.anterior.toFixed(2); },
-            dinero(n, dec = 2) { return '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: dec, maximumFractionDigits: dec }); },
+            dinero(n, dec = 2) { return window.MTCaja.dinero(n, dec); },
             tecla(e) {
-                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!this.enviando) { this.enviando = true; this.$refs.form.submit(); } }
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!this.enviando && this.D.puede) { this.enviando = true; this.$refs.form.submit(); } }
             },
         };
     }
@@ -133,6 +136,8 @@
             'csrf'       => csrf_token(),
             'urlBuscar'  => route('caja.buscar-ticket', '__FOLIO__'),
             'urlPagar'   => route('caja.procesar-pago', '__ID__'),
+            // Cobrar y hacer el corte = registrar movimientos de caja (crear). La ruta lo vuelve a revisar.
+            'puedeCobrar' => auth()->user()->tienePermiso('Caja Central', 'crear'),
             'urlPos'     => \Illuminate\Support\Facades\Route::has('pos.index') ? route('pos.index') : null,
             'clinica'    => data_get($clinica ?? null, 'nombre') ?: 'MediTrack',
             'turno'      => [
@@ -193,7 +198,7 @@
                     <i></i>
                     <span><b x-text="'Turno desde ' + hora(D.turno.desde)"></b><small class="t" x-text="'En caja ' + dinero(enCaja)"></small></span>
                 </span>
-                <button type="button" @click="abrirCorte()"><i class="bi bi-lock"></i>Corte de caja</button>
+                <button type="button" x-show="D.puedeCobrar" @click="abrirCorte()"><i class="bi bi-lock"></i>Corte de caja</button>
             </div>
         </header>
 
@@ -267,7 +272,7 @@
                             <span x-text="falta > 0 ? 'Faltan' : 'Cambio'"></span><b class="t" x-text="dinero(falta > 0 ? falta : cambio)"></b>
                         </p>
                     </div>
-                    <button type="button" class="cj-cobrar" @click="confirmarPago()" :disabled="cargando || vencido(sel) || (metodoPago === 'Efectivo' && recibido !== '' && falta > 0)">
+                    <button type="button" class="cj-cobrar" x-show="D.puedeCobrar" @click="confirmarPago()" :disabled="cargando || vencido(sel) || (metodoPago === 'Efectivo' && recibido !== '' && falta > 0)">
                         <span x-show="cargando" class="cj-gira"></span>
                         <span x-text="cargando ? 'Cobrando…' : (vencido(sel) ? 'Ticket vencido' : 'Cobrar ' + dinero(sel ? sel.total : 0))"></span>
                         <kbd x-show="!cargando && !vencido(sel)">Ctrl ↵</kbd>
@@ -462,7 +467,7 @@
                 this.$watch('sel', () => { this.recibido = ''; });
             },
 
-            dinero(n, dec = 2) { return '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: dec, maximumFractionDigits: dec }); },
+            dinero(n, dec = 2) { return window.MTCaja.dinero(n, dec); },
             titulo(t) { return window.MTCaja ? MTCaja.titulo(t) : String(t || ''); },
             barras(t) { return window.MTCaja ? MTCaja.barras(t) : ''; },
             hora(iso) { if (!iso) return ''; const d = new Date(iso); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); },
@@ -497,7 +502,7 @@
             cuentaMetodo(m) { return this.cobros.filter(c => c.metodo === m && c.tipo !== 'Egreso').length; },
             get enCaja() { return (Number(D.turno.fondo) || 0) + this.porMetodo('Efectivo'); },
             get diferencia() { return (Number(this.contado) || 0) - this.enCaja; },
-            abrirCorte() { this.openCierreModal = true; this.contado = ''; this.verPass = false; this.$nextTick(() => setTimeout(() => this.$refs.pass && this.$refs.pass.focus(), 60)); },
+            abrirCorte() { if (!this.D.puedeCobrar) return; this.openCierreModal = true; this.contado = ''; this.verPass = false; this.$nextTick(() => setTimeout(() => this.$refs.pass && this.$refs.pass.focus(), 60)); },
             get cambio() { return Math.max(0, (Number(this.recibido) || 0) - (this.sel ? this.sel.total : 0)); },
             get falta() { return Math.max(0, (this.sel ? this.sel.total : 0) - (Number(this.recibido) || 0)); },
 
@@ -598,7 +603,7 @@
 
             async confirmarPago() {
                 const t = this.sel;
-                if (!t || !t.id || this.cargando || this.hecho) return;
+                if (!t || !t.id || this.cargando || this.hecho || !this.D.puedeCobrar) return;
                 if (this.vencido(t)) { this.mostrarError('El ticket ha expirado. Revalídalo en la Terminal POS.'); return; }
                 if (this.metodoPago === 'Efectivo' && this.recibido !== '' && this.falta > 0) return;
                 this.cargando = true;

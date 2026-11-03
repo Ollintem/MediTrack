@@ -9,9 +9,16 @@
 
 @section('content')
 @php
+    $usuario = auth()->user();
     $datosVista = array_merge($datosCitas ?? ['citas' => [], 'pacientes' => [], 'medicos' => [], 'consultorios' => []], [
-        'url'  => url('citas'),
-        'csrf' => csrf_token(),
+        'url'   => url('citas'),
+        'csrf'  => csrf_token(),
+        // Permisos del rol (la ruta los vuelve a revisar en el servidor)
+        'puede' => [
+            'crear'    => $usuario->tienePermiso('Citas', 'crear'),
+            'editar'   => $usuario->tienePermiso('Citas', 'editar'),
+            'eliminar' => $usuario->tienePermiso('Citas', 'eliminar'),
+        ],
     ]);
 @endphp
 
@@ -25,7 +32,7 @@
             <input type="search" x-ref="buscar" x-model.debounce.150ms="q" autocomplete="off" placeholder="Busca una cita por paciente o motivo">
             <kbd aria-hidden="true">/</kbd>
         </label>
-        <button type="button" class="ci-dark" @click="nueva()">Agendar cita <kbd>N</kbd></button>
+        <button type="button" class="ci-dark" x-show="PUEDE.crear" @click="nueva()">Agendar cita <kbd>N</kbd></button>
     </header>
 
     <!-- CABECERA: fecha, navegación, indicadores y vista -->
@@ -529,6 +536,7 @@ function modCitas() {
 
     return {
         C: D.citas || [], PAC: D.pacientes || [], MED: D.medicos || [], CON: D.consultorios || [], ESTADOS,
+        PUEDE: D.puede || {},                     // crear / editar / eliminar según el rol
         PX: 1.4,                                  // píxeles por minuto en el tablero
         hoy: iso(new Date()), dia: iso(new Date()), mesNav: iso(new Date()).slice(0, 7),
         vista: 'dia', agrupar: 'medico', filtroMed: '', filtroEstado: '', q: '',
@@ -715,6 +723,7 @@ function modCitas() {
             return !this.delDia.some(c => String(c[col.clave]) === String(col.id) && c.estado !== 'Cancelada' && aMin(c.hora) < min + 30 && min < aMin(c.hora) + Number(c.duracion_min));
         },
         clicEspacio(col, e) {
+            if (!this.PUEDE.crear) return;
             if (this.dia < this.hoy) { avisar('No se pueden agendar citas en días pasados.', 'info'); return; }
             const min = this.minutoDe(e);
             if (this.esHoyDia && min + 15 < this.minAhora) { avisar('Esa hora ya pasó.', 'info'); return; }
@@ -754,14 +763,14 @@ function modCitas() {
             return Object.assign({ id: null, paciente_id: '', personal_id: this.filtroMed || '', consultorio_id: '', fecha: this.dia < this.hoy ? this.hoy : this.dia, hora: '', duracion_min: 30, tipo_consulta: 'Primera Vez', estado: 'Pendiente', motivo: '' }, d);
         },
         nueva(datos = {}) {
-            if (this.editando) return;
+            if (this.editando || !this.PUEDE.crear) return;
             this.form = this.formNuevo(datos);
             if (this.form.personal_id && !this.form.consultorio_id) this.form.consultorio_id = this.consultorioHabitual(this.form.personal_id);
             if (!this.form.hora && this.libres.length) this.form.hora = this.libres[0];
             this.abrirForm();
         },
         editar(c) {
-            if (this.editando || !c) return;
+            if (this.editando || !c || !this.PUEDE.editar) return;
             this.form = { id: c.id, paciente_id: String(c.paciente_id), personal_id: String(c.personal_id), consultorio_id: String(c.consultorio_id || ''), fecha: c.fecha, hora: c.hora, duracion_min: Number(c.duracion_min), tipo_consulta: c.tipo_consulta, estado: c.estado, motivo: c.motivo };
             this.abrirForm();
         },
@@ -848,7 +857,7 @@ function modCitas() {
             }
         },
         async cambiarEstado(c, estado) {
-            if (!c || this.guardando || c.estado === estado) return;
+            if (!c || this.guardando || c.estado === estado || !this.PUEDE.editar) return;
             const antes = c.estado; c.estado = estado; this.guardando = true;
             try {
                 const r = await fetch(`${URL}/${c.id}`, {
@@ -863,12 +872,12 @@ function modCitas() {
             this.guardando = false;
         },
         eliminar(c) {
-            if (!c) return;
+            if (!c || !this.PUEDE.eliminar) return;
             const esc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
             Swal.fire({
                 title: '¿Eliminar esta cita?',
                 html: `<p style="font-size:14px">Se eliminará la cita de <b>${esc(c.paciente)}</b> del ${esc(this.fechaLarga(c.fecha))} a las ${esc(c.hora)}. Si solo no asistirá, es mejor cancelarla y conservar el historial.</p>`,
-                icon: 'warning', iconColor: '#c8102e', showCancelButton: true, showDenyButton: c.estado !== 'Cancelada', reverseButtons: true, focusCancel: true,
+                icon: 'warning', iconColor: '#c8102e', showCancelButton: true, showDenyButton: this.PUEDE.editar && c.estado !== 'Cancelada', reverseButtons: true, focusCancel: true,
                 confirmButtonText: 'Eliminar', denyButtonText: 'Mejor cancelarla', cancelButtonText: 'Volver',
                 confirmButtonColor: '#c8102e', denyButtonColor: '#0b5a54', cancelButtonColor: '#56625f',
                 showLoaderOnConfirm: true,

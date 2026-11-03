@@ -63,7 +63,7 @@
             </div>
 
             <!-- Antes de iniciar: solo la llamada a la acción -->
-            <div class="cs-iniciar" x-show="['Pendiente', 'Confirmada'].includes(sel.estado)">
+            <div class="cs-iniciar" x-show="PUEDE.atender && ['Pendiente', 'Confirmada'].includes(sel.estado)">
                 <div>
                     <b x-text="sel.fecha === hoy ? (faltan(sel) > 0 ? 'Empieza en ' + duracionTexto(faltan(sel)) : 'Es su hora') : 'Cita del ' + fechaLarga(sel.fecha)"></b>
                     <p>Al iniciar, el consultorio se marca ocupado y se abre la hoja.</p>
@@ -145,9 +145,9 @@
                 <footer class="cs-pie">
                     <span class="cs-guardado"><i :class="sucio ? 'pend' : 'ok'"></i>
                         <span x-text="guardando ? 'Guardando…' : (sucio ? 'Sin guardar' : (guardadoA ? 'Guardado ' + guardadoA : 'Se guarda solo'))"></span></span>
-                    <button type="button" class="cs-txt" @click="liberar()" :disabled="ocupado">Liberar consultorio</button>
-                    <button type="button" class="cs-btn" @click="guardar(false)" :disabled="ocupado">Guardar</button>
-                    <button type="button" class="cs-btn cs-prim" @click="guardar(true)" :disabled="ocupado">Finalizar</button>
+                    <button type="button" class="cs-txt" x-show="PUEDE.atender" @click="liberar()" :disabled="ocupado">Liberar consultorio</button>
+                    <button type="button" class="cs-btn" x-show="PUEDE.atender" @click="guardar(false)" :disabled="ocupado">Guardar</button>
+                    <button type="button" class="cs-btn cs-prim" x-show="PUEDE.atender" @click="guardar(true)" :disabled="ocupado">Finalizar</button>
                 </footer>
             </div>
 

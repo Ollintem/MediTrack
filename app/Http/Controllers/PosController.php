@@ -60,7 +60,7 @@ class PosController extends Controller
                     return response()->json([
                         'status'  => 'error',
                         'message' => "EL MEDICAMENTO '{$producto->nombre}' SOLO TIENE {$stockDisponible} PZAS. DISPONIBLES."
-                    ], 422);
+                    ], 409); // conflicto con las existencias actuales
                 }
 
                 $precioUnitario = $producto->precio_venta ?? 0;
@@ -100,13 +100,14 @@ class PosController extends Controller
                 'message'   => 'TICKET GENERADO CON ÉXITO',
                 'ticket'    => $ticket->load(['paciente', 'detalles.producto']),
                 'productos' => $productosActualizados
-            ]);
+            ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
+            report($e);
             return response()->json([
                 'status'  => 'error',
-                'message' => 'ERROR AL GENERAR EL TICKET: ' . $e->getMessage()
+                'message' => 'ERROR AL GENERAR EL TICKET.' . (config('app.debug') ? ' ' . $e->getMessage() : '')
             ], 500);
         }
     }
@@ -139,14 +140,14 @@ class PosController extends Controller
                 return response()->json([
                     'status'  => 'error',
                     'message' => "EL TICKET {$ticket->codigo_ticket} YA FUE ENTREGADO ANTERIORMENTE."
-                ], 422);
+                ], 409);
             }
 
             if ($ticket->status !== 'pagado') {
                 return response()->json([
                     'status'  => 'error',
                     'message' => 'EL TICKET DEBE ESTAR EN ESTADO PAGADO PARA PODER ENTREGARSE.'
-                ], 422);
+                ], 409);
             }
 
             // 1. Cambiar estado a entregado
@@ -185,9 +186,10 @@ class PosController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+            report($e);
             return response()->json([
                 'status'  => 'error',
-                'message' => 'ERROR AL PROCESAR LA ENTREGA: ' . $e->getMessage()
+                'message' => 'ERROR AL PROCESAR LA ENTREGA.' . (config('app.debug') ? ' ' . $e->getMessage() : '')
             ], 500);
         }
     }

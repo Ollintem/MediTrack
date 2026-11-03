@@ -10,8 +10,13 @@
 @section('content')
 @php
     $datosVista = array_merge($datosRecetas ?? ['recetas' => [], 'pacientes' => [], 'medicos' => [], 'productos' => [], 'prefill' => null, 'clinica' => ['nombre' => 'MediTrack']], [
-        'url'  => url('recetas'),
-        'csrf' => csrf_token(),
+        'url'   => url('recetas'),
+        'csrf'  => csrf_token(),
+        // Permisos del rol (la ruta los vuelve a revisar en el servidor)
+        'puede' => [
+            'crear'    => auth()->user()->tienePermiso('Recetas', 'crear'),
+            'eliminar' => auth()->user()->tienePermiso('Recetas', 'eliminar'),
+        ],
     ]);
 @endphp
 
@@ -24,7 +29,7 @@
             <input type="search" x-ref="buscar" x-model.debounce.150ms="q" autocomplete="off" placeholder="Busca por paciente, folio, diagnóstico o medicamento" aria-label="Buscar receta">
             <kbd aria-hidden="true">/</kbd>
         </label>
-        <button type="button" class="rx-dark" @click="nueva()">Nueva receta <kbd>N</kbd></button>
+        <button type="button" class="rx-dark" x-show="PUEDE.crear" @click="nueva()">Nueva receta <kbd>N</kbd></button>
     </header>
 
     <!-- CIFRA -->
@@ -291,6 +296,7 @@ function modRecetas() {
 
     return {
         R: D.recetas || [], PAC: D.pacientes || [], MED: D.medicos || [], PROD: D.productos || [], PREFILL: D.prefill, CLINICA: D.clinica || { nombre: 'MediTrack' },
+        PUEDE: D.puede || {},   // crear / eliminar según el rol
         hoy: iso(new Date()), q: '', sel: null,
         editando: false, guardando: false, form: {}, errores: {}, mensajeForm: '',
         bPac: { q: '', abierto: false, i: 0 }, popMed: false, verResumen: false,
@@ -349,6 +355,7 @@ function modRecetas() {
             this.abrirForm();
         },
         abrirForm() {
+            if (!this.PUEDE.crear) return;   // emitir, repetir o llegar desde una consulta = crear
             this.errores = {}; this.mensajeForm = 'Ctrl+Enter emite la receta'; this.bPac = { q: '', abierto: false, i: 0 }; this.popMed = false; this.verResumen = false;
             this.editando = true;
             this.$nextTick(() => { const h = document.querySelector('.rx .rx-hoja'); h && h.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' }); });
@@ -414,7 +421,7 @@ function modRecetas() {
             } catch (err) { this.guardando = false; this.mensajeForm = err.message; avisar(err.message, 'error'); }
         },
         eliminar(r) {
-            if (!r) return;
+            if (!r || !this.PUEDE.eliminar) return;
             Swal.fire({
                 title: '¿Eliminar la receta #' + r.folio + '?', icon: 'warning', iconColor: '#c8102e',
                 html: '<p style="font-size:14px">Se eliminará con todos sus medicamentos. Esta acción no se puede deshacer.</p>',

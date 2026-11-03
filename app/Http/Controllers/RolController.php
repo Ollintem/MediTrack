@@ -21,44 +21,10 @@ class RolController extends Controller
 {
     private const ACCIONES = ['ver', 'crear', 'editar', 'eliminar'];
 
-    /**
-     * Módulos que el sistema revisa (middleware permiso:X y menú). Si alguno no existe en la tabla
-     * `modulos`, se crea al abrir esta pantalla para que se le puedan dar permisos.
-     */
-    private const MODULOS = [
-        'Gestión médica' => [
-            'Pacientes'    => ['bi-people', 'Expedientes y credenciales'],
-            'Citas'        => ['bi-calendar2-week', 'Agenda de la clínica'],
-            'Consultas'    => ['bi-clipboard2-pulse', 'Atención del médico'],
-            'Consultorios' => ['bi-hospital', 'Plano y estado de las salas'],
-            'Recetas'      => ['bi-file-earmark-medical', 'Emisión e impresión'],
-        ],
-        'Farmacia y finanzas' => [
-            'POS'          => ['bi-shop', 'Terminal punto de venta'],
-            'Caja Central' => ['bi-cash-coin', 'Cobros, apertura y corte'],
-            'Inventario'   => ['bi-box-seam', 'Existencias y despacho de farmacia'],
-            'Proveedores'  => ['bi-truck', 'Compras y laboratorios'],
-            'Facturación'  => ['bi-receipt', 'Facturas (próximamente)'],
-        ],
-        'Administración' => [
-            'Personal'      => ['bi-person-badge', 'Plantilla, accesos y nómina'],
-            'Roles'         => ['bi-shield-lock', 'Esta pantalla'],
-            'Reportes'      => ['bi-bar-chart-line', 'Informes (próximamente)'],
-            'Configuración' => ['bi-gear', 'Datos de la clínica y cuenta'],
-            'Bitácora'      => ['bi-journal-text', 'Historial de movimientos'],
-        ],
-    ];
-
-    /** Roles que el sistema deja pasar a todo sin revisar permisos (middleware y menú). */
-    private const ROLES_TOTALES = ['administrador', 'super admin'];
-
     public function index()
     {
-        if (!auth()->check() || !auth()->user()->tienePermiso('Roles', 'ver')) {
-            abort(403, 'No tienes permisos para acceder al módulo de Roles.');
-        }
-
-        $this->sincronizarModulos();
+        // El permiso "Roles,ver" lo revisa la ruta (middleware permiso)
+        Modulo::sincronizar();
 
         $modulos = $this->modulos();
         $personas = $this->personasPorRol();
@@ -70,6 +36,7 @@ class RolController extends Controller
             'roles'   => $roles,
             'modulos' => $modulos->values(),
             'miRolId' => $user->rol_id ? (int) $user->rol_id : null,
+            'soyTotal' => $user->tieneAccesoTotal(),
             'puede'   => [
                 'crear'    => (bool) $user->tienePermiso('Roles', 'crear'),
                 'editar'   => (bool) $user->tienePermiso('Roles', 'editar'),
@@ -86,12 +53,13 @@ class RolController extends Controller
 
     public function store(Request $request)
     {
-        if (!auth()->check() || !auth()->user()->tienePermiso('Roles', 'crear')) {
-            return $this->negado($request, 'No tienes permisos para crear roles.');
-        }
-
+        // El permiso "Roles,crear" lo revisa la ruta (middleware permiso)
         $request->merge(['nombre' => trim(preg_replace('/\s+/', ' ', (string) $request->nombre))]);
         $request->validate(['nombre' => 'required|string|max:100|unique:roles,nombre'], $this->mensajes());
+
+        if ($motivo = $this->escalada($request, null)) {
+            return $this->negado($request, $motivo);
+        }
 
         try {
             $rol = DB::transaction(function () use ($request) {
@@ -102,7 +70,8 @@ class RolController extends Controller
             });
             $this->bitacora('Crear', "Se creó el rol {$rol->nombre}", $rol);
         } catch (Throwable $e) {
-            return $this->fallo($request, 'No se pudo crear el rol: ' . $e->getMessage());
+            report($e);
+            return $this->fallo($request, 'No se pudo crear el rol. Intenta de nuevo.');
         }
 
         if ($request->expectsJson()) {
@@ -114,13 +83,14 @@ class RolController extends Controller
 
     public function update(Request $request, $id)
     {
-        if (!auth()->check() || !auth()->user()->tienePermiso('Roles', 'editar')) {
-            return $this->negado($request, 'No tienes permisos para editar roles.');
-        }
-
+        // El permiso "Roles,editar" lo revisa la ruta (middleware permiso)
         $rol = Rol::findOrFail($id);
         $request->merge(['nombre' => trim(preg_replace('/\s+/', ' ', (string) $request->nombre))]);
         $request->validate(['nombre' => 'required|string|max:100|unique:roles,nombre,' . $rol->id], $this->mensajes());
+
+        if ($motivo = $this->escalada($request, $rol)) {
+            return $this->negado($request, $motivo);
+        }
 
         try {
             DB::transaction(function () use ($request, $rol) {
@@ -130,7 +100,8 @@ class RolController extends Controller
             });
             $this->bitacora('Editar', "Se actualizaron los permisos del rol {$rol->nombre}", $rol);
         } catch (Throwable $e) {
-            return $this->fallo($request, 'No se pudo guardar el rol: ' . $e->getMessage());
+            report($e);
+            return $this->fallo($request, 'No se pudo guardar el rol. Intenta de nuevo.');
         }
 
         if ($request->expectsJson()) {
@@ -142,25 +113,30 @@ class RolController extends Controller
 
     public function destroy($id)
     {
-        if (!auth()->check() || !auth()->user()->tienePermiso('Roles', 'eliminar')) {
-            return response()->json(['success' => false, 'message' => 'No tienes permisos para eliminar roles.'], 403);
+        // El permiso "Roles,eliminar" lo revisa la ruta (middleware permiso)
+        $rol = Rol::find($id);
+        if (!$rol) {
+            return response()->json(['ok' => false, 'success' => false, 'message' => 'El rol no existe o ya fue eliminado.'], 404);
+        }
+
+        if ((int) auth()->user()->rol_id === (int) $rol->id) {
+            return response()->json(['ok' => false, 'success' => false, 'message' => 'No puedes eliminar tu propio rol.'], 409);
+        }
+
+        if ($rol->esTotal() && !auth()->user()->tieneAccesoTotal()) {
+            return response()->json(['ok' => false, 'success' => false, 'message' => 'Solo un administrador puede eliminar un rol con acceso total.'], 403);
         }
 
         try {
-            $rol = Rol::findOrFail($id);
-
-            if ((int) auth()->user()->rol_id === (int) $rol->id) {
-                return response()->json(['success' => false, 'message' => 'No puedes eliminar tu propio rol.'], 422);
-            }
-
             $nombre = $rol->nombre;
             $usuarios = User::where('rol_id', $rol->id)->count();
             $rol->delete();
             Bitacora::registrar('Roles', 'Eliminar', "Se eliminó el rol {$nombre}", ['rol_id' => (int) $id, 'usuarios_sin_rol' => $usuarios]);
 
-            return response()->json(['success' => true, 'message' => 'El rol se eliminó correctamente.']);
+            return response()->json(['ok' => true, 'success' => true, 'message' => 'El rol se eliminó correctamente.']);
         } catch (Throwable $e) {
-            return response()->json(['success' => false, 'message' => 'Error al eliminar: ' . $e->getMessage()], 422);
+            report($e);
+            return response()->json(['ok' => false, 'success' => false, 'message' => 'No se pudo eliminar el rol.'], 500);
         }
     }
 
@@ -168,26 +144,12 @@ class RolController extends Controller
     //  AYUDANTES
     // =====================================================================
 
-    /** Crea los módulos que el sistema usa y aún no están en la tabla (sin duplicar por mayúsculas). */
-    private function sincronizarModulos(): void
-    {
-        $existentes = Modulo::pluck('nombre')->map(fn ($n) => mb_strtolower(trim($n)))->all();
-
-        foreach (self::MODULOS as $grupo) {
-            foreach (array_keys($grupo) as $nombre) {
-                if (!in_array(mb_strtolower($nombre), $existentes, true)) {
-                    Modulo::create(['nombre' => $nombre]);
-                }
-            }
-        }
-    }
-
     /** Módulos con su grupo, ícono y descripción, en el orden del menú. */
     private function modulos()
     {
         $info = [];
         $orden = 0;
-        foreach (self::MODULOS as $grupo => $lista) {
+        foreach (Modulo::CATALOGO as $grupo => $lista) {
             foreach ($lista as $nombre => [$icono, $desc]) {
                 $info[mb_strtolower($nombre)] = ['grupo' => $grupo, 'icono' => $icono, 'desc' => $desc, 'orden' => $orden++];
             }
@@ -241,7 +203,7 @@ class RolController extends Controller
             'permisos' => $permisos,
             'personas' => $gente,
             'usuarios' => $gente->count(),
-            'total'    => in_array(mb_strtolower(trim($rol->nombre)), self::ROLES_TOTALES, true),
+            'total'    => $rol->esTotal(),
         ];
     }
 
@@ -282,6 +244,51 @@ class RolController extends Controller
         }
     }
 
+    /**
+     * Evita que alguien sin acceso total se dé más poder del que tiene:
+     *  - no puede crear ni renombrar un rol a un nombre con acceso total (Administrador, Admin...);
+     *  - no puede modificar un rol con acceso total ni su propio rol;
+     *  - no puede otorgar acciones que él mismo no tiene.
+     * Devuelve el motivo del rechazo o null si puede continuar.
+     */
+    private function escalada(Request $request, ?Rol $rol): ?string
+    {
+        $user = auth()->user();
+        if ($user->tieneAccesoTotal()) {
+            return null;
+        }
+
+        if (Rol::nombreEsTotal($request->nombre)) {
+            return 'Solo un administrador puede usar un nombre de rol con acceso total («' . $request->nombre . '»).';
+        }
+
+        if ($rol && $rol->esTotal()) {
+            return 'Solo un administrador puede modificar un rol con acceso total.';
+        }
+
+        if ($rol && (int) $user->rol_id === (int) $rol->id) {
+            return 'No puedes modificar los permisos de tu propio rol.';
+        }
+
+        $modulos = Modulo::pluck('nombre', 'id');
+        $sinPermiso = [];
+        foreach ((array) $request->input('permisos', []) as $moduloId => $acciones) {
+            if (!isset($modulos[(int) $moduloId]) || !is_array($acciones)) {
+                continue;
+            }
+            foreach (self::ACCIONES as $accion) {
+                $pide = array_key_exists($accion, $acciones) && filter_var($acciones[$accion], FILTER_VALIDATE_BOOLEAN);
+                if ($pide && !$user->tienePermiso($modulos[(int) $moduloId], $accion)) {
+                    $sinPermiso[] = $modulos[(int) $moduloId] . ' (' . $accion . ')';
+                }
+            }
+        }
+
+        return $sinPermiso
+            ? 'No puedes otorgar permisos que tú no tienes: ' . implode(', ', $sinPermiso) . '.'
+            : null;
+    }
+
     private function mensajes(): array
     {
         return [
@@ -306,14 +313,14 @@ class RolController extends Controller
     private function negado(Request $request, string $mensaje)
     {
         return $request->expectsJson()
-            ? response()->json(['ok' => false, 'message' => $mensaje], 403)
+            ? response()->json(['ok' => false, 'success' => false, 'status' => 'error', 'message' => $mensaje], 403)
             : abort(403, $mensaje);
     }
 
     private function fallo(Request $request, string $mensaje)
     {
         return $request->expectsJson()
-            ? response()->json(['ok' => false, 'message' => $mensaje], 500)
+            ? response()->json(['ok' => false, 'success' => false, 'status' => 'error', 'message' => $mensaje], 500)
             : back()->withErrors(['error' => $mensaje]);
     }
 }

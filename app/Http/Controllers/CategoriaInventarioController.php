@@ -21,7 +21,7 @@ class CategoriaInventarioController extends Controller
             'success' => true,
             'message' => 'Categoría agregada correctamente.',
             'categoria' => $categoria
-        ]);
+        ], 201);
     }
 
     public function destroy($id)

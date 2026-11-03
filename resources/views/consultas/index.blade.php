@@ -13,6 +13,11 @@
         'nombreDoctor' => $nombreDoctor ?? null,
         'doctores'     => collect($doctores ?? [])->values(),
         'csrf'         => csrf_token(),
+        // Atender (iniciar, guardar, finalizar, liberar) = crear. La ruta lo vuelve a revisar.
+        'puede'        => [
+            'atender' => auth()->user()->tienePermiso('Consultas', 'crear'),
+            'receta'  => auth()->user()->tienePermiso('Recetas', 'crear'),
+        ],
         'rutas'        => [
             'citas'     => route('consultas.citas'),
             'detalle'   => url('consultas/detalle'),
@@ -396,7 +401,7 @@ function modConsultas() {
         const d = await r.json().catch(() => ({}));
         if (!r.ok) {
             const msg = r.status === 419 ? 'Tu sesión expiró. Recarga la página.'
-                      : r.status === 403 ? 'Esta cita no está asignada a ti.'
+                      : r.status === 403 ? (d.message || 'Esta cita no está asignada a ti.')
                       : (d.errors ? Object.values(d.errors)[0][0] : (d.message || 'No se pudo completar la acción.'));
             throw new Error(msg);
         }
@@ -405,6 +410,7 @@ function modConsultas() {
 
     return {
         esAdmin: !!D.esAdmin, doctores: D.doctores || [],
+        PUEDE: D.puede || {},   // atender / receta según el rol
         SIGNOS: [
             { k: 'frecuencia_cardiaca', t: 'Frecuencia cardiaca', u: 'lpm', ej: '72' },
             { k: 'frecuencia_respiratoria', t: 'Frecuencia respiratoria', u: 'rpm', ej: '16' },
@@ -521,7 +527,7 @@ function modConsultas() {
         elegirMedico(id) { this.medico = id; this.popMed = false; this.cargarSemana(); },
 
         /* ---------- Hoja de consulta ---------- */
-        get editable() { return !!this.sel && this.sel.estado === 'En curso' && this.cargado; },
+        get editable() { return !!this.PUEDE.atender && !!this.sel && this.sel.estado === 'En curso' && this.cargado; },
         get cronometro() {
             const s = Math.max(0, Math.floor((this.ahora - this.inicioCrono) / 1000));
             return [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(x => String(x).padStart(2, '0')).join(':');
@@ -614,7 +620,7 @@ function modConsultas() {
             } catch (e) { avisar(e.message, 'error'); }
         },
         async iniciar() {
-            if (!this.sel || this.ocupado) return;
+            if (!this.sel || this.ocupado || !this.PUEDE.atender) return;
             this.enfoque = true;
             this.ocupado = true;
             try {
@@ -628,7 +634,7 @@ function modConsultas() {
             this.ocupado = false;
         },
         liberar() {
-            if (!this.sel) return;
+            if (!this.sel || !this.PUEDE.atender) return;
             Swal.fire({
                 title: '¿Liberar el consultorio?', icon: 'question', iconColor: '#9a5800',
                 html: '<p style="font-size:14px">La consulta se pausa y la cita vuelve a «Confirmada». Lo que escribiste se guarda como borrador.</p>',
@@ -648,7 +654,7 @@ function modConsultas() {
             });
         },
         async guardar(finalizar, silencioso) {
-            if (!this.sel || this.guardando) return;
+            if (!this.sel || this.guardando || !this.PUEDE.atender) return;
             if (finalizar && !String(this.form.notas_generales || '').trim()) {
                 this.errorDx = true; this.tab = 'dx'; this.$nextTick(() => window.mtSacudir && mtSacudir('.cs-area.mal')); avisar('Escribe el diagnóstico para finalizar la consulta.', 'warning');
                 this.$refs.dx && this.$refs.dx.focus(); return;
@@ -662,7 +668,7 @@ function modConsultas() {
                 if (finalizar) {
                     this.sel.estado = 'Finalizada'; this.recetaUrl = d.redireccion_receta;
                     await this.cargarSemana(true);
-                    if (d.redireccion_receta) {
+                    if (d.redireccion_receta && this.PUEDE.receta) {
                         Swal.fire({ title: 'Consulta finalizada', icon: 'success', iconColor: '#08734f', html: '<p style="font-size:14px">¿Quieres emitir la receta ahora?</p>', showCancelButton: true, reverseButtons: true, confirmButtonText: 'Emitir receta', cancelButtonText: 'Más tarde', confirmButtonColor: '#0b5a54', cancelButtonColor: '#56625f' })
                             .then(r => { if (r.isConfirmed) location.href = d.redireccion_receta; });
                     } else avisar(d.message || 'Consulta finalizada.');

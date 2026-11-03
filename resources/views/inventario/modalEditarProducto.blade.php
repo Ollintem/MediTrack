@@ -377,7 +377,7 @@
                 const c = Number(this.productoEditar.precio_compra);
                 if (c > 0) this.productoEditar.precio_venta = (Math.round(c * (1 + pct / 100) * 100) / 100).toFixed(2);
             },
-            dinero(n) { return '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
+            dinero(n) { return MTCaja.dinero(n); },
 
             // ----- Existencias (solo lectura) -----
             get disponible() { return Number(this.productoEditar.stock_disponible ?? this.productoEditar.stock_actual ?? 0); },

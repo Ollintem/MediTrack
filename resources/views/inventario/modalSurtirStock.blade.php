@@ -177,7 +177,7 @@
             colorTexto(e) { return { agotado: 'text-rose-600', bajo: 'text-amber-600', ok: 'text-emerald-600' }[e]; },
             colorChip(e) { return { agotado: 'bg-rose-100 text-rose-700', bajo: 'bg-amber-100 text-amber-700', ok: 'bg-emerald-100 text-emerald-700' }[e]; },
             colorBarra(e) { return { agotado: 'bg-rose-500', bajo: 'bg-amber-400', ok: 'bg-emerald-500' }[e]; },
-            dinero(n) { return '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
+            dinero(n) { return MTCaja.dinero(n); },
 
             // ----- Acciones -----
             sumar(n) {

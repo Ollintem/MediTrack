@@ -145,7 +145,7 @@ class CitaController extends Controller
                 'status'  => 'success',
                 'message' => 'Cita agendada correctamente',
                 'cita'    => $this->presentar($cita->fresh(['paciente.alergias'])),
-            ]);
+            ], 201);
         }
 
         return redirect()->route('citas.index')->with('success', 'Cita registrada correctamente.');

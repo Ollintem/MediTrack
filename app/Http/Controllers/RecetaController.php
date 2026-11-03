@@ -291,8 +291,12 @@ class RecetaController extends Controller
     public function destroy($id)
     {
         $receta = Receta::findOrFail($id);
-        $receta->detalles()->delete();
-        $receta->delete();
+
+        // Se borran juntos: si falla la receta no se pierden sus medicamentos
+        DB::transaction(function () use ($receta) {
+            $receta->detalles()->delete();
+            $receta->delete();
+        });
 
         return response()->json([
             'success' => true,
