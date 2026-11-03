@@ -17,7 +17,7 @@ return new class extends Migration
             $table->foreignId('categoria_id')->constrained('categorias_inventario')->onDelete('cascade');
             $table->string('codigo', 13)->unique();
             $table->string('nombre', 200);
-            $table->text('descripcion')->default();
+            $table->text('descripcion')->nullable();
             $table->decimal('precio_compra', 12, 2)->default(0);
             $table->decimal('precio_venta', 12, 2)->default(0);
             $table->integer('stock_actual')->default(0);
