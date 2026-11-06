@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Paciente;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class PacienteController extends Controller
@@ -38,14 +39,27 @@ class PacienteController extends Controller
     {
         $this->validar($request);
 
-        $paciente = Paciente::create(array_merge($this->datosBase($request), [
-            'codigo'             => 'PAC-' . str_pad(rand(1, 99999), 5, '0', STR_PAD_LEFT),
-            'clinica_id'         => auth()->user()->clinica_id ?? 1,
-            'medico_tratante_id' => auth()->user()->personal?->id ?? null,
-            'estado'             => 'Activo',
-        ]));
+        $paciente = DB::transaction(function () use ($request) {
+            $paciente = Paciente::create(array_merge($this->datosBase($request), [
+                'clinica_id'         => auth()->user()->clinica_id ?? 1,
+                'medico_tratante_id' => auth()->user()->personal?->id ?? null,
+                'estado'             => 'Activo',
+            ]));
 
-        $this->sincronizarAntecedentes($paciente, $request);
+            // Código a partir del id (nunca se repite). Si un paciente antiguo
+            // ya tiene ese código aleatorio, se agrega un sufijo -B, -C...
+            $base   = 'PAC-' . str_pad($paciente->id, 5, '0', STR_PAD_LEFT);
+            $codigo = $base;
+            $letra  = 'B';
+            while (Paciente::where('codigo', $codigo)->where('id', '!=', $paciente->id)->exists()) {
+                $codigo = $base . '-' . $letra++;
+            }
+            $paciente->update(['codigo' => $codigo]);
+
+            $this->sincronizarAntecedentes($paciente, $request);
+
+            return $paciente;
+        });
 
         if ($request->wantsJson()) {
             return response()->json([
@@ -98,6 +112,18 @@ class PacienteController extends Controller
      */
     public function destroy(Paciente $paciente)
     {
+        // Con expediente no se borra: la NOM-004 obliga a conservarlo.
+        $tablas = ['citas', 'consultas', 'signos_vitales', 'archivos_clinicos', 'recetas', 'facturas'];
+        foreach ($tablas as $tabla) {
+            if (DB::table($tabla)->where('paciente_id', $paciente->id)->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se puede eliminar: el paciente tiene historial clínico (citas, consultas, recetas o facturas). '
+                               . 'Por la NOM-004 el expediente debe conservarse.',
+                ], 409);
+            }
+        }
+
         $paciente->delete();
 
         return response()->json([

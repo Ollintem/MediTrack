@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ProductoInventario;
 use App\Models\CategoriaInventario;
+use App\Models\MovimientoInventario;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -14,7 +15,7 @@ class InventarioController extends Controller
      */
     public function index()
     {
-        $productos = ProductoInventario::with('categoria')->orderBy('created_at', 'desc')->get();
+        $productos = ProductoInventario::conStock()->with('categoria')->orderBy('created_at', 'desc')->get();
         $categorias = CategoriaInventario::orderBy('nombre', 'asc')->get();
 
         // Métricas para tarjetas
@@ -72,7 +73,7 @@ class InventarioController extends Controller
                 $estado = 'Bajo Stock';
             }
 
-            ProductoInventario::create([
+            $producto = ProductoInventario::create([
                 'clinica_id'       => $clinicaId,
                 'categoria_id'     => $request->categoria_id,
                 'codigo'           => $codigo,
@@ -81,11 +82,15 @@ class InventarioController extends Controller
                 'precio_compra'    => $request->precio_compra,
                 'precio_venta'     => $request->precio_venta,
                 'stock_actual'     => $stockActual,
-                'stock_disponible' => $stockActual,
                 'stock_minimo'     => $stockMinimo,
                 'stock_maximo'     => $stockMinimo * 5,
                 'estado'           => $estado,
             ]);
+
+            // Existencia inicial con su movimiento de entrada (auditoría)
+            if ($stockActual > 0) {
+                MovimientoInventario::registrar($producto, 'Entrada', $stockActual, ['motivo' => 'INVENTARIO INICIAL']);
+            }
         });
 
         // 4. Redirección con mensaje de éxito
@@ -115,15 +120,9 @@ class InventarioController extends Controller
 
         $stockMinimo = (int) $request->stock_minimo;
 
-        // Recalcular estado por si cambió el stock mínimo
-        $estado = $producto->estado;
-        if ($producto->stock_disponible <= 0) {
-            $estado = 'Agotado';
-        } elseif ($producto->stock_disponible <= $stockMinimo) {
-            $estado = 'Bajo Stock';
-        } else {
-            $estado = 'Normal';
-        }
+        // Recalcular estado por si cambió el stock mínimo (misma regla que el resto del inventario)
+        $producto->stock_minimo = $stockMinimo;
+        $estado = $producto->recalcularEstado()->estado;
 
         $producto->update([
             'codigo'        => trim($request->codigo),
@@ -154,22 +153,11 @@ class InventarioController extends Controller
         ]);
 
         DB::transaction(function () use ($request, $id) {
-            $producto = ProductoInventario::findOrFail($id);
-
-            $cantidad = (int) $request->cantidad;
-            $producto->stock_actual += $cantidad;
-            $producto->stock_disponible += $cantidad;
-
-            // Recalcular estado automático
-            if ($producto->stock_disponible <= 0) {
-                $producto->estado = 'Agotado';
-            } elseif ($producto->stock_disponible <= $producto->stock_minimo) {
-                $producto->estado = 'Bajo Stock';
-            } else {
-                $producto->estado = 'Normal';
-            }
-
-            $producto->save();
+            $this->sumarStock(
+                (int) $id,
+                (int) $request->cantidad,
+                ['motivo' => $request->filled('motivo') ? mb_strtoupper(trim($request->motivo), 'UTF-8') : 'REABASTECIMIENTO']
+            );
         });
 
         return redirect()->route('inventario.index')
@@ -195,22 +183,12 @@ class InventarioController extends Controller
         ]);
 
         DB::transaction(function () use ($request) {
-            $producto = ProductoInventario::findOrFail($request->producto_id);
-
-            $cantidad = (int) $request->cantidad;
-            $producto->stock_actual += $cantidad;
-            $producto->stock_disponible += $cantidad;
-
-            // Recalcular estado automático
-            if ($producto->stock_disponible <= 0) {
-                $producto->estado = 'Agotado';
-            } elseif ($producto->stock_disponible <= $producto->stock_minimo) {
-                $producto->estado = 'Bajo Stock';
-            } else {
-                $producto->estado = 'Normal';
-            }
-
-            $producto->save();
+            // Antes la referencia (proveedor/factura) y el lote se validaban pero no se guardaban
+            $this->sumarStock((int) $request->producto_id, (int) $request->cantidad, [
+                'motivo'     => 'SURTIDO DE LOTE',
+                'referencia' => mb_strtoupper(trim($request->referencia), 'UTF-8'),
+                'lote'       => $request->filled('lote') ? mb_strtoupper(trim($request->lote), 'UTF-8') : null,
+            ]);
         });
 
         // El modal de lotes envía cada renglón por fetch y espera JSON
@@ -226,11 +204,38 @@ class InventarioController extends Controller
     }
 
     /**
+     * Suma existencias de forma segura y deja constancia en movimientos_inventario.
+     * Bloquea la fila y usa un incremento en SQL: dos surtidos simultáneos ya no se pisan.
+     * Debe llamarse dentro de una transacción.
+     */
+    private function sumarStock(int $productoId, int $cantidad, array $datosMovimiento): ProductoInventario
+    {
+        $producto = ProductoInventario::lockForUpdate()->findOrFail($productoId);
+
+        $producto->increment('stock_actual', $cantidad);
+        $producto->refresh()->recalcularEstado()->save();
+
+        MovimientoInventario::registrar($producto, 'Entrada', $cantidad, $datosMovimiento);
+
+        return $producto;
+    }
+
+    /**
      * Eliminar medicamento (AJAX SweetAlert).
      */
     public function destroy($id)
     {
         $producto = ProductoInventario::findOrFail($id);
+
+        // Un producto con ventas no se borra: se perdería el detalle de tickets cobrados.
+        if (\App\Models\TicketDetalle::where('producto_id', $producto->id)->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No se puede eliminar: este medicamento ya tiene ventas registradas. '
+                           . 'Puedes dejar su stock en 0 para que deje de venderse.',
+            ], 409);
+        }
+
         $producto->delete();
 
         return response()->json([

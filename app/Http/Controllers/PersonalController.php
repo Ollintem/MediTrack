@@ -91,7 +91,7 @@ class PersonalController extends Controller
             $request->validate([
                 'username' => 'required|string|alpha_dash|min:3|max:50',
                 'email'    => 'required|email|unique:users,email',
-                'password' => 'required|size:8|confirmed',
+                'password' => 'required|string|min:8|max:64|confirmed',
             ], $this->mensajes());
         }
 
@@ -175,7 +175,7 @@ class PersonalController extends Controller
             $request->validate([
                 'username' => 'required|string|alpha_dash|min:3|max:50',
                 'email'    => 'required|email|unique:users,email,' . ($usuario ? $usuario->id : 'NULL'),
-                'password' => ($usuario ? 'nullable' : 'required') . '|size:8|confirmed',
+                'password' => ($usuario ? 'nullable' : 'required') . '|string|min:8|max:64|confirmed',
             ], $this->mensajes());
         }
 
@@ -185,6 +185,17 @@ class PersonalController extends Controller
 
         if ($motivo = $this->protegerRoles($usuario, $rol)) {
             return $this->prohibido($request, $motivo);
+        }
+
+        // Quitar el acceso borra la cuenta: no se permite con el Super Admin ni con la cuenta propia
+        // (antes el Super Admin terminaba en un error 500 y uno podía dejarse sin acceso a sí mismo).
+        if (!$requiereAcceso && $usuario) {
+            if ($usuario->isSuperAdmin()) {
+                return $this->prohibido($request, 'Al Super Admin inicial no se le puede quitar el acceso al sistema.');
+            }
+            if ((int) $usuario->id === (int) auth()->id()) {
+                return $this->prohibido($request, 'No puedes quitarte el acceso al sistema a ti mismo.');
+            }
         }
 
         $nombreCompleto = $this->nombreCompleto($request);
@@ -279,6 +290,21 @@ class PersonalController extends Controller
 
             if ($userId && (int) $userId === (int) auth()->id()) {
                 $mensaje = 'No puedes eliminar tu propia cuenta.';
+
+                return request()->expectsJson()
+                    ? response()->json(['success' => false, 'message' => $mensaje], 409)
+                    : redirect()->route('personal.index')->with('error', $mensaje);
+            }
+
+            // Con historial no se borra: se perdería el expediente (NOM-004) y la nómina.
+            $tieneHistorial = DB::table('citas')->where('personal_id', $personalId)->exists()
+                || DB::table('consultas')->where('personal_id', $personalId)->exists()
+                || DB::table('recibos_nomina')->where('personal_id', $personalId)->exists()
+                || DB::table('movimientos_inventario')->where('personal_id', $personalId)->exists();
+
+            if ($tieneHistorial) {
+                $mensaje = 'No se puede eliminar: tiene citas, consultas, nómina o movimientos registrados. '
+                         . 'Cámbialo a estado "Inactivo" y quítale el acceso al sistema.';
 
                 return request()->expectsJson()
                     ? response()->json(['success' => false, 'message' => $mensaje], 409)
@@ -451,8 +477,9 @@ class PersonalController extends Controller
             'username.alpha_dash'    => 'El usuario solo admite letras, números, guion y guion bajo.',
             'username.min'           => 'El usuario debe tener al menos 3 caracteres.',
             'email.unique'           => 'Ese usuario ya está en uso.',
-            'password.required'      => 'Escribe una contraseña de 8 caracteres.',
-            'password.size'          => 'La contraseña debe tener exactamente 8 caracteres.',
+            'password.required'      => 'Escribe una contraseña de al menos 8 caracteres.',
+            'password.min'           => 'La contraseña debe tener al menos 8 caracteres.',
+            'password.max'           => 'La contraseña admite hasta 64 caracteres.',
             'password.confirmed'     => 'Las contraseñas no coinciden.',
         ];
     }

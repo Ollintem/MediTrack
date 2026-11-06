@@ -93,7 +93,7 @@ class HomeController extends Controller
             ],
             'actividad'    => $this->actividadHoy($hoy),
             'proximas'     => $veAgenda ? $this->proximas($hoy) : [],
-            'consultorios' => $this->consultoriosAhora($citasHoy),
+            'consultorios' => $this->consultoriosAhora($citasHoy, $veAgenda),
             'grafica'      => $this->grafica($hoy),
             'diario'       => $this->serieDiaria($hoy),
             'medicosHoy'   => $this->medicosHoy($citasHoy),
@@ -209,14 +209,14 @@ class HomeController extends Controller
     }
 
     // ----- Consultorios con quién está dentro ahora mismo -----
-    private function consultoriosAhora(Collection $citasHoy): array
+    private function consultoriosAhora(Collection $citasHoy, bool $verPacientes): array
     {
         $enCurso = $citasHoy->where('estado', 'En curso')->keyBy('consultorio_id');
 
         $orden = ['ocupado' => 0, 'disponible' => 1];
 
         return Consultorio::query()->orderBy('piso')->orderBy('nombre')->get()
-            ->map(function ($c) use ($enCurso) {
+            ->map(function ($c) use ($enCurso, $verPacientes) {
                 $cita = $enCurso->get($c->id);
 
                 return [
@@ -225,7 +225,7 @@ class HomeController extends Controller
                     'piso'     => (string) ($c->piso ?? ''),
                     'estado'   => mb_strtolower(trim((string) ($c->estado ?? 'disponible'))),
                     'medico'   => $cita ? ($this->nombre($cita->personal) ?: null) : null,
-                    'paciente' => $cita ? ($this->nombre($cita->paciente) ?: null) : null,
+                    'paciente' => ($cita && $verPacientes) ? ($this->nombre($cita->paciente) ?: null) : null, // solo con permiso de Citas o Consultas
                     'desde'    => $cita && $cita->hora ? Carbon::parse($cita->hora)->format('H:i') : null,
                 ];
             })
@@ -322,14 +322,17 @@ class HomeController extends Controller
             return ['disponible' => false, 'total' => 0, 'agotados' => 0, 'items' => [], 'galeria' => [], 'productos' => 0];
         }
 
-        // El disponible descuenta lo apartado en tickets vigentes (atributo calculado del modelo).
-        $bajos = ProductoInventario::query()->where('stock_minimo', '>', 0)->get()
-            ->filter(fn ($p) => (int) $p->stock_disponible <= (int) $p->stock_minimo)
+        // Una sola consulta: el disponible (físico menos lo apartado) viene calculado en SQL con conStock().
+        // Antes eran dos consultas de productos y, encima, una consulta extra por producto en cada refresco.
+        $productos = ProductoInventario::conStock()->with('categoria')->orderBy('nombre')->get();
+
+        $bajos = $productos
+            ->filter(fn ($p) => (int) $p->stock_minimo > 0 && $p->stock_disponible <= (int) $p->stock_minimo)
             ->sortBy([['stock_disponible', 'asc'], ['nombre', 'asc']])
             ->values();
 
         // Galería 3D del dashboard: primero lo que hay que surtir (menos existencias primero), luego el resto
-        $todos = ProductoInventario::query()->with('categoria')->orderBy('nombre')->get()->map(function ($p) {
+        $todos = $productos->map(function ($p) {
             $disponible = (int) $p->stock_disponible;
             $minimo     = (int) $p->stock_minimo;
             return [
@@ -393,6 +396,11 @@ class HomeController extends Controller
     {
         if (!$modelo) {
             return '';
+        }
+
+        // El paciente ya trae el nombre completo en su accesor "nombre" (no se le vuelve a pegar el apellido)
+        if ($modelo instanceof Paciente) {
+            return trim((string) $modelo->nombre);
         }
 
         return trim((string) (data_get($modelo, 'nombre_completo') ?: trim(

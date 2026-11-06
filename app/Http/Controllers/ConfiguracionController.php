@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class ConfiguracionController extends Controller
@@ -32,30 +33,45 @@ class ConfiguracionController extends Controller
      */
     public function update(Request $request)
     {
-        // Validación de entradas
+        // Se obtiene antes de validar: la regla unique necesita su id y,
+        // si aún no existe ninguna clínica, los datos básicos son obligatorios.
+        $clinica = Clinica::first() ?? new Clinica();
+        $nueva   = ! $clinica->exists;
+
+        // Validación de entradas (tamaños alineados con las columnas de 'clinicas')
         $request->validate([
-            'nombre'           => 'nullable|string|max:255',
-            'rut_empresa'      => 'nullable|string|max:255',
-            'direccion'        => 'nullable|string|max:255',
-            'telefono'         => 'nullable|digits:10',
-            'email_clinica'    => 'nullable|email|max:255',
+            'nombre'           => [Rule::requiredIf($nueva), 'nullable', 'string', 'max:150'],
+            'rut_empresa'      => [Rule::requiredIf($nueva), 'nullable', 'string', 'max:20',
+                                   Rule::unique('clinicas', 'rut_empresa')->ignore($clinica->id)],
+            'direccion'        => [Rule::requiredIf($nueva), 'nullable', 'string', 'max:255'],
+            'telefono'         => [Rule::requiredIf($nueva), 'nullable', 'digits:10'],
+            'email_clinica'    => 'nullable|email|max:150',
             'duracion_cita'    => 'nullable|integer',
             'aviso_privacidad' => 'nullable|string',
         ], [
-            'telefono.digits'    => 'El teléfono principal debe contener exactamente 10 dígitos numéricos.',
-            'email_clinica.email' => 'El formato del correo electrónico de la clínica no es válido.',
+            'telefono.digits'      => 'El teléfono principal debe contener exactamente 10 dígitos numéricos.',
+            'email_clinica.email'  => 'El formato del correo electrónico de la clínica no es válido.',
+            'email_clinica.max'    => 'El correo de la clínica no puede exceder 150 caracteres.',
+            'nombre.max'           => 'El nombre de la clínica no puede exceder 150 caracteres.',
+            'rut_empresa.max'      => 'El RFC no puede exceder 20 caracteres.',
+            'rut_empresa.unique'   => 'Ese RFC ya está registrado en otra clínica.',
+            'direccion.max'        => 'La dirección no puede exceder 255 caracteres.',
+            'nombre.required'      => 'El nombre de la clínica es obligatorio.',
+            'rut_empresa.required' => 'El RFC de la clínica es obligatorio.',
+            'direccion.required'   => 'La dirección de la clínica es obligatoria.',
+            'telefono.required'    => 'El teléfono de la clínica es obligatorio.',
         ]);
 
         // ==========================================
         // 1. ACTUALIZAR O CREAR EN TABLA 'CLINICAS'
         // ==========================================
-        $clinica = Clinica::first() ?? new Clinica();
-
         if ($request->hasAny(['nombre', 'rut_empresa', 'direccion', 'telefono', 'email_clinica'])) {
-            $clinica->nombre      = $request->input('nombre', $clinica->nombre);
-            $clinica->rut_empresa = $request->input('rut_empresa', $clinica->rut_empresa);
-            $clinica->direccion   = $request->input('direccion', $clinica->direccion);
-            $clinica->telefono    = $request->input('telefono', $clinica->telefono);
+            // Un campo vacío conserva el valor actual (las columnas son NOT NULL)
+            foreach (['nombre', 'rut_empresa', 'direccion', 'telefono'] as $campo) {
+                if ($request->filled($campo)) {
+                    $clinica->{$campo} = $request->input($campo);
+                }
+            }
             
             if ($request->has('email_clinica')) {
                 $clinica->email   = $request->input('email_clinica');
@@ -74,19 +90,27 @@ class ConfiguracionController extends Controller
         // ==========================================
         // 2. ACTUALIZAR TABLA 'CONFIGURACIONES' (CLAVE-VALOR)
         // ==========================================
-        $datos = $request->except([
-            '_token', 
-            '_method', 
-            'confirmacion_auto_citas_submitted', 
-            'recordatorio_pago_email_submitted',
-            'email_clinica'
-        ]);
+        // Solo se guardan claves conocidas: antes se guardaba cualquier campo que llegara en la petición.
+        $datos = [];
+
+        if ($request->has('aviso_privacidad')) {
+            // Texto legal: se respeta tal como se escribió (sin pasarlo a mayúsculas)
+            $datos['aviso_privacidad'] = $request->input('aviso_privacidad');
+        }
+
+        if ($request->has('duracion_cita')) {
+            $datos['duracion_cita'] = $request->filled('duracion_cita') ? (string) (int) $request->input('duracion_cita') : null;
+        }
+
+        // Casilla: si el formulario principal se envió sin ella, significa que se desmarcó
+        if ($request->has('alertas_bitacora')) {
+            $datos['alertas_bitacora'] = '1';
+        } elseif ($request->has('nombre')) {
+            $datos['alertas_bitacora'] = '0';
+        }
 
         foreach ($datos as $clave => $valor) {
-            Configuracion::updateOrCreate(
-                ['clave' => $clave],
-                ['valor' => is_string($valor) ? mb_strtoupper($valor) : $valor]
-            );
+            Configuracion::updateOrCreate(['clave' => $clave], ['valor' => $valor]);
         }
 
         return back()->with('success', 'La configuración de la clínica ha sido actualizada correctamente.');

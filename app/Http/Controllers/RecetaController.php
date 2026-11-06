@@ -16,6 +16,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Barryvdh\DomPDF\Facade\Pdf;
 
 class RecetaController extends Controller
@@ -111,10 +112,10 @@ class RecetaController extends Controller
         // Un médico solo puede preparar recetas de sus propias consultas (el administrador, de todas)
         $user = auth()->user();
         $personalUsuario = $user->personal->id ?? null;
-        $esAdmin = (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin())
-            || in_array(strtolower($user->rol->nombre ?? ''), ['administrador', 'admin', 'super admin'], true);
+        $esAdmin = $user->tieneAccesoTotal();
 
-        if (!$esAdmin && $personalUsuario && (int) $consulta->personal_id !== (int) $personalUsuario) {
+        // Quien no es administrador solo ve SUS consultas; sin registro de personal no tiene consultas propias
+        if (!$esAdmin && (!$personalUsuario || (int) $consulta->personal_id !== (int) $personalUsuario)) {
             return null;
         }
 
@@ -171,6 +172,21 @@ class RecetaController extends Controller
             'medicamentos.min'      => 'Agrega al menos un medicamento.',
         ]);
 
+        // Enlazar con una consulta: debe ser del mismo paciente y, si no es administrador, una consulta propia
+        if ($request->filled('consulta_id')) {
+            $consulta = Consulta::find($request->consulta_id);
+            $user = auth()->user();
+            $propia = $consulta && ($user->tieneAccesoTotal()
+                || (int) $consulta->personal_id === (int) ($user->personal->id ?? 0));
+
+            if (!$consulta || !$propia || (int) $consulta->paciente_id !== (int) $request->paciente_id) {
+                $mensaje = 'Esa consulta no corresponde al paciente o no te pertenece.';
+                return $request->wantsJson()
+                    ? response()->json(['message' => $mensaje, 'errors' => ['consulta_id' => [$mensaje]]], 422)
+                    : redirect()->route('recetas.index')->with('error', $mensaje);
+            }
+        }
+
         // Una consulta solo puede tener una receta
         if ($request->filled('consulta_id') && Schema::hasColumn('recetas', 'consulta_id')
             && Receta::where('consulta_id', $request->consulta_id)->exists()) {
@@ -182,44 +198,31 @@ class RecetaController extends Controller
 
         $personalId = $request->personal_id ?? (auth()->user()->personal->id ?? null);
 
+        // Medicamentos normalizados (acepta renglones {nombre, dosis, ...} o arreglos paralelos)
+        $renglones = $this->medicamentosDelRequest($request);
+
         // CONVERTIR A MAYÚSCULAS LOS CAMPOS INGRESADOS POR EL USUARIO
-        $receta = Receta::create([
-            'paciente_id'            => $request->paciente_id,
-            'personal_id'            => $personalId,
-            'fecha_emision'          => now(),
-            'diagnostico'            => mb_strtoupper($request->diagnostico, 'UTF-8'),
-            'indicaciones_generales' => $request->indicaciones_generales ? mb_strtoupper($request->indicaciones_generales, 'UTF-8') : null,
-        ]);
+        // Receta y medicamentos se guardan juntos: si algo falla no queda una receta vacía
+        $receta = DB::transaction(function () use ($request, $personalId, $renglones) {
+            $receta = Receta::create([
+                'paciente_id'            => $request->paciente_id,
+                'personal_id'            => $personalId,
+                'fecha_emision'          => now(),
+                'diagnostico'            => mb_strtoupper($request->diagnostico, 'UTF-8'),
+                'indicaciones_generales' => $request->indicaciones_generales ? mb_strtoupper($request->indicaciones_generales, 'UTF-8') : null,
+            ]);
 
-        // Enlaza la receta con la consulta de la que viene (requiere la columna consulta_id en recetas)
-        if ($request->filled('consulta_id') && Schema::hasColumn('recetas', 'consulta_id')) {
-            $receta->forceFill(['consulta_id' => $request->consulta_id])->save();
-        }
+            // Enlaza la receta con la consulta de la que viene (requiere la columna consulta_id en recetas)
+            if ($request->filled('consulta_id') && Schema::hasColumn('recetas', 'consulta_id')) {
+                $receta->forceFill(['consulta_id' => $request->consulta_id])->save();
+            }
 
-        // GUARDAR CADA MEDICAMENTO EN MAYÚSCULAS
-        if (isset($request->medicamentos[0]) && is_array($request->medicamentos[0])) {
-            foreach ($request->medicamentos as $med) {
-                if (!empty($med['nombre'])) {
-                    $receta->detalles()->create([
-                        'medicamento' => mb_strtoupper($med['nombre'], 'UTF-8'),
-                        'dosis'       => !empty($med['dosis']) ? mb_strtoupper($med['dosis'], 'UTF-8') : null,
-                        'frecuencia'  => !empty($med['frecuencia']) ? mb_strtoupper($med['frecuencia'], 'UTF-8') : null,
-                        'duracion'    => !empty($med['duracion']) ? mb_strtoupper($med['duracion'], 'UTF-8') : null,
-                    ]);
-                }
+            foreach ($renglones as $renglon) {
+                $receta->detalles()->create($renglon);
             }
-        } else {
-            foreach ($request->medicamentos as $index => $nombreMed) {
-                if (!empty($nombreMed)) {
-                    $receta->detalles()->create([
-                        'medicamento' => mb_strtoupper($nombreMed, 'UTF-8'),
-                        'dosis'       => !empty($request->dosis[$index]) ? mb_strtoupper($request->dosis[$index], 'UTF-8') : null,
-                        'frecuencia'  => !empty($request->frecuencias[$index]) ? mb_strtoupper($request->frecuencias[$index], 'UTF-8') : null,
-                        'duracion'    => !empty($request->duraciones[$index]) ? mb_strtoupper($request->duraciones[$index], 'UTF-8') : null,
-                    ]);
-                }
-            }
-        }
+
+            return $receta;
+        });
 
         if ($request->wantsJson()) {
             return response()->json([
@@ -229,6 +232,55 @@ class RecetaController extends Controller
         }
 
         return redirect()->route('recetas.index')->with('success', 'Receta médica registrada correctamente.');
+    }
+
+    /**
+     * Convierte los medicamentos del formulario en renglones listos para guardar (en MAYÚSCULAS).
+     * Acepta dos formatos: medicamentos[i][nombre|dosis|frecuencia|duracion]
+     * o arreglos paralelos medicamentos[i], dosis[i], frecuencias[i], duraciones[i].
+     * Cualquier valor que no sea texto se rechaza con un error de validación (antes causaba un 500).
+     */
+    private function medicamentosDelRequest(Request $request): array
+    {
+        $texto = function ($valor, string $campo) {
+            if ($valor === null || $valor === '') {
+                return null;
+            }
+            if (!is_string($valor) && !is_numeric($valor)) {
+                throw ValidationException::withMessages([$campo => 'Los datos del medicamento no son válidos.']);
+            }
+            $valor = trim((string) $valor);
+            if (mb_strlen($valor) > 255) {
+                throw ValidationException::withMessages([$campo => 'Cada dato del medicamento admite hasta 255 caracteres.']);
+            }
+
+            return $valor !== '' ? mb_strtoupper($valor, 'UTF-8') : null;
+        };
+
+        $renglones = [];
+        foreach ((array) $request->input('medicamentos', []) as $i => $med) {
+            if (is_array($med)) {
+                $nombre     = $texto($med['nombre'] ?? null, "medicamentos.$i.nombre");
+                $dosis      = $texto($med['dosis'] ?? null, "medicamentos.$i.dosis");
+                $frecuencia = $texto($med['frecuencia'] ?? null, "medicamentos.$i.frecuencia");
+                $duracion   = $texto($med['duracion'] ?? null, "medicamentos.$i.duracion");
+            } else {
+                $nombre     = $texto($med, "medicamentos.$i");
+                $dosis      = $texto($request->input("dosis.$i"), "dosis.$i");
+                $frecuencia = $texto($request->input("frecuencias.$i"), "frecuencias.$i");
+                $duracion   = $texto($request->input("duraciones.$i"), "duraciones.$i");
+            }
+
+            if ($nombre) {
+                $renglones[] = ['medicamento' => $nombre, 'dosis' => $dosis, 'frecuencia' => $frecuencia, 'duracion' => $duracion];
+            }
+        }
+
+        if (!$renglones) {
+            throw ValidationException::withMessages(['medicamentos' => 'Agrega al menos un medicamento.']);
+        }
+
+        return $renglones;
     }
 
     /** Datos de una receta para la vista. */

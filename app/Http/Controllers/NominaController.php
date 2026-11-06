@@ -481,7 +481,7 @@ class NominaController extends Controller
 
             case 'MENSUAL':
                 $ini = $base ?: now()->startOfMonth();
-                return [$ini->copy(), $ini->day === 1 ? $ini->copy()->endOfMonth() : $ini->copy()->addMonth()->subDay()];
+                return [$ini->copy(), $ini->day === 1 ? $ini->copy()->endOfMonth() : $ini->copy()->addMonthNoOverflow()->subDay()];
 
             default: // QUINCENAL
                 $ini = $base ?: (now()->day <= 15 ? now()->startOfMonth() : now()->startOfMonth()->addDays(15));
@@ -561,8 +561,8 @@ class NominaController extends Controller
                 $datos['telefono']  = (string) (data_get($c, 'telefono') ?: '');
                 return $datos;
             }
-            if (Schema::hasTable('configuraciones')) {
-                $valor = DB::table('configuraciones')->where('clave', 'nombre_clinica')->value('valor');
+            if (Schema::hasTable('configuracions')) {
+                $valor = \App\Models\Configuracion::where('clave', 'nombre_clinica')->value('valor');
                 if ($valor) {
                     $datos['nombre'] = (string) $valor;
                 }

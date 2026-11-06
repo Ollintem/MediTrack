@@ -216,22 +216,22 @@
                                             <small x-show="errores.username" x-text="errores.username"></small>
                                         </div>
                                         <div class="pe-campo" :class="{ 'mal': errores.password }">
-                                            <span x-text="tieneCuenta ? 'Nueva contraseña (déjala vacía para conservarla)' : 'Contraseña de 8 caracteres'"></span>
+                                            <span x-text="tieneCuenta ? 'Nueva contraseña (déjala vacía para conservarla)' : 'Contraseña (mínimo 8 caracteres)'"></span>
                                             <div class="pe-pass">
-                                                <input :type="verPass ? 'text' : 'password'" x-model="form.password" maxlength="8" autocomplete="new-password" class="t" placeholder="••••••••" @input="errores.password = ''" :tabindex="editando ? 0 : -1">
+                                                <input :type="verPass ? 'text' : 'password'" x-model="form.password" maxlength="64" autocomplete="new-password" class="t" placeholder="••••••••" @input="errores.password = ''" :tabindex="editando ? 0 : -1">
                                                 <button type="button" @click="copiarPass()" x-show="form.password" aria-label="Copiar contraseña" :tabindex="editando ? 0 : -1"><i class="bi bi-clipboard"></i></button>
                                                 <button type="button" @click="verPass = !verPass" :aria-label="verPass ? 'Ocultar' : 'Mostrar'" :tabindex="editando ? 0 : -1"><i class="bi" :class="verPass ? 'bi-eye-slash' : 'bi-eye'"></i></button>
                                                 <button type="button" class="pe-gen" @click="generarPass()" :tabindex="editando ? 0 : -1"><i class="bi bi-magic"></i> Generar</button>
                                             </div>
                                             <div class="pe-fuerza" x-show="form.password">
                                                 <template x-for="n in 4" :key="'fz' + n"><i :class="n <= fuerza.nivel ? fuerza.clase : ''"></i></template>
-                                                <span x-text="form.password.length !== 8 ? 'Lleva ' + form.password.length + ' de 8' : fuerza.texto"></span>
+                                                <span x-text="form.password.length < 8 ? 'Lleva ' + form.password.length + ' de 8 mínimo' : fuerza.texto"></span>
                                             </div>
                                             <small x-show="errores.password" x-text="errores.password"></small>
                                         </div>
                                         <label class="pe-campo" x-show="form.password" :class="{ 'mal': form.password2 && form.password2 !== form.password }">
                                             <span>Confirmar contraseña</span>
-                                            <input :type="verPass ? 'text' : 'password'" x-model="form.password2" maxlength="8" autocomplete="new-password" class="t" placeholder="••••••••" :tabindex="editando ? 0 : -1">
+                                            <input :type="verPass ? 'text' : 'password'" x-model="form.password2" maxlength="64" autocomplete="new-password" class="t" placeholder="••••••••" :tabindex="editando ? 0 : -1">
                                             <small x-show="form.password2 && form.password2 !== form.password">Las contraseñas no coinciden.</small>
                                         </label>
                                         <p class="pe-nota" x-show="passGenerada"><i class="bi bi-info-circle"></i> Copia la contraseña y entrégala: después de guardar ya no se puede ver.</p>
@@ -653,7 +653,7 @@ function modPersonal() {
             const g = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghijkmnpqrstuvwxyz', '23456789', '#$%&*@!?'];
             const azar = s => s[crypto.getRandomValues(new Uint32Array(1))[0] % s.length];
             const c = g.map(azar), todos = g.join('');
-            while (c.length < 8) c.push(azar(todos));
+            while (c.length < 12) c.push(azar(todos));
             for (let i = c.length - 1; i > 0; i--) { const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1); [c[i], c[j]] = [c[j], c[i]]; }
             this.form.password = this.form.password2 = c.join('');
             this.verPass = true; this.passGenerada = true; this.errores.password = '';
@@ -670,7 +670,7 @@ function modPersonal() {
             if (f.acceso) {
                 if (!/^[a-z0-9_-]{3,40}$/.test(f.username)) e.username = 'Usa al menos 3 letras minúsculas, números, guion o guion bajo.';
                 if (!this.tieneCuenta || f.password) {
-                    if (f.password.length !== 8) e.password = 'La contraseña debe tener exactamente 8 caracteres.';
+                    if (f.password.length < 8) e.password = 'La contraseña debe tener al menos 8 caracteres.';
                     else if (f.password !== f.password2) e.password = 'Las contraseñas no coinciden.';
                 }
             }

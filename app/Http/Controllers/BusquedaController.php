@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Paciente;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class BusquedaController extends Controller
 {
@@ -83,22 +84,74 @@ class BusquedaController extends Controller
                 'permiso' => 'Personal',
             ],
             [
-                'nombre' => 'Facturación y Finanzas',
-                'keywords' => ['facturacion', 'facturas', 'pagos', 'finanzas', 'cobros', 'recibos'],
+                'nombre' => 'Nómina',
+                'keywords' => ['nomina', 'sueldos', 'salarios', 'pagos de personal', 'recibos de nomina', 'quincena'],
+                'categoria' => 'Administración',
+                'icono' => 'bi-wallet2',
+                'route' => 'personal.nomina.index',
+                'permiso' => 'Personal',
+            ],
+            [
+                'nombre' => 'Roles y permisos',
+                'keywords' => ['roles', 'rol', 'permisos', 'accesos', 'cargos'],
+                'categoria' => 'Administración',
+                'icono' => 'bi-shield-lock',
+                'route' => 'roles.index',
+                'permiso' => 'Roles',
+            ],
+            [
+                'nombre' => 'Recetas',
+                'keywords' => ['recetas', 'receta', 'prescripcion', 'medicamentos recetados'],
+                'categoria' => 'Gestión Médica',
+                'icono' => 'bi-file-earmark-medical',
+                'route' => 'recetas.index',
+                'permiso' => 'Recetas',
+            ],
+            [
+                'nombre' => 'Punto de venta (POS)',
+                'keywords' => ['pos', 'punto de venta', 'ventas', 'vender', 'farmacia', 'tickets', 'entregas'],
                 'categoria' => 'Farmacia y Finanzas',
-                'icono' => 'bi-credit-card-fill',
-                'route' => 'facturacion.index',
-                'permiso' => 'Facturacion',
+                'icono' => 'bi-shop',
+                'route' => 'pos.index',
+                'permiso' => 'POS',
+            ],
+            [
+                'nombre' => 'Caja Central',
+                'keywords' => ['caja', 'cobros', 'cobrar', 'pagos', 'corte', 'apertura', 'cierre'],
+                'categoria' => 'Farmacia y Finanzas',
+                'icono' => 'bi-cash-coin',
+                'route' => 'caja.index',
+                'permiso' => 'Caja Central',
+            ],
+            [
+                'nombre' => 'Inventario',
+                'keywords' => ['inventario', 'existencias', 'stock', 'medicamentos', 'productos', 'almacen', 'surtir', 'lotes'],
+                'categoria' => 'Farmacia y Finanzas',
+                'icono' => 'bi-box-seam',
+                'route' => 'inventario.index',
+                'permiso' => 'Inventario',
+            ],
+            [
+                'nombre' => 'Proveedores',
+                'keywords' => ['proveedores', 'proveedor', 'laboratorios', 'compras'],
+                'categoria' => 'Farmacia y Finanzas',
+                'icono' => 'bi-truck',
+                'route' => 'proveedores.index',
+                'permiso' => 'Proveedores',
             ],
             [
                 'nombre' => 'Configuración',
-                'keywords' => ['configuracion', 'ajustes', 'roles', 'permisos', 'sistema', 'clinica'],
+                'keywords' => ['configuracion', 'ajustes', 'sistema', 'clinica', 'mi cuenta', 'contrasena'],
                 'categoria' => 'Sistema',
                 'icono' => 'bi-gear-fill',
+                // Debe escribirse igual que en la tabla `modulos` (con acento) para que el permiso coincida
                 'route' => 'configuracion.index',
-                'permiso' => 'Configuracion',
+                'permiso' => 'Configuración',
             ],
         ];
+
+        // Las palabras clave van sin acentos: "nómina" y "nomina" encuentran lo mismo
+        $queryPlano = Str::ascii($query);
 
         $resultados = [];
 
@@ -116,7 +169,7 @@ class BusquedaController extends Controller
             // Buscar coincidencia en el nombre o en las palabras clave (keywords)
             $coincide = false;
             foreach ($mod['keywords'] as $kw) {
-                if (str_contains($kw, $query)) {
+                if (str_contains($kw, $queryPlano)) {
                     $coincide = true;
                     break;
                 }

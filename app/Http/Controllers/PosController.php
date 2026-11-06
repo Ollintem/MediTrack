@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\MovimientoInventario;
 use App\Models\ProductoInventario;
 use App\Models\Paciente;
 use App\Models\TicketVenta;
@@ -18,13 +19,13 @@ class PosController extends Controller
      */
     public function index()
     {
-        $productos = ProductoInventario::with('categoria')->get();
+        $productos = ProductoInventario::conStock()->with('categoria')->get();
 
         $pacientes = Paciente::orderBy('primer_nombre', 'asc')
             ->orderBy('apellido_paterno', 'asc')
             ->get();
 
-        $ticketsRecientes = TicketVenta::with(['paciente', 'vendedor', 'detalles.producto'])
+        $ticketsRecientes = TicketVenta::with(['paciente', 'vendedor', 'detalles.producto' => ProductoInventario::cargarConStock()])
             ->orderBy('created_at', 'desc')
             ->take(30)
             ->get();
@@ -50,13 +51,23 @@ class PosController extends Controller
             $montoTotal = 0;
             $detallesAgregados = [];
 
-            foreach ($request->carrito as $item) {
-                $producto = ProductoInventario::findOrFail($item['id']);
+            // Un renglón por producto (suma cantidades repetidas) y en orden de id:
+            // así la validación es contra el total real y se evitan deadlocks.
+            $carrito = collect($request->carrito)
+                ->groupBy(fn ($i) => (int) $i['id'])
+                ->map(fn ($g, $id) => ['id' => (int) $id, 'cantidad' => (int) $g->sum('cantidad')])
+                ->sortKeys()
+                ->values();
+
+            foreach ($carrito as $item) {
+                // Bloquea la fila: otra venta simultánea del mismo producto espera a que esta termine
+                $producto = ProductoInventario::lockForUpdate()->findOrFail($item['id']);
                 
                 // Evaluar disponibilidad estricta considerando el accesor o resta directa
                 $stockDisponible = $producto->stock_disponible ?? ($producto->stock_actual - ($producto->stock_reservado ?? 0));
 
                 if ($item['cantidad'] > $stockDisponible) {
+                    DB::rollBack();
                     return response()->json([
                         'status'  => 'error',
                         'message' => "EL MEDICAMENTO '{$producto->nombre}' SOLO TIENE {$stockDisponible} PZAS. DISPONIBLES."
@@ -93,12 +104,12 @@ class PosController extends Controller
 
             DB::commit();
 
-            $productosActualizados = ProductoInventario::with('categoria')->get();
+            $productosActualizados = ProductoInventario::conStock()->with('categoria')->get();
 
             return response()->json([
                 'status'    => 'success',
                 'message'   => 'TICKET GENERADO CON ÉXITO',
-                'ticket'    => $ticket->load(['paciente', 'detalles.producto']),
+                'ticket'    => $ticket->load(['paciente', 'detalles.producto' => ProductoInventario::cargarConStock()]),
                 'productos' => $productosActualizados
             ], 201);
 
@@ -124,12 +135,17 @@ class PosController extends Controller
             $codigoLimpio = trim(strtoupper($id));
 
             // Permite buscar tanto por ID numérico como por 'codigo_ticket' (columna real)
-            $ticket = TicketVenta::with('detalles.producto')
-                ->where('id', $codigoLimpio)
-                ->orWhere('codigo_ticket', $codigoLimpio)
+            // lockForUpdate: una segunda entrega simultánea espera y luego ve 'entregado'
+            $ticket = TicketVenta::with('detalles.producto') // sin conStock: la respuesta debe reflejar el stock DESPUÉS de la entrega
+                ->where(function ($q) use ($codigoLimpio) {
+                    $q->where('id', $codigoLimpio)
+                      ->orWhere('codigo_ticket', $codigoLimpio);
+                })
+                ->lockForUpdate()
                 ->first();
 
             if (!$ticket) {
+                DB::rollBack();
                 return response()->json([
                     'status'  => 'error',
                     'message' => "EL TICKET '{$codigoLimpio}' NO FUE ENCONTRADO EN EL SISTEMA."
@@ -137,6 +153,7 @@ class PosController extends Controller
             }
 
             if ($ticket->status === 'entregado') {
+                DB::rollBack();
                 return response()->json([
                     'status'  => 'error',
                     'message' => "EL TICKET {$ticket->codigo_ticket} YA FUE ENTREGADO ANTERIORMENTE."
@@ -144,36 +161,48 @@ class PosController extends Controller
             }
 
             if ($ticket->status !== 'pagado') {
+                DB::rollBack();
                 return response()->json([
                     'status'  => 'error',
                     'message' => 'EL TICKET DEBE ESTAR EN ESTADO PAGADO PARA PODER ENTREGARSE.'
                 ], 409);
             }
 
-            // 1. Cambiar estado a entregado
+            // Piezas a descontar por producto. Se bloquean las filas en orden de id (evita deadlocks)
+            // y se revisa que haya existencia física suficiente: el stock nunca queda negativo.
+            $piezas = $ticket->detalles->groupBy('producto_id')->map(fn ($g) => (int) $g->sum('cantidad'))->sortKeys();
+            $productos = ProductoInventario::whereIn('id', $piezas->keys())->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+
+            foreach ($piezas as $productoId => $cantidad) {
+                $producto = $productos->get($productoId);
+                $fisico = (int) ($producto->stock_actual ?? 0);
+
+                if (!$producto || $fisico < $cantidad) {
+                    DB::rollBack();
+                    $nombre = $producto->nombre ?? "#{$productoId}";
+                    return response()->json([
+                        'status'  => 'error',
+                        'message' => "NO HAY EXISTENCIA FÍSICA SUFICIENTE DE '{$nombre}' (HAY {$fisico}, SE REQUIEREN {$cantidad}). REVISA EL INVENTARIO ANTES DE ENTREGAR.",
+                    ], 409);
+                }
+            }
+
+            // 1. Cambiar estado a entregado (libera la reserva de este ticket)
             $ticket->status = 'entregado';
             $ticket->save();
 
-            // 2. ÚNICO DESCUENTO REAL DE STOCK FÍSICO
-            if ($ticket->detalles) {
-                foreach ($ticket->detalles as $detalle) {
-                    $producto = ProductoInventario::find($detalle->producto_id);
+            // 2. ÚNICO DESCUENTO REAL DE STOCK FÍSICO, con su movimiento de salida
+            foreach ($piezas as $productoId => $cantidad) {
+                $producto = $productos->get($productoId);
+                $producto->decrement('stock_actual', $cantidad);
 
-                    if ($producto) {
-                        $producto->decrement('stock_actual', $detalle->cantidad);
+                // Mismo criterio de estado que Inventario: según el stock disponible
+                $producto->refresh()->recalcularEstado()->save();
 
-                        $stockFisico = $producto->fresh()->stock_actual;
-
-                        // Ajustar estado visual según niveles de stock
-                        if ($stockFisico <= 0) {
-                            $producto->update(['estado' => 'Agotado']);
-                        } elseif ($stockFisico <= $producto->stock_minimo) {
-                            $producto->update(['estado' => 'Bajo Stock']);
-                        } else {
-                            $producto->update(['estado' => 'Normal']);
-                        }
-                    }
-                }
+                MovimientoInventario::registrar($producto, 'Salida', $cantidad, [
+                    'ticket_id' => $ticket->id,
+                    'motivo'    => "ENTREGA DE TICKET {$ticket->codigo_ticket}",
+                ]);
             }
 
             DB::commit();
@@ -203,15 +232,6 @@ class PosController extends Controller
     }
 
     /**
-     * Obtiene los datos detallados de un ticket en formato JSON.
-     */
-    public function obtenerTicket($id)
-    {
-        $ticket = TicketVenta::with(['paciente', 'vendedor', 'detalles.producto'])->findOrFail($id);
-        return response()->json($ticket);
-    }
-
-    /**
      * Buscador de productos vía AJAX.
      */
     public function buscarProducto(Request $request)
@@ -222,7 +242,7 @@ class PosController extends Controller
             return response()->json([]);
         }
 
-        $productos = ProductoInventario::with('categoria')
+        $productos = ProductoInventario::conStock()->with('categoria')
             ->where(function ($query) use ($q) {
                 $query->where(DB::raw('UPPER(codigo)'), 'LIKE', "%{$q}%")
                       ->orWhere(DB::raw('UPPER(nombre)'), 'LIKE', "%{$q}%");
@@ -230,14 +250,5 @@ class PosController extends Controller
             ->get();
 
         return response()->json($productos);
-    }
-
-    /**
-     * Carga la vista del ticket para impresión / reimpresión.
-     */
-    public function ticket($id)
-    {
-        $ticket = TicketVenta::with(['paciente', 'vendedor', 'detalles.producto'])->findOrFail($id);
-        return view('pos.ticket', compact('ticket'));
     }
 }

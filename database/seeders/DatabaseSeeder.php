@@ -127,7 +127,7 @@ class DatabaseSeeder extends Seeder
                 'descripcion'      => 'PARACETAMOL ALIVIO DE FIEBRE Y DOLOR',
                 'precio_compra'    => 15.00,
                 'precio_venta'     => 35.00,
-                'stock_disponible' => 45,
+                'stock_actual'     => 45,
                 'stock_minimo'     => 10,
                 'estado'           => 'Normal',
             ]
@@ -142,7 +142,7 @@ class DatabaseSeeder extends Seeder
                 'descripcion'      => 'AMOXICILINA BACTERICIDA DE AMPLIO ESPECTRO',
                 'precio_compra'    => 45.00,
                 'precio_venta'     => 98.00,
-                'stock_disponible' => 20,
+                'stock_actual'     => 20,
                 'stock_minimo'     => 5,
                 'estado'           => 'Normal',
             ]
@@ -157,7 +157,7 @@ class DatabaseSeeder extends Seeder
                 'descripcion'      => 'OMEPRAZOL INHIBIDOR DE LA BOMBA DE PROTONES',
                 'precio_compra'    => 28.00,
                 'precio_venta'     => 65.00,
-                'stock_disponible' => 8,
+                'stock_actual'     => 8,
                 'stock_minimo'     => 10,
                 'estado'           => 'Bajo Stock',
             ]
@@ -172,7 +172,7 @@ class DatabaseSeeder extends Seeder
                 'descripcion'      => 'IBUPROFENO ANTIINFLAMATORIO Y ANALGÉSICO',
                 'precio_compra'    => 20.00,
                 'precio_venta'     => 48.00,
-                'stock_disponible' => 30,
+                'stock_actual'     => 30,
                 'stock_minimo'     => 8,
                 'estado'           => 'Normal',
             ]
@@ -187,7 +187,7 @@ class DatabaseSeeder extends Seeder
                 'descripcion'      => 'JERINGA ESTÉRIL DE UN SOLO USO',
                 'precio_compra'    => 2.50,
                 'precio_venta'     => 7.50,
-                'stock_disponible' => 100,
+                'stock_actual'     => 100,
                 'stock_minimo'     => 25,
                 'estado'           => 'Normal',
             ]
@@ -199,7 +199,7 @@ class DatabaseSeeder extends Seeder
                 ['producto_id' => $prod->id, 'tipo' => 'Entrada', 'motivo' => 'Inventario Inicial'],
                 [
                     'personal_id' => $personal->id,
-                    'cantidad'    => $prod->stock_disponible,
+                    'cantidad'    => $prod->stock_actual,
                 ]
             );
         }

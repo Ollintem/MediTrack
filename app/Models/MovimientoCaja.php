@@ -20,6 +20,17 @@ class MovimientoCaja extends Model
         'metodo_pago', // 'Efectivo', 'Tarjeta', 'Transferencia'
     ];
 
+    /** Conceptos con que CajaController registra el fondo inicial y el corte (no son ventas). */
+    public const CONCEPTO_APERTURA = 'APERTURA DE CAJA CENTRAL - FONDO INICIAL';
+    public const PREFIJO_CIERRE    = 'CIERRE DE CAJA CENTRAL';
+
+    /** Solo dinero de operaciones: excluye el fondo de apertura y el corte de cierre. */
+    public function scopeOperaciones($query)
+    {
+        return $query->where('concepto', '!=', self::CONCEPTO_APERTURA)
+                     ->where('concepto', 'not like', self::PREFIJO_CIERRE . '%');
+    }
+
     // Relación con el ticket de venta (opcional)
     public function ticket()
     {

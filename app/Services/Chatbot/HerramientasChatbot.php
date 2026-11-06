@@ -373,11 +373,14 @@ class HerramientasChatbot
     }
 
     /* ---------------------------------------------------------------------
-     | Inventario (igual que InventarioController: se usa stock_disponible)
+     | Inventario (disponible calculado con ProductoInventario::sqlDisponible)
      * ------------------------------------------------------------------- */
 
     private function consultarInventario(array $a): array
     {
+        // Disponible calculado igual que el modelo (la columna física no está sincronizada)
+        [$disp, $b] = \App\Models\ProductoInventario::sqlDisponible();
+
         $q = DB::table('productos_inventario')
             ->leftJoin('categorias_inventario', 'categorias_inventario.id', '=', 'productos_inventario.categoria_id');
 
@@ -390,16 +393,18 @@ class HerramientasChatbot
             });
         }
         if (!empty($a['solo_bajo_stock'])) {
-            $q->whereColumn('productos_inventario.stock_disponible', '<=', 'productos_inventario.stock_minimo');
+            $q->whereRaw("{$disp} <= productos_inventario.stock_minimo", $b);
         }
 
-        $filas = $q->orderBy('productos_inventario.stock_disponible')
+        $filas = $q->select([
+                'productos_inventario.codigo', 'productos_inventario.nombre', 'categorias_inventario.nombre as categoria',
+                'productos_inventario.stock_minimo', 'productos_inventario.precio_venta',
+            ])
+            ->selectRaw("{$disp} as stock_disponible", $b)
+            ->orderByRaw($disp, $b)
             ->orderBy('productos_inventario.nombre')
             ->limit($this->limite())
-            ->get([
-                'productos_inventario.codigo', 'productos_inventario.nombre', 'categorias_inventario.nombre as categoria',
-                'productos_inventario.stock_disponible', 'productos_inventario.stock_minimo', 'productos_inventario.precio_venta',
-            ])
+            ->get()
             ->map(fn ($p) => [
                 'codigo'           => $p->codigo,
                 'nombre'           => $p->nombre,
@@ -413,7 +418,7 @@ class HerramientasChatbot
         // Totales del inventario completo (mismas métricas que las tarjetas del módulo Inventario)
         $todos = DB::table('productos_inventario');
         $this->filtrarClinica($todos, 'productos_inventario');
-        $todos = $todos->get(['stock_disponible', 'stock_minimo']);
+        $todos = $todos->selectRaw("{$disp} as stock_disponible, productos_inventario.stock_minimo", $b)->get();
 
         return [
             'resumen_inventario' => [
@@ -450,8 +455,11 @@ class HerramientasChatbot
             ->groupBy('status')
             ->get(['status', DB::raw('COUNT(*) as cantidad'), DB::raw('SUM(monto_total) as monto')]);
 
+        // El fondo de apertura y el corte de cierre se guardan como Ingreso/Egreso pero no son ventas
         $caja = DB::table('movimientos_caja')
             ->whereBetween('created_at', [$desde, $hasta])
+            ->where('concepto', '!=', \App\Models\MovimientoCaja::CONCEPTO_APERTURA)
+            ->where('concepto', 'not like', \App\Models\MovimientoCaja::PREFIJO_CIERRE . '%')
             ->groupBy('tipo', 'metodo_pago')
             ->get(['tipo', 'metodo_pago', DB::raw('COUNT(*) as movimientos'), DB::raw('SUM(monto) as monto')]);
 

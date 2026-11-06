@@ -559,6 +559,8 @@ function modCitas() {
 
             this.$watch('dia', v => { this.mesNav = v.slice(0, 7); this.urlSync(); this.$nextTick(() => this.enfocarTablero()); });
             this.$watch('vista', () => this.urlSync());
+            // El servidor solo envía las citas de una ventana de meses (D.rango): fuera de ella se recarga
+            this.$watch('mesNav', m => this.revisarRango(m));
             this.$watch('agrupar', v => { try { localStorage.setItem('citas_agrupar', v); } catch (e) {} });
             // Al elegir médico, fecha o duración en una cita nueva: consultorio habitual y primer horario libre
             const autollenar = () => {
@@ -755,6 +757,13 @@ function modCitas() {
         },
         irHoy() { if (this.vista === 'mes') this.mesNav = this.hoy.slice(0, 7); else this.irDia(this.hoy); },
         cambiarVista(v) { this.vista = v; if (v === 'mes') this.mesNav = this.dia.slice(0, 7); else this.$nextTick(() => this.enfocarTablero()); },
+        revisarRango(m) {
+            const R = D.rango;
+            if (!R || !m || this.editando) return;
+            if (m >= R.desde.slice(0, 7) && m <= R.hasta.slice(0, 7)) return;
+            const f = m === this.dia.slice(0, 7) ? this.dia : m + '-01';
+            location.href = location.pathname + '?fecha=' + f + (this.vista === 'mes' ? '&vista=mes' : '');
+        },
         urlSync() { try { history.replaceState(null, '', location.pathname + '?fecha=' + this.dia + (this.vista === 'mes' ? '&vista=mes' : '')); } catch (e) {} },
         seleccionar(c, irA) { if (this.editando) return; this.sel = c; if (irA && c.fecha !== this.dia) { this.dia = c.fecha; this.vista = 'dia'; } },
 

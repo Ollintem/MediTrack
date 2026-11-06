@@ -87,6 +87,27 @@ class TicketVenta extends Model
         return Carbon::now('America/Mexico_City')->greaterThan($this->expires_at);
     }
 
+    /**
+     * Si el ticket sigue 'pendiente' en la BD pero ya venció, lo marca 'expirado' y devuelve true.
+     * Usa el valor real de la columna: el accesor de status ya devuelve 'expirado' y por eso
+     * la comparación con $ticket->status === 'pendiente' nunca detectaba el vencimiento.
+     */
+    public function vencerSiCorresponde(): bool
+    {
+        if ($this->getRawOriginal('status') === 'pendiente' && $this->esta_expirado) {
+            $this->update(['status' => 'expirado']);
+            return true;
+        }
+
+        return false;
+    }
+
+    /** Marca como 'expirado' en la BD todos los tickets pendientes ya vencidos. Devuelve cuántos. */
+    public static function expirarVencidos(): int
+    {
+        return static::query()->expirados()->update(['status' => 'expirado', 'updated_at' => now()]);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | SCOPES DE BÚSQUEDA

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ProductoInventario;
 use App\Models\TicketVenta;
 use App\Models\MovimientoCaja;
 use Illuminate\Http\Request;
@@ -25,7 +26,7 @@ class CajaController extends Controller
         $montoAnterior = $estadoCaja['cierre'] ? (float) $estadoCaja['cierre']->monto : 0.00;
 
         // Tickets pendientes de cobro
-        $ticketsPendientes = TicketVenta::with(['paciente', 'detalles.producto'])
+        $ticketsPendientes = TicketVenta::with(['paciente', 'detalles.producto' => ProductoInventario::cargarConStock()])
             ->where('status', 'pendiente')
             ->where('expires_at', '>', now('America/Mexico_City'))
             ->orderBy('created_at', 'desc')
@@ -34,7 +35,7 @@ class CajaController extends Controller
         // Carga los cobros realizados durante la sesión actual (posteriores a la apertura)
         $cobrosHoy = collect();
         if ($cajaAbierta) {
-            $cobrosHoy = MovimientoCaja::with(['ticket.paciente', 'ticket.detalles.producto'])
+            $cobrosHoy = MovimientoCaja::with(['ticket.paciente', 'ticket.detalles.producto' => ProductoInventario::cargarConStock()])
                 ->where('tipo', 'Ingreso')
                 ->whereNotNull('ticket_id')
                 ->where('id', '>', $cajaAbierta->id)
@@ -153,7 +154,7 @@ class CajaController extends Controller
     {
         $codigo = strtoupper(str_replace("'", '-', trim($codigo)));
 
-        $ticket = TicketVenta::with(['paciente', 'detalles.producto'])
+        $ticket = TicketVenta::with(['paciente', 'detalles.producto' => ProductoInventario::cargarConStock()])
             ->where('codigo_ticket', $codigo)
             ->first();
 
@@ -164,9 +165,7 @@ class CajaController extends Controller
             ], 404);
         }
 
-        if ($ticket->status === 'pendiente' && $ticket->expires_at <= now('America/Mexico_City')) {
-            $ticket->update(['status' => 'expirado']);
-        }
+        $ticket->vencerSiCorresponde();
 
         $mensajes = [
             'pagado'    => 'ESTE TICKET YA FUE PAGADO (PENDIENTE DE ENTREGA EN FARMACIA).',
@@ -205,8 +204,7 @@ class CajaController extends Controller
             $resultado = DB::transaction(function () use ($request, $id) {
                 $ticket = TicketVenta::with('detalles.producto')->lockForUpdate()->findOrFail($id);
 
-                if ($ticket->status === 'pendiente' && $ticket->expires_at <= now('America/Mexico_City')) {
-                    $ticket->update(['status' => 'expirado']);
+                if ($ticket->vencerSiCorresponde()) {
                     return ['error' => 'EL TICKET HA EXPIRADO. REVALIDAR EN TERMINAL POS.'];
                 }
 
@@ -227,7 +225,7 @@ class CajaController extends Controller
                     'metodo_pago' => $request->metodo_pago,
                 ]);
 
-                return ['ticket' => $ticket->fresh(['paciente', 'detalles.producto'])];
+                return ['ticket' => $ticket->fresh(['paciente', 'detalles.producto' => ProductoInventario::cargarConStock()])];
             });
 
             if (isset($resultado['error'])) {
@@ -253,12 +251,12 @@ class CajaController extends Controller
     {
         $ultimaApertura = MovimientoCaja::where('tipo', 'Ingreso')
             ->where('concepto', 'APERTURA DE CAJA CENTRAL - FONDO INICIAL')
-            ->latest()
+            ->latest('id') // por id: dos movimientos en el mismo segundo no se confunden
             ->first();
 
         $ultimoCierre = MovimientoCaja::where('tipo', 'Egreso')
             ->where('concepto', 'like', 'CIERRE DE CAJA CENTRAL%')
-            ->latest()
+            ->latest('id')
             ->first();
 
         return [

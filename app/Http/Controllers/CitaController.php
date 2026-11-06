@@ -18,14 +18,14 @@ class CitaController extends Controller
     private function reglas(): array
     {
         return [
-            'paciente_id'    => 'required|integer',
-            'personal_id'    => 'required|integer',
-            'consultorio_id' => 'nullable|integer',
+            'paciente_id'    => 'required|integer|exists:pacientes,id',
+            'personal_id'    => 'required|integer|exists:personals,id',
+            'consultorio_id' => 'nullable|integer|exists:consultorios,id',
             'fecha'          => 'required|date',
             'hora'           => ['required', 'regex:/^\d{2}:\d{2}(:\d{2})?$/'],
             'duracion_min'   => 'required|integer|min:5|max:480',
             'motivo'         => 'required|string|max:255',
-            'tipo_consulta'  => 'required|string|max:50',
+            'tipo_consulta'  => 'required|in:Primera Vez,Seguimiento,Urgencia',
             'estado'         => 'required|in:' . implode(',', self::ESTADOS),
         ];
     }
@@ -40,11 +40,35 @@ class CitaController extends Controller
             'hora.regex'           => 'La hora debe tener el formato HH:MM.',
             'motivo.required'      => 'Escribe el motivo de la consulta.',
             'estado.in'            => 'El estado de la cita no es válido.',
+            'paciente_id.exists'    => 'El paciente seleccionado ya no existe.',
+            'personal_id.exists'    => 'El médico seleccionado ya no existe.',
+            'consultorio_id.exists' => 'El consultorio seleccionado ya no existe.',
+            'tipo_consulta.required' => 'Selecciona el tipo de consulta.',
+            'tipo_consulta.in'      => 'El tipo de consulta no es válido.',
         ];
     }
 
-    public function index()
+    /** Meses que se cargan alrededor de la fecha que se está viendo (antes se cargaban TODAS las citas). */
+    private const MESES_ANTES = 3;
+    private const MESES_DESPUES = 12;
+
+    public function index(Request $request)
     {
+        // Ventana de citas alrededor de la fecha de la URL (?fecha=AAAA-MM-DD, o el formato anterior ?mes=&anio=).
+        // Si en la vista se navega fuera de esta ventana, la página se recarga centrada en la nueva fecha.
+        $ancla = Carbon::today();
+        try {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $request->query('fecha'))) {
+                $ancla = Carbon::parse($request->query('fecha'));
+            } elseif ($request->filled('mes') && $request->filled('anio')) {
+                $ancla = Carbon::create((int) $request->query('anio'), (int) $request->query('mes'), 1);
+            }
+        } catch (\Throwable $e) {
+            $ancla = Carbon::today();
+        }
+        $desde = $ancla->copy()->startOfMonth()->subMonthsNoOverflow(self::MESES_ANTES);
+        $hasta = $ancla->copy()->startOfMonth()->addMonthsNoOverflow(self::MESES_DESPUES)->endOfMonth();
+
         $pacientes    = Paciente::with('alergias')->get();
         $medicos      = Personal::with('usuario.rol')->where('estado', '!=', 'Inactivo')->orderBy('nombre_completo')->get();
 
@@ -53,10 +77,15 @@ class CitaController extends Controller
         $esMedico   = fn ($m) => in_array(mb_strtolower(trim((string) optional(optional($m->usuario)->rol)->nombre)), ['doctor', 'doctora', 'médico', 'medico', 'médica', 'medica'], true);
         $hayMedicos = $medicos->contains($esMedico);
         $consultorios = Consultorio::orderBy('piso')->orderBy('nombre')->get();
-        $citas        = Cita::with(['paciente.alergias'])->get();
+        $citas        = Cita::with(['paciente.alergias'])
+            ->whereDate('fecha', '>=', $desde)
+            ->whereDate('fecha', '<=', $hasta)
+            ->get();
 
         // Forma que consume la vista (tablero del día, mes, pase y formulario)
         $datosCitas = [
+            // Rango cargado: la vista recarga la página si se navega fuera de él
+            'rango'        => ['desde' => $desde->toDateString(), 'hasta' => $hasta->toDateString()],
             'citas'        => $citas->map(fn ($c) => $this->presentar($c))->values(),
             'pacientes'    => $pacientes->map(fn ($p) => [
                 'id'      => $p->id,
@@ -125,14 +154,19 @@ class CitaController extends Controller
 
     public function store(Request $request)
     {
-        // Asignamos la clínica por defecto (1) y un consultorio por defecto si no se selecciona
+        // Clínica por defecto (1) y, si no se eligió consultorio, el primero que exista
         $request->merge([
-            'consultorio_id' => $request->consultorio_id ? $request->consultorio_id : 1,
+            'consultorio_id' => $request->consultorio_id ?: Consultorio::orderBy('id')->value('id'),
             'clinica_id'     => 1,
         ]);
 
         $data = $request->validate($this->reglas(), $this->mensajes());
         $data['clinica_id'] = 1;
+
+        // La columna consultorio_id es obligatoria: sin consultorios registrados no se puede agendar
+        if (empty($data['consultorio_id'])) {
+            return $this->errorHorario($request, 'Registra al menos un consultorio antes de agendar citas.');
+        }
 
         if ($mensaje = $this->choque($data)) {
             return $this->errorHorario($request, $mensaje);
@@ -155,11 +189,27 @@ class CitaController extends Controller
     {
         // Arrastre de una cita desde un calendario (solo cambia fecha y hora)
         if ($request->has('dragged')) {
+            $request->validate(
+                ['start' => 'required|date'],
+                ['start.required' => 'Falta la nueva fecha de la cita.', 'start.date' => 'La nueva fecha no es válida.']
+            );
+
             $date = Carbon::parse($request->start);
-            $cita->update([
-                'fecha' => $date->format('Y-m-d'),
-                'hora' => $date->format('H:i:s')
-            ]);
+            $nuevo = [
+                'fecha'          => $date->format('Y-m-d'),
+                'hora'           => $date->format('H:i:s'),
+                'duracion_min'   => (int) ($cita->duracion_min ?? 30),
+                'personal_id'    => $cita->personal_id,
+                'consultorio_id' => $cita->consultorio_id,
+                'estado'         => $cita->estado,
+            ];
+
+            // Mover la cita también debe respetar la agenda del médico y del consultorio
+            if ($mensaje = $this->choque($nuevo, $cita->id)) {
+                return response()->json(['status' => 'error', 'message' => $mensaje], 422);
+            }
+
+            $cita->update(['fecha' => $nuevo['fecha'], 'hora' => $nuevo['hora']]);
 
             return response()->json(['status' => 'success']);
         }

@@ -72,7 +72,7 @@ class User extends Authenticatable
         }
 
         // 2. Si no tiene registro en 'personals', tomar de la tabla 'users'
-        $nombreUser = $this->nombre_completo ?? $this->nombre ?? $this->name ?? '';
+        $nombreUser = $this->attributes['name'] ?? '';
 
         return !empty($nombreUser) ? $nombreUser : 'Médico en Sesión';
     }

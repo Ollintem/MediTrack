@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Cita;
 use App\Models\Consulta;
+use App\Models\Paciente;
 use App\Models\Personal;
 use App\Models\SignosVitales;
 use Carbon\Carbon;
@@ -24,12 +25,6 @@ use Illuminate\Support\Str;
 class ConsultaController extends Controller
 {
     // ------------------------------------------------------------------ AJUSTES
-    /** Roles (en minúsculas) que ven las citas de todos los médicos. */
-    private const ROLES_ADMIN = ['super admin', 'superadmin', 'super administrador', 'administrador', 'admin'];
-
-    /** Si tu super admin es siempre el usuario con este id, se reconoce aunque el rol no coincida. null = desactivar. */
-    private const SUPERADMIN_ID = 1;
-
     /** El administrador también recibe los recordatorios de todas las citas (útil para probarlos). */
     private const ADMIN_RECIBE_RECORDATORIOS = true;
     // ----------------------------------------------------------------------------
@@ -48,25 +43,12 @@ class ConsultaController extends Controller
     private bool $personalCargado = false;
 
     // ================================================================= USUARIO
+    /** Ve las citas de todos los médicos: la misma regla de acceso total que el resto del sistema (Rol::ROLES_TOTALES). */
     private function esAdmin(): bool
     {
         $user = auth()->user();
-        if (!$user) {
-            return false;
-        }
 
-        if (self::SUPERADMIN_ID !== null && (int) $user->id === self::SUPERADMIN_ID) {
-            return true;
-        }
-
-        foreach (['rol.nombre', 'role.nombre', 'rol', 'role', 'tipo', 'perfil', 'cargo'] as $campo) {
-            $v = data_get($user, $campo);
-            if (is_string($v) && $v !== '' && in_array(mb_strtolower(trim($v)), self::ROLES_ADMIN, true)) {
-                return true;
-            }
-        }
-
-        return false;
+        return $user ? $user->tieneAccesoTotal() : false;
     }
 
     /**
@@ -103,6 +85,11 @@ class ConsultaController extends Controller
 
     private function nombre($m): string
     {
+        // El paciente ya trae el nombre completo en su accesor "nombre" (no se le vuelve a pegar el apellido)
+        if ($m instanceof Paciente) {
+            return trim((string) $m->nombre);
+        }
+
         return (string) (data_get($m, 'nombre_completo') ?: trim(
             data_get($m, 'nombre', '') . ' ' . (data_get($m, 'apellidos') ?? data_get($m, 'apellido_paterno') ?? '')
         ));
@@ -513,6 +500,9 @@ class ConsultaController extends Controller
         }
 
         $consulta = DB::transaction(function () use ($cita, $valores, $finalizar) {
+            // Bloquea la cita: dos guardados simultáneos (doble clic, autoguardado) esperan su turno
+            // y el segundo encuentra la consulta ya creada en lugar de duplicarla.
+            Cita::whereKey($cita->id)->lockForUpdate()->first();
             $consulta = Consulta::firstOrNew(['cita_id' => $cita->id]);
             if (!$consulta->exists) {
                 $consulta->fecha = now()->toDateString();

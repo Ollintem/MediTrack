@@ -101,10 +101,10 @@
                     <section class="np-sec">
                         <h3><span>01</span>Identificación</h3>
                         <div class="np-campo">
-                            <label for="ep-codigo">Código de barras o SKU <span class="np-mod" x-show="cambio('codigo')">modificado</span></label>
+                            <label for="ep-codigo">Código de barras <span class="np-mod" x-show="cambio('codigo')">modificado</span></label>
                             <div class="np-in np-in-ico" :class="(codigoRepetido || (intento && !productoEditar.codigo)) && 'mal'">
                                 <i class="bi bi-upc-scan"></i>
-                                <input id="ep-codigo" type="text" name="codigo" x-model="productoEditar.codigo" required maxlength="50" autocomplete="off" class="mono np-mayus"
+                                <input id="ep-codigo" type="text" name="codigo" x-model="productoEditar.codigo" required maxlength="13" inputmode="numeric" autocomplete="off" class="mono np-mayus"
                                        @keydown.enter.prevent="$refs.nombre.focus()">
                             </div>
                             <p class="np-ayuda mal" x-show="codigoRepetido" x-text="codigoRepetido ? 'Ya lo usa: ' + codigoRepetido.nombre : ''"></p>
@@ -360,7 +360,8 @@
             get avisoEan() {
                 // Solo avisa si se cambió el código; el que ya está guardado no se vuelve a revisar
                 const c = texto(this.productoEditar.codigo);
-                if (!this.cambio('codigo') || !/^\d{13}$/.test(c)) return '';
+                if (!this.cambio('codigo')) return '';
+                if (!/^\d{13}$/.test(c)) return 'Debe tener exactamente 13 dígitos.';
                 let suma = 0;
                 for (let i = 0; i < 12; i++) suma += Number(c[i]) * (i % 2 === 0 ? 1 : 3);
                 return (10 - (suma % 10)) % 10 === Number(c[12]) ? '' : 'No es un EAN-13 estándar (el último dígito no corresponde). Si lo escaneaste de la caja, revisa que se haya leído completo.';

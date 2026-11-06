@@ -22,3 +22,6 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Binario del túnel de Cloudflare (se descarga aparte, no va en el repositorio)
+cloudflared.exe

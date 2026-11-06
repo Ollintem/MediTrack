@@ -31,8 +31,10 @@ return [
     // Máximo de registros que devuelve cada consulta
     'max_resultados' => 50,
 
-    // Si es true, el chatbot solo ve el CÓDIGO del paciente y nunca su nombre
-    'ocultar_nombres_pacientes' => (bool) env('CHATBOT_OCULTAR_NOMBRES', false),
+    // Si es true, el chatbot solo ve el CÓDIGO del paciente y nunca su nombre.
+    // Activado por defecto: los resultados se envían a un servicio externo (Gemini) y son datos de salud.
+    // Para mostrar nombres, define CHATBOT_OCULTAR_NOMBRES=false en .env (bajo tu responsabilidad).
+    'ocultar_nombres_pacientes' => filter_var(env('CHATBOT_OCULTAR_NOMBRES', true), FILTER_VALIDATE_BOOLEAN),
 
     // Archivo con la guía de uso del sistema (lo que el bot "sabe" de MediTrack)
     'guia' => resource_path('chatbot/guia_meditrack.md'),

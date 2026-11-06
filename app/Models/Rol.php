@@ -19,7 +19,7 @@ class Rol extends Model
      * Nombres de rol (en minúsculas) con acceso total al sistema sin revisar permisos.
      * Es la ÚNICA lista que usan el middleware, el menú, User::tienePermiso() y la pantalla de Roles.
      */
-    public const ROLES_TOTALES = ['administrador', 'admin', 'super admin', 'superadministrador'];
+    public const ROLES_TOTALES = ['administrador', 'admin', 'super admin', 'superadmin', 'superadministrador', 'super administrador'];
 
     /** Normaliza un nombre de rol para compararlo (minúsculas, sin espacios dobles ni a los lados). */
     public static function normalizar(?string $nombre): string

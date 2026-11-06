@@ -136,10 +136,10 @@ Route::middleware(['auth'])->group(function () {
     });
 
     // --- MÓDULO PROVEEDORES ---
-    Route::resource('proveedores', ProveedorController::class)->only(['index'])->middleware('permiso:Proveedores,ver');
-    Route::resource('proveedores', ProveedorController::class)->only(['store'])->middleware('permiso:Proveedores,crear');
-    Route::resource('proveedores', ProveedorController::class)->only(['update'])->middleware('permiso:Proveedores,editar');
-    Route::resource('proveedores', ProveedorController::class)->only(['destroy'])->middleware('permiso:Proveedores,eliminar');
+    Route::resource('proveedores', ProveedorController::class)->only(['index'])->parameters(['proveedores' => 'proveedor'])->middleware('permiso:Proveedores,ver');
+    Route::resource('proveedores', ProveedorController::class)->only(['store'])->parameters(['proveedores' => 'proveedor'])->middleware('permiso:Proveedores,crear');
+    Route::resource('proveedores', ProveedorController::class)->only(['update'])->parameters(['proveedores' => 'proveedor'])->middleware('permiso:Proveedores,editar');
+    Route::resource('proveedores', ProveedorController::class)->only(['destroy'])->parameters(['proveedores' => 'proveedor'])->middleware('permiso:Proveedores,eliminar');
 
     // --- MÓDULO POS / PUNTO DE VENTA ---
     Route::middleware('permiso:POS,ver')->group(function () {
@@ -214,9 +214,12 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware('permiso:Configuración,ver')->group(function () {
         Route::get('/configuracion', [ConfiguracionController::class, 'index'])->name('configuracion.index');
         // Credenciales propias del usuario en sesión (pide su contraseña actual)
-        Route::post('/configuracion/cuenta', [ConfiguracionController::class, 'actualizarCuenta'])->name('configuracion.cuenta.update');
+        Route::put('/configuracion/cuenta', [ConfiguracionController::class, 'actualizarCuenta'])->name('configuracion.cuenta.update');
     });
     Route::put('/configuracion', [ConfiguracionController::class, 'update'])->name('configuracion.update')->middleware('permiso:Configuración,editar');
+
+    // --- MÓDULO BITÁCORA (solo lectura) ---
+    Route::get('/bitacora', [BitacoraController::class, 'index'])->name('bitacora.index')->middleware('permiso:Bitácora,ver');
 
     // --- UTILIDAD Y MONITOR DE ESTADO ---
     Route::get('/ping', function () {
