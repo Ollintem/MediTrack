@@ -156,30 +156,16 @@ class ConsultaController extends Controller
     }
 
     // ================================================================= CONSULTORIO
+    // La regla vive en el modelo Consultorio (la comparte el módulo de Citas)
     private function ocuparConsultorio(Cita $cita): void
     {
-        $cons = $cita->consultorio;
-        if ($cons && $cons->estado !== 'Mantenimiento' && $cons->estado !== 'Ocupado') {
-            $cons->forceFill(['estado' => 'Ocupado'])->save();
-        }
+        $cita->consultorio?->ocupar();
     }
 
     private function liberarConsultorio(Cita $cita): void
     {
-        $cons = $cita->consultorio;
-        if (!$cons || $cons->estado !== 'Ocupado') {
-            return;
-        }
-
         // Solo se libera si no hay otra consulta en curso en el mismo consultorio
-        $hayOtra = Cita::where('consultorio_id', $cons->id)
-            ->where('estado', 'En curso')
-            ->where('id', '!=', $cita->id)
-            ->exists();
-
-        if (!$hayOtra) {
-            $cons->forceFill(['estado' => 'Disponible'])->save();
-        }
+        $cita->consultorio?->liberarSiLibre($cita->id);
     }
 
     private function recetaUrl(?Consulta $consulta): ?string

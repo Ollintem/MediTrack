@@ -98,7 +98,7 @@ class CajaController extends Controller
     }
 
     /**
-     * Realiza el Cierre / Corte de Caja Central del turno con validación de contraseña de supervisor.
+     * Realiza el Cierre / Corte de Caja Central del turno con confirmación de la contraseña del propio cajero (la pantalla la pide como "Tu contraseña para autorizar"; no es una autorización de supervisor).
      */
     public function cerrar(Request $request)
     {
@@ -108,7 +108,7 @@ class CajaController extends Controller
             'admin_password.required' => 'LA CONTRASEÑA DE AUTORIZACIÓN ES OBLIGATORIA.',
         ]);
 
-        // Validar contraseña del usuario autenticado
+        // Confirmar la identidad del cajero en sesión antes de un cierre que no se puede deshacer
         if (!Hash::check($request->admin_password, Auth::user()->password)) {
             return back()->with('error', 'CONTRASEÑA DE AUTORIZACIÓN INCORRECTA.');
         }

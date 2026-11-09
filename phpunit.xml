@@ -23,9 +23,15 @@
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
-        <env name="DB_URL" value=""/>
+        <!--
+            Base de datos SOLO para pruebas (se borra y se vuelve a crear en cada corrida).
+            Nunca apuntar a "meditrack": RefreshDatabase eliminaría los datos reales.
+            Crearla una vez:  CREATE DATABASE meditrack_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+        -->
+        <env name="DB_CONNECTION" value="mysql" force="true"/>
+        <env name="DB_DATABASE" value="meditrack_test" force="true"/>
+        <env name="DB_URL" value="" force="true"/>
+        <env name="GEMINI_API_KEY" value="" force="true"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

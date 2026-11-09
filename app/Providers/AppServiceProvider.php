@@ -39,13 +39,23 @@ class AppServiceProvider extends ServiceProvider
             return $user ? $user->tienePermiso($modulo, $accion) : false;
         });
 
-        // Compartir $clinica y $config con todas las vistas de Blade del sistema
+        // Compartir $clinica y $config con todas las vistas de Blade del sistema.
+        // El composer corre en CADA vista y en cada @include: once() hace que las dos consultas
+        // se ejecuten una sola vez por petición (antes se repetían de 3 a 8 veces por página).
         View::composer('*', function ($view) {
-            $clinica = Clinica::first();
-            $config = Configuracion::pluck('valor', 'clave')->toArray();
+            [$clinica, $config] = once(fn () => [
+                Clinica::first(),
+                Configuracion::pluck('valor', 'clave')->toArray(),
+            ]);
 
-            $view->with('clinica', $clinica)
-                 ->with('config', $config);
+            // Si el controlador ya mandó su propia $clinica o $config, se respeta
+            $datos = $view->getData();
+            if (!array_key_exists('clinica', $datos)) {
+                $view->with('clinica', $clinica);
+            }
+            if (!array_key_exists('config', $datos)) {
+                $view->with('config', $config);
+            }
         });
     }
 }

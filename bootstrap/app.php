@@ -30,8 +30,9 @@ return Application::configure(basePath: dirname(__DIR__))
             prepend: \App\Http\Middleware\CheckPermission::class,
         );
 
-        // Asistente MediTrack en todas las páginas
+        // Personal desactivado: se cierra su sesión abierta. Después, el Asistente MediTrack en todas las páginas
         $middleware->web(append: [
+            \App\Http\Middleware\CerrarSesionInactivos::class,
             \App\Http\Middleware\InyectarChatbot::class,
         ]);
 

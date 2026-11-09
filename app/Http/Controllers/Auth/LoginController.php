@@ -3,11 +3,20 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 
 class LoginController extends Controller
 {
+    /** Intentos fallidos permitidos antes de bloquear temporalmente. */
+    private const MAX_INTENTOS = 5;
+
+    /** Segundos que dura el bloqueo tras agotar los intentos. */
+    private const SEGUNDOS_BLOQUEO = 60;
+
     /**
      * Muestra la vista de inicio de sesión.
      */
@@ -41,17 +50,41 @@ class LoginController extends Controller
             ? ['email' => $loginInput, 'password' => $request->password]
             : ['email' => strtolower($loginInput) . '@meditrack.com', 'password' => $request->password];
 
-        // 3. Intentar autenticar contra la base de datos
-        if (Auth::attempt($credentials, $request->boolean('remember'))) {
-            $request->session()->regenerate();
+        // 3. Límite de intentos por cuenta + IP (evita probar contraseñas sin fin)
+        $llave = $this->llaveIntentos($credentials['email'], $request);
+        if (RateLimiter::tooManyAttempts($llave, self::MAX_INTENTOS)) {
+            $segundos = RateLimiter::availableIn($llave);
 
-            return redirect()->intended(route('home'));
+            return back()->withErrors([
+                'email' => "Demasiados intentos fallidos. Espera {$segundos} segundos e inténtalo de nuevo.",
+            ])->onlyInput('email');
         }
 
-        // 4. Si falla, retornar el error a la vista
-        return back()->withErrors([
-            'email' => 'Las credenciales ingresadas no coinciden con nuestros registros.',
-        ])->onlyInput('email');
+        // 4. Revisar la contraseña SIN iniciar sesión todavía
+        if (!Auth::validate($credentials)) {
+            RateLimiter::hit($llave, self::SEGUNDOS_BLOQUEO);
+
+            return back()->withErrors([
+                'email' => 'Las credenciales ingresadas no coinciden con nuestros registros.',
+            ])->onlyInput('email');
+        }
+
+        /** @var User $user */
+        $user = Auth::getProvider()->retrieveByCredentials($credentials);
+
+        // 5. El personal marcado como "Inactivo" ya no puede entrar
+        if ($user->estaInactivo()) {
+            return back()->withErrors([
+                'email' => 'Tu cuenta está inactiva. Pide a un administrador que la reactive.',
+            ])->onlyInput('email');
+        }
+
+        // 6. Iniciar sesión
+        RateLimiter::clear($llave);
+        Auth::login($user, $request->boolean('remember'));
+        $request->session()->regenerate();
+
+        return redirect()->intended(route('home'));
     }
 
     /**
@@ -64,5 +97,10 @@ class LoginController extends Controller
         $request->session()->regenerateToken();
 
         return redirect()->route('login');
+    }
+
+    private function llaveIntentos(string $email, Request $request): string
+    {
+        return 'login:' . Str::transliterate(Str::lower($email)) . '|' . $request->ip();
     }
 }

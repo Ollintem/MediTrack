@@ -8,6 +8,7 @@ use App\Models\Consultorio;
 use App\Models\Personal;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class CitaController extends Controller
@@ -222,7 +223,13 @@ class CitaController extends Controller
             return $this->errorHorario($request, $mensaje);
         }
 
-        $cita->update($data);
+        $estadoAntes = $cita->estado;
+        $consultorioAntes = $cita->consultorio_id;
+
+        DB::transaction(function () use ($cita, $data, $estadoAntes, $consultorioAntes) {
+            $cita->update($data);
+            $this->sincronizarConsultorios($cita, $estadoAntes, $consultorioAntes);
+        });
 
         if ($request->wantsJson() || $request->ajax()) {
             return response()->json([
@@ -238,7 +245,12 @@ class CitaController extends Controller
     public function destroy(Cita $cita)
     {
         try {
-            $cita->delete();
+            DB::transaction(function () use ($cita) {
+                $consultorio = $cita->estado === 'En curso' ? $cita->consultorio : null;
+                $cita->delete();
+                // Si se borra una cita que estaba en consulta, su consultorio no debe quedar "Ocupado"
+                $consultorio?->liberarSiLibre($cita->id);
+            });
         } catch (QueryException $e) {
             // Por ejemplo, si la cita ya tiene una consulta o receta asociada
             $mensaje = 'No se puede eliminar: la cita tiene registros asociados (consulta o receta). Puedes marcarla como Cancelada.';
@@ -255,6 +267,25 @@ class CitaController extends Controller
         }
 
         return redirect()->route('citas.index')->with('success', 'Cita eliminada correctamente.');
+    }
+
+    /**
+     * Mantiene el estado de los consultorios cuando la cita se edita desde este módulo
+     * (antes solo lo hacía Consultas, y un consultorio podía quedar "Ocupado" para siempre):
+     *  - deja de estar "En curso" o cambia de consultorio → se libera el consultorio anterior;
+     *  - pasa a "En curso" → se ocupa su consultorio (salvo mantenimiento).
+     */
+    private function sincronizarConsultorios(Cita $cita, ?string $estadoAntes, ?int $consultorioAntes): void
+    {
+        $enCursoAhora = $cita->estado === 'En curso';
+
+        if ($estadoAntes === 'En curso' && (!$enCursoAhora || (int) $consultorioAntes !== (int) $cita->consultorio_id)) {
+            Consultorio::find($consultorioAntes)?->liberarSiLibre($cita->id);
+        }
+
+        if ($enCursoAhora) {
+            $cita->consultorio()->first()?->ocupar();
+        }
     }
 
     /** Datos de una cita para la vista. */

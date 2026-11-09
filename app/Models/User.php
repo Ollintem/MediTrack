@@ -130,6 +130,19 @@ class User extends Authenticatable
         return (int) $this->id === 1;
     }
 
+    /**
+     * ¿Su ficha de personal está marcada como "Inactivo"? Entonces ya no puede usar el sistema.
+     * El Super Admin inicial (ID 1) nunca se considera inactivo, para no dejar el sistema sin acceso.
+     */
+    public function estaInactivo(): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return false;
+        }
+
+        return mb_strtolower(trim((string) optional($this->personal)->estado)) === 'inactivo';
+    }
+
     public function rol()
     {
         return $this->belongsTo(Rol::class, 'rol_id');
