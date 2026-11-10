@@ -89,7 +89,7 @@ class InventarioController extends Controller
 
             // Existencia inicial con su movimiento de entrada (auditoría)
             if ($stockActual > 0) {
-                MovimientoInventario::registrar($producto, 'Entrada', $stockActual, ['motivo' => 'INVENTARIO INICIAL']);
+                MovimientoInventario::registrar($producto, 'Entrada', $stockActual, ['motivo' => MovimientoInventario::MOTIVO_INICIAL]);
             }
         });
 

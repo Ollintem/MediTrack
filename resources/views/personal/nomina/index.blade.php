@@ -127,7 +127,7 @@
                             <p class="text-[10px] font-black" :class="vencimiento(e).clase" x-text="vencimiento(e).texto"></p>
                         </div>
                         <div class="text-right shrink-0">
-                            <p class="text-xs font-black text-slate-700 tabular-nums" x-text="e.salario > 0 ? dinero(e.salario * diasEntre(e.prox_ini, e.prox_fin)) : 'Sin salario'"
+                            <p class="text-xs font-black text-slate-700 tabular-nums" x-text="e.salario > 0 ? dinero(e.salario * diasAPagar(e.tipo_pago, e.prox_ini, e.prox_fin)) : 'Sin salario'"
                                :class="e.salario > 0 ? '' : 'text-amber-600'"></p>
                             @if ($puedeCrear)
                                 <button type="button" @click="abrirNuevoEmpleado(e)"
@@ -284,7 +284,7 @@
 
                     {{-- Resumen --}}
                     <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200 grid grid-cols-3 gap-2 text-center">
-                        <div><p class="text-[10px] font-bold text-slate-400 uppercase">Días</p><p class="text-sm font-black text-slate-800" x-text="nuevo.tipo === 'ESPECIAL' ? '—' : diasNuevo"></p></div>
+                        <div><p class="text-[10px] font-bold text-slate-400 uppercase">Días</p><p class="text-sm font-black text-slate-800" x-text="nuevo.tipo === 'ESPECIAL' ? '—' : diasNuevo"></p><p class="text-[9px] font-semibold text-slate-500 leading-tight" x-show="notaDias" x-text="notaDias"></p></div>
                         <div><p class="text-[10px] font-bold text-slate-400 uppercase">Empleados</p><p class="text-sm font-black text-slate-800" x-text="seleccion.length"></p></div>
                         <div><p class="text-[10px] font-bold text-slate-400 uppercase">Sueldo estimado</p><p class="text-sm font-black text-teal-700" x-text="nuevo.tipo === 'ESPECIAL' ? 'Se captura' : dinero(estimado)"></p></div>
                     </div>
@@ -413,9 +413,17 @@
             },
             seleccionarPorTipo(tipo) { this.seleccion = tipo === 'ESPECIAL' ? [] : this.empleados.filter(e => e.tipo_pago === tipo).map(e => e.id); },
 
-            get diasNuevo() { return this.diasEntre(this.nuevo.inicio, this.nuevo.fin); },
+            get diasNuevo() { return this.diasAPagar(this.nuevo.tipo, this.nuevo.inicio, this.nuevo.fin); },
             get estimado() {
                 return this.empleados.filter(e => this.seleccion.includes(e.id)).reduce((s, e) => s + e.salario * this.diasNuevo, 0);
+            },
+            // Nota bajo "Días": explica de dónde sale el número
+            get notaDias() {
+                const t = this.nuevo.tipo, fijos = { QUINCENAL: 15, MENSUAL: 30 }[t];
+                if (!fijos || !this.nuevo.inicio || !this.nuevo.fin) return '';
+                return this.diasNuevo === fijos
+                    ? (t === 'QUINCENAL' ? 'Quincena: siempre 15 días' : 'Mes: siempre 30 días')
+                    : 'Periodo incompleto: días reales';
             },
 
             // ----- Vencimientos -----
@@ -459,6 +467,21 @@
             diasEntre(a, b) {
                 if (!a || !b) return 0;
                 return Math.max(0, Math.round((fecha(b) - fecha(a)) / 86400000) + 1);
+            },
+            // Misma regla que PeriodoNomina::diasAPagar(): quincena = 15 fijos, mes = 30 fijos;
+            // un rango incompleto paga sus días reales (sin pasar de 15 / 30). Especial = 0.
+            diasAPagar(tipo, a, b) {
+                if (!a || !b) return 0;
+                if (tipo === 'ESPECIAL') return 0;
+                const cal = this.diasEntre(a, b), fijos = { QUINCENAL: 15, MENSUAL: 30 }[tipo];
+                if (!fijos) return cal;
+                const i = fecha(a), f = fecha(b);
+                const mismoMes = i.getFullYear() === f.getFullYear() && i.getMonth() === f.getMonth();
+                const ultimo = new Date(f.getFullYear(), f.getMonth() + 1, 0).getDate() === f.getDate();
+                const completo = tipo === 'QUINCENAL'
+                    ? mismoMes && ((i.getDate() === 1 && f.getDate() === 15) || (i.getDate() === 16 && ultimo))
+                    : mismoMes && i.getDate() === 1 && ultimo;
+                return completo ? fijos : Math.min(cal, fijos);
             },
             normalizar(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); },
             iniciales(t) { return (t || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0]).join('').toUpperCase(); },

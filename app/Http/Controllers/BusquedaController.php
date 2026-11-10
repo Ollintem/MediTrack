@@ -140,6 +140,14 @@ class BusquedaController extends Controller
                 'permiso' => 'Proveedores',
             ],
             [
+                'nombre' => 'Reportes',
+                'keywords' => ['reportes', 'reporte', 'informes', 'ingresos', 'egresos', 'gastos', 'utilidad', 'ganancias', 'finanzas', 'balance'],
+                'categoria' => 'Administración',
+                'icono' => 'bi-bar-chart-line',
+                'route' => 'reportes.index',
+                'permiso' => 'Reportes',
+            ],
+            [
                 'nombre' => 'Configuración',
                 'keywords' => ['configuracion', 'ajustes', 'sistema', 'clinica', 'mi cuenta', 'contrasena'],
                 'categoria' => 'Sistema',

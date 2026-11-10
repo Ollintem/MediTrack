@@ -278,7 +278,7 @@
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">
-                        <label class="block"><span class="nom-label">Fecha de pago *</span><input type="date" x-model="pago.fecha" class="nom-input"></label>
+                        <label class="block"><span class="nom-label">Fecha de pago *</span><input type="date" x-model="pago.fecha" max="{{ today()->toDateString() }}" class="nom-input"></label>
                         <label class="block"><span class="nom-label">Referencia</span><input type="text" x-model="pago.referencia" maxlength="100" class="nom-input" placeholder="Folio, núm. de transferencia…"></label>
                     </div>
 
@@ -563,14 +563,22 @@
                     } catch (e) { avisoNomina(e.message, 'error'); }
                 });
             },
-            // Pendientes de un periodo abierto: basta con "editar"; pagados o de periodo cerrado: requiere "eliminar"
-            puedeBorrar(r) { return this.puedeEliminar || (this.puedeEditar && r.estado !== 'Pagado' && this.estado === 'Abierto'); },
+            // Un recibo pagado nunca se borra (primero se revierte el pago).
+            // Pendientes de un periodo abierto: basta con "editar"; de un periodo cerrado: requiere "eliminar"
+            puedeBorrar(r) { return r.estado !== 'Pagado' && (this.puedeEliminar || (this.puedeEditar && this.estado === 'Abierto')); },
             eliminarPeriodo() {
                 const pagados = this.pagados.length;
+                if (pagados) {
+                    Swal.fire({
+                        title: 'No se puede eliminar',
+                        html: `Este periodo tiene <b>${pagados} pago(s)</b> registrados. Revierte esos pagos antes de eliminarlo.`,
+                        icon: 'info', confirmButtonColor: '#0d9488', confirmButtonText: 'Entendido', customClass: { popup: 'rounded-3xl' },
+                    });
+                    return;
+                }
                 Swal.fire({
                     title: '¿Eliminar todo el periodo?',
-                    html: `Se borrarán los <b>${this.recibos.length} recibo(s)</b> de este periodo.`
-                        + (pagados ? `<br><span style="font-size:12px;color:#b45309"><b>${pagados}</b> ya estaban pagados; se perderá su registro de pago.</span>` : '')
+                    html: `Se borrarán los <b>${this.recibos.length} recibo(s)</b> pendientes de este periodo.`
                         + '<br><span style="font-size:12px;color:#f43f5e">Esta acción no se puede deshacer.</span>',
                     icon: 'warning', showCancelButton: true, reverseButtons: true,
                     confirmButtonColor: '#f43f5e', cancelButtonColor: '#64748b',

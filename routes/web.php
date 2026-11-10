@@ -20,6 +20,7 @@ use App\Http\Controllers\PosController;
 use App\Http\Controllers\CajaController;
 use App\Http\Controllers\ProveedorController;
 use App\Http\Controllers\ChatbotController;
+use App\Http\Controllers\ReporteController;
 
 /*
 |--------------------------------------------------------------------------
@@ -217,6 +218,12 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/configuracion/cuenta', [ConfiguracionController::class, 'actualizarCuenta'])->name('configuracion.cuenta.update');
     });
     Route::put('/configuracion', [ConfiguracionController::class, 'update'])->name('configuracion.update')->middleware('permiso:Configuración,editar');
+
+    // --- MÓDULO REPORTES (ingresos y egresos; solo lectura) ---
+    Route::middleware('permiso:Reportes,ver')->group(function () {
+        Route::get('/reportes', [ReporteController::class, 'index'])->name('reportes.index');
+        Route::get('/reportes/exportar', [ReporteController::class, 'exportar'])->name('reportes.exportar');
+    });
 
     // --- MÓDULO BITÁCORA (solo lectura) ---
     Route::get('/bitacora', [BitacoraController::class, 'index'])->name('bitacora.index')->middleware('permiso:Bitácora,ver');

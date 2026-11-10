@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Dashboard de MediTrack: el pulso clínico del día (agenda, médicos, consultorios e inventario)
- * y la tendencia de los últimos seis meses. No muestra dinero: eso vive en Caja y Facturación.
+ * y la tendencia de los últimos seis meses. No muestra dinero: eso vive en Caja y Reportes.
  */
 class HomeController extends Controller
 {
@@ -153,7 +153,7 @@ class HomeController extends Controller
         ];
     }
 
-    // ----- KPI: consultas atendidas en el mes (el dinero vive en Caja y Facturación) -----
+    // ----- KPI: consultas atendidas en el mes (el dinero vive en Caja y Reportes) -----
     private function kpiConsultasMes(Carbon $hoy): array
     {
         $inicioMes = $hoy->copy()->startOfMonth();

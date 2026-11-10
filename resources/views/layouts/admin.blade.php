@@ -1080,12 +1080,11 @@ a.ly-link:hover .bi { color: var(--ly-foil); }
                 ['texto' => 'Inventario',        'ruta' => 'inventario.index',    'activo' => 'inventario.*',    'icono' => 'bi-box-seam',               'permiso' => 'Inventario',    'claves' => 'stock productos existencias lotes'],
                 ['texto' => 'Proveedores',       'ruta' => 'proveedores.index',   'activo' => 'proveedores.*',   'icono' => 'bi-truck',                  'permiso' => 'Proveedores',   'claves' => 'compras laboratorios'],
                 ['texto' => 'Recetas',           'ruta' => 'recetas.index',       'activo' => 'recetas.*',       'icono' => 'bi-file-earmark-medical',   'permiso' => 'Recetas',       'claves' => 'prescripcion medicamentos'],
-                ['texto' => 'Facturación',       'ruta' => null,                  'activo' => 'facturacion.*',   'icono' => 'bi-receipt',                'permiso' => 'Facturación',   'claves' => 'facturas cfdi'],
             ]],
             ['titulo' => 'Administración', 'items' => [
                 ['texto' => 'Personal',          'ruta' => 'personal.index',      'activo' => 'personal.*',      'icono' => 'bi-person-badge',           'permiso' => 'Personal',      'claves' => 'medicos doctores empleados nomina usuarios'],
                 ['texto' => 'Roles y permisos',  'ruta' => 'roles.index',         'activo' => 'roles.*',         'icono' => 'bi-shield-lock',            'permiso' => 'Roles',         'claves' => 'accesos seguridad'],
-                ['texto' => 'Reportes',          'ruta' => null,                  'activo' => 'reportes.*',      'icono' => 'bi-bar-chart-line',         'permiso' => 'Reportes',      'claves' => 'estadisticas informes'],
+                ['texto' => 'Reportes',          'ruta' => 'reportes.index',     'activo' => 'reportes.*',      'icono' => 'bi-bar-chart-line',         'permiso' => 'Reportes',      'claves' => 'estadisticas informes ingresos egresos gastos ventas compras utilidad finanzas'],
                 ['texto' => 'Configuración',     'ruta' => 'configuracion.index', 'activo' => 'configuracion.*', 'icono' => 'bi-gear',                   'permiso' => 'Configuración', 'claves' => 'ajustes clinica aviso de privacidad cuenta'],
                 ['texto' => 'Bitácora',          'ruta' => 'bitacora.index',      'activo' => 'bitacora.*',      'icono' => 'bi-journal-text',           'permiso' => 'Bitácora',      'claves' => 'historial registros auditoria'],
             ]],

@@ -160,8 +160,16 @@ class NominaController extends Controller
     {
         $this->autorizar('eliminar');
 
+        // Lo que ya se pagó no desaparece: primero hay que revertir esos pagos (y dejan de contar en Reportes)
+        if ($periodo->tienePagos()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Este periodo tiene pagos registrados; revierte esos pagos antes de eliminarlo.',
+            ], 409);
+        }
+
         $n = $periodo->recibos()->count();
-        $periodo->delete();   // los recibos se borran en cascada
+        $periodo->delete();   // los recibos (todos pendientes) se borran en cascada
 
         return response()->json([
             'success'  => true,
@@ -201,11 +209,19 @@ class NominaController extends Controller
         return back()->with('success', 'Empleado agregado al periodo.');
     }
 
-    /** Elimina un recibo (pendiente o pagado). Si el periodo se queda vacío, también se elimina. */
+    /** Elimina un recibo pendiente. Si el periodo se queda vacío, también se elimina. */
     public function quitarRecibo(ReciboNomina $recibo)
     {
-        // Quitar un pendiente de un periodo abierto es "editar"; borrar uno pagado o de un periodo cerrado es "eliminar"
-        $this->autorizar($recibo->estaPagado() || !$recibo->periodo->estaAbierto() ? 'eliminar' : 'editar');
+        // Un recibo pagado no se borra: se revierte el pago primero (así no se pierde un egreso real)
+        if ($recibo->estaPagado()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Este recibo ya se pagó; revierte el pago antes de eliminarlo.',
+            ], 409);
+        }
+
+        // Quitar un pendiente de un periodo abierto es "editar"; de un periodo cerrado es "eliminar"
+        $this->autorizar($recibo->periodo->estaAbierto() ? 'editar' : 'eliminar');
 
         $periodo = $recibo->periodo;
         $recibo->delete();
@@ -276,11 +292,12 @@ class NominaController extends Controller
         $data = $request->validate([
             'recibo_ids'   => 'required|array|min:1',
             'recibo_ids.*' => 'integer',
-            'fecha_pago'   => 'required|date',
+            'fecha_pago'   => 'required|date|before_or_equal:today',
             'metodo_pago'  => 'required|in:' . implode(',', ReciboNomina::METODOS),
             'referencia'   => 'nullable|string|max:100',
         ], [
-            'recibo_ids.required' => 'Selecciona al menos un empleado para pagar.',
+            'recibo_ids.required'       => 'Selecciona al menos un empleado para pagar.',
+            'fecha_pago.before_or_equal' => 'La fecha de pago no puede ser posterior a hoy.',
         ]);
 
         $recibos = $periodo->recibos()->whereIn('id', $data['recibo_ids'])->where('estado', '!=', 'Pagado')->get();
@@ -412,7 +429,7 @@ class NominaController extends Controller
     private function generarRecibos(PeriodoNomina $periodo, array $ids): int
     {
         $existentes = $periodo->recibos()->pluck('personal_id')->all();
-        $dias = $periodo->dias();
+        $dias = $periodo->diasPagables();   // 15 por quincena y 30 por mes (ver PeriodoNomina::diasAPagar)
         $creados = 0;
 
         foreach (Personal::whereIn('id', $ids)->get() as $empleado) {
@@ -424,7 +441,7 @@ class NominaController extends Controller
                 'periodo_id'      => $periodo->id,
                 'personal_id'     => $empleado->id,
                 'salario_diario'  => (float) ($empleado->salario_diario ?? 0),
-                'dias_trabajados' => $periodo->tipo === 'ESPECIAL' ? 0 : $dias,
+                'dias_trabajados' => $dias,
                 'estado'          => 'Pendiente',
             ]);
             $recibo->recalcular()->save();

@@ -29,12 +29,11 @@ class Modulo extends Model
             'Caja Central' => ['bi-cash-coin', 'Cobros, apertura y corte'],
             'Inventario'   => ['bi-box-seam', 'Existencias, lotes y surtido'],
             'Proveedores'  => ['bi-truck', 'Compras y laboratorios'],
-            'Facturación'  => ['bi-receipt', 'Facturas (próximamente)'],
         ],
         'Administración' => [
             'Personal'      => ['bi-person-badge', 'Plantilla, accesos y nómina'],
             'Roles'         => ['bi-shield-lock', 'Esta pantalla'],
-            'Reportes'      => ['bi-bar-chart-line', 'Informes (próximamente)'],
+            'Reportes'      => ['bi-bar-chart-line', 'Ingresos, egresos y utilidad'],
             'Configuración' => ['bi-gear', 'Datos de la clínica y cuenta'],
             'Bitácora'      => ['bi-journal-text', 'Historial de movimientos'],
         ],

@@ -113,12 +113,12 @@ class PacienteController extends Controller
     public function destroy(Paciente $paciente)
     {
         // Con expediente no se borra: la NOM-004 obliga a conservarlo.
-        $tablas = ['citas', 'consultas', 'signos_vitales', 'archivos_clinicos', 'recetas', 'facturas'];
+        $tablas = ['citas', 'consultas', 'signos_vitales', 'archivos_clinicos', 'recetas'];
         foreach ($tablas as $tabla) {
             if (DB::table($tabla)->where('paciente_id', $paciente->id)->exists()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No se puede eliminar: el paciente tiene historial clínico (citas, consultas, recetas o facturas). '
+                    'message' => 'No se puede eliminar: el paciente tiene historial clínico (citas, consultas o recetas). '
                                . 'Por la NOM-004 el expediente debe conservarse.',
                 ], 409);
             }
