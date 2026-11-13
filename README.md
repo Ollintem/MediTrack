@@ -7,6 +7,31 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## MediTrack funciona sin internet
+
+Las librerías de la interfaz ya no se cargan de CDNs: están dentro del proyecto y se suben a git.
+
+| Qué | Dónde |
+|---|---|
+| Alpine.js, SweetAlert2, Flatpickr, Bootstrap Icons, lector QR | `public/vendor/` |
+| Tipografías (Geist, Geist Mono, Bricolage Grotesque) | `public/vendor/fonts/` |
+| Estilos de Tailwind 3.4 (compilados) | `public/css/tailwind.css` |
+
+**Si agregas clases de Tailwind nuevas en una vista**, vuelve a compilar los estilos (Tailwind solo incluye las clases que encuentra escritas en los archivos):
+
+```bash
+npm run css            # compila una vez
+npm run css:vigilar    # recompila solo mientras trabajas
+```
+
+**Si actualizas una librería con npm**, vuelve a copiarla a `public/vendor`:
+
+```bash
+npm run librerias
+```
+
+En una computadora nueva no hace falta correr nada de esto para usar el sistema: los archivos ya vienen en el repositorio.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

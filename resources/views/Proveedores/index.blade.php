@@ -1,7 +1,7 @@
 @extends('layouts.admin')
 
 @section('content')
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+{{-- SweetAlert2 ya lo carga el layout (archivo local) --}}
 
 <style>
     input[type="text"], 

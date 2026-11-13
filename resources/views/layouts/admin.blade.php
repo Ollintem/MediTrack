@@ -25,20 +25,18 @@
             } catch (e) {}
         })();
     </script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    {{-- Librerías locales (public/vendor): el sistema funciona sin internet. Se actualizan con "npm run librerias". --}}
+    <link rel="stylesheet" href="{{ asset('vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+    <link rel="stylesheet" href="{{ asset('vendor/flatpickr/flatpickr.min.css') }}">
 
-    <!-- Tipografías del sistema (DESIGN.md): Bricolage Grotesque, Geist y Geist Mono -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,200..800&family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap">
+    <!-- Tipografías del sistema (DESIGN.md): Bricolage Grotesque, Geist y Geist Mono (archivos locales) -->
+    <link rel="stylesheet" href="{{ asset('vendor/fonts/fuentes.css') }}">
 
     <!-- CSS y JS de SweetAlert2 y Flatpickr -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
+    <link rel="stylesheet" href="{{ asset('vendor/sweetalert2/sweetalert2.min.css') }}">
+    <script src="{{ asset('vendor/sweetalert2/sweetalert2.all.min.js') }}"></script>
+    <script src="{{ asset('vendor/flatpickr/flatpickr.min.js') }}"></script>
+    <script src="{{ asset('vendor/flatpickr/l10n/es.js') }}"></script>
 
     {{-- Estado global del layout (menú, gafete y paleta Ctrl+K). Va antes de Alpine. --}}
 @verbatim
@@ -470,7 +468,7 @@ window.MTCaja = (() => {
 @endverbatim
 
     <!-- Alpine.js -->
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script defer src="{{ asset('vendor/alpinejs/alpine.min.js') }}"></script>
 
     {{-- Estilos de la carcasa (prefijo ly-; el chatbot ya usa mt-). Reglas en DESIGN.md. --}}
 
@@ -1053,6 +1051,9 @@ a.ly-link:hover .bi { color: var(--ly-foil); }
 
 </style>
 @endverbatim
+    {{-- Tailwind compilado (antes cdn.tailwindcss.com). Va al final del <head>, como lo inyectaba el CDN, para que
+         sus clases sigan ganando sobre los estilos del layout. Si agregas clases nuevas en una vista: npm run css --}}
+    <link rel="stylesheet" href="{{ asset('css/tailwind.css') }}?v={{ @filemtime(public_path('css/tailwind.css')) }}">
 </head>
 <body class="ly-body flex h-screen overflow-hidden font-sans text-gray-800"
       x-data="layoutMeditrack()"

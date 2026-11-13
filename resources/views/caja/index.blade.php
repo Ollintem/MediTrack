@@ -397,7 +397,7 @@
     <script type="application/json" id="cj-datos">{!! json_encode($datosCaja, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) !!}</script>
 
     <!-- LECTOR DE CÓDIGOS CON LA CÁMARA (CODE128) -->
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="{{ asset('vendor/html5-qrcode/html5-qrcode.min.js') }}"></script>
 
 
     <script>
