@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Notificaciones internas por usuario (tabla `notificaciones`).
+ * Avisos internos por usuario (campana del encabezado). Los crea App\Services\Notificador.
  */
 class Notificacion extends Model
 {
@@ -14,8 +14,8 @@ class Notificacion extends Model
 
     protected $table = 'notificaciones';
 
-    /** Valores válidos de la columna enum `tipo`. */
-    public const TIPOS = ['Citas', 'Inventario', 'Facturación', 'Sistema'];
+    /** Tipos de aviso (definen el ícono y color en la campana). */
+    public const TIPOS = ['Citas', 'Inventario', 'Caja', 'Nómina', 'Sistema'];
 
     protected $fillable = [
         'clinica_id',
@@ -27,6 +27,7 @@ class Notificacion extends Model
         'referencia_id',
         'tipo',
         'referencia_tipo',
+        'url',
     ];
 
     protected $casts = [
@@ -47,5 +48,19 @@ class Notificacion extends Model
     public function scopeNoLeidas($query)
     {
         return $query->where('leida', false);
+    }
+
+    /** Forma que consume la campana. */
+    public function paraVista(): array
+    {
+        return [
+            'id'      => $this->id,
+            'tipo'    => $this->tipo,
+            'titulo'  => $this->titulo,
+            'mensaje' => $this->mensaje,
+            'leida'   => (bool) $this->leida,
+            'fecha'   => optional($this->fecha ?? $this->created_at)->toIso8601String(),
+            'url'     => $this->url,
+        ];
     }
 }

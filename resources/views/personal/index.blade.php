@@ -258,6 +258,14 @@
                                         </div>
                                     </div>
                                 </div>
+                                <div class="pe-dos">
+                                    <label class="pe-campo" :class="{ 'mal': errores.cuota_hora_extra }">
+                                        <span>Cuota por hora extra <em>(opcional)</em></span>
+                                        <div class="pe-dinero"><b>$</b><input type="text" inputmode="decimal" x-model="form.cuota_hora_extra" maxlength="9" class="t" placeholder="0.00" @input="form.cuota_hora_extra = form.cuota_hora_extra.replace(/[^\d.]/g, ''); errores.cuota_hora_extra = ''" :tabindex="editando ? 0 : -1"><span>MXN</span></div>
+                                        <small x-show="errores.cuota_hora_extra" x-text="errores.cuota_hora_extra"></small>
+                                    </label>
+                                    <p class="pe-ayuda self-end" x-text="Number(form.salario_diario) ? 'Referencia por ley: ' + dinero(Number(form.salario_diario) / 8 * 2) + ' por hora (doble)' : 'Se usa para calcular los pagos extraordinarios del recibo.'"></p>
+                                </div>
                                 <p class="pe-ayuda" x-text="Number(form.salario_diario) ? 'Por pago ' + form.tipo_pago.toLowerCase() + ': ' + dinero(porPeriodo) + ' · aprox. ' + dinero(Number(form.salario_diario) * 30) + ' al mes' : 'Puedes dejarlo vacío y capturarlo después desde Nómina.'"></p>
                             </div>
                         </div>
@@ -540,7 +548,7 @@ function modPersonal() {
     const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const aviso = (m, i) => { if (window.notificar) window.notificar(m, i || 'success'); };
-    const vacio = () => ({ id: null, nombre: '', apellido: '', telefono: '', rut: '', direccion: '', rol_id: '', especialidad: '', turno: 'Completo', estado: 'Activo', acceso: false, username: '', password: '', password2: '', salario_diario: '', tipo_pago: 'QUINCENAL' });
+    const vacio = () => ({ id: null, nombre: '', apellido: '', telefono: '', rut: '', direccion: '', rol_id: '', especialidad: '', turno: 'Completo', estado: 'Activo', acceso: false, username: '', password: '', password2: '', salario_diario: '', cuota_hora_extra: '', tipo_pago: 'QUINCENAL' });
 
     return {
         P: D.personal || [],
@@ -616,7 +624,7 @@ function modPersonal() {
                 id: p.id, nombre: p.pila || p.nombre, apellido: p.apellido || '', telefono: p.telefono || '', rut: p.cedula || '',
                 direccion: p.direccion || '', rol_id: p.rol_id || '', especialidad: p.especialidad || '', turno: p.turno || 'Completo',
                 estado: p.estado || 'Activo', acceso: !!p.acceso, username: p.username || '',
-                salario_diario: p.salario ? String(p.salario) : '', tipo_pago: p.tipo_pago || 'QUINCENAL',
+                salario_diario: p.salario ? String(p.salario) : '', cuota_hora_extra: p.cuota_extra ? String(p.cuota_extra) : '', tipo_pago: p.tipo_pago || 'QUINCENAL',
             });
             this.abrir(true);
         },
@@ -667,6 +675,7 @@ function modPersonal() {
             if (!f.rol_id) e.rol_id = 'Elige el cargo o rol.';
             if (f.telefono && f.telefono.length !== 10) e.telefono = 'El teléfono debe tener 10 dígitos.';
             if (f.salario_diario && isNaN(Number(f.salario_diario))) e.salario_diario = 'Escribe un número.';
+            if (f.cuota_hora_extra && isNaN(Number(f.cuota_hora_extra))) e.cuota_hora_extra = 'Escribe un número.';
             if (f.acceso) {
                 if (!/^[a-z0-9_-]{3,40}$/.test(f.username)) e.username = 'Usa al menos 3 letras minúsculas, números, guion o guion bajo.';
                 if (!this.tieneCuenta || f.password) {
@@ -684,7 +693,7 @@ function modPersonal() {
             const datos = {
                 nombre: this.mayus(f.nombre), apellido: this.mayus(f.apellido), telefono: f.telefono, rut: f.rut, direccion: f.direccion,
                 rol_id: f.rol_id, especialidad: this.esMedico ? f.especialidad : '', turno: f.turno, estado: f.estado,
-                requiere_acceso: f.acceso ? 1 : 0, username: f.username, salario_diario: f.salario_diario || 0, tipo_pago: f.tipo_pago,
+                requiere_acceso: f.acceso ? 1 : 0, username: f.username, salario_diario: f.salario_diario || 0, cuota_hora_extra: f.cuota_hora_extra || 0, tipo_pago: f.tipo_pago,
             };
             if (f.acceso && f.password) { datos.password = f.password; datos.password_confirmation = f.password2; }
             this.guardando = true; this.mensajeMal = false; this.mensajeForm = 'Guardando…';

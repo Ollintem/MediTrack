@@ -73,7 +73,7 @@
                     <p class="text-[11px] font-bold text-slate-500">{{ $titulo }}</p>
                     <span class="w-9 h-9 rounded-xl flex items-center justify-center {{ $color }}"><i class="bi {{ $icono }}"></i></span>
                 </div>
-                <p class="text-2xl font-black text-slate-800 mt-1 tabular-nums truncate">
+                <p class="text-xl xl:text-2xl font-black text-slate-800 mt-1 tabular-nums leading-tight break-words">
                     {{ $esDinero ? '$' . number_format($resumen[$clave] ?? 0, 2) : ($resumen[$clave] ?? 0) }}
                 </p>
             </div>
@@ -82,63 +82,55 @@
 
     <div class="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
 
-        {{-- ===================== PRÓXIMOS PAGOS POR EMPLEADO ===================== --}}
+        {{-- ===================== PRÓXIMOS PAGOS, AGRUPADOS POR FECHA ===================== --}}
+        {{-- Antes había un "Generar" por empleado y una misma quincena podía quedar partida en varios periodos --}}
         <section class="nom-aparece xl:col-span-2 bg-white rounded-3xl border border-slate-200 overflow-hidden" style="animation-delay:280ms">
-            <div class="p-5 border-b border-slate-100 space-y-3">
+            <div class="p-5 border-b border-slate-100">
                 <div class="flex items-center gap-3">
                     <span class="w-9 h-9 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center"><i class="bi bi-alarm"></i></span>
                     <div class="flex-1">
                         <h3 class="text-base font-black text-slate-800">Próximos pagos</h3>
-                        <p class="text-[11px] font-semibold text-slate-400">Sugerencias según el tipo de pago de cada empleado · no se crean hasta que das “Generar”</p>
+                        <p class="text-[11px] font-semibold text-slate-400">Agrupados por fecha · un clic crea un solo periodo con todos sus empleados</p>
                     </div>
                 </div>
-                <div class="flex flex-wrap gap-1.5">
-                    <template x-for="t in ['TODOS', 'SEMANAL', 'QUINCENAL', 'MENSUAL']" :key="t">
-                        <button type="button" @click="filtroTipo = t"
-                                class="px-3 py-1 rounded-full text-[11px] font-bold border transition"
-                                :class="filtroTipo === t ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white border-slate-200 text-slate-500 hover:border-teal-300'">
-                            <span x-text="t === 'TODOS' ? 'Todos' : etiquetaTipo(t)"></span>
-                            <span class="ml-0.5 opacity-70" x-text="t === 'TODOS' ? empleados.length : empleados.filter(e => e.tipo_pago === t).length"></span>
-                        </button>
-                    </template>
-                </div>
-                @if ($puedeCrear)
-                    <button type="button" x-show="filtroTipo !== 'TODOS' && empleadosFiltrados.length" x-cloak @click="abrirNuevoTipo(filtroTipo)"
-                            class="w-full py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 text-[11px] font-black transition flex items-center justify-center gap-1.5">
-                        <i class="bi bi-lightning-charge-fill"></i>
-                        <span x-text="'Generar pago ' + etiquetaTipo(filtroTipo).toLowerCase() + ' para ' + empleadosFiltrados.length + ' empleado(s)'"></span>
-                    </button>
-                @endif
             </div>
 
             <div class="divide-y divide-slate-100 max-h-[560px] overflow-y-auto">
-                <template x-for="(e, i) in empleadosFiltrados" :key="e.id">
-                    <div class="nom-fila p-4 flex items-center gap-3 hover:bg-slate-50/70 transition" :style="'animation-delay:' + Math.min(i * 30, 300) + 'ms'">
-                        <span class="w-10 h-10 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center text-[11px] font-black shrink-0" x-text="iniciales(e.nombre)"></span>
-                        <div class="min-w-0 flex-1">
-                            <a :href="e.ficha" class="block text-sm font-black text-slate-800 hover:text-teal-700 truncate" x-text="e.nombre"></a>
-                            <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
-                                <span class="text-[9px] font-black px-1.5 py-0.5 rounded-md" :class="colorTipo(e.tipo_pago)" x-text="etiquetaTipo(e.tipo_pago)"></span>
-                                <span class="text-[10px] font-semibold text-slate-400" x-text="'Sugerido: ' + rango(e.prox_ini, e.prox_fin)"
-                                      title="Aún no se ha creado; es solo una propuesta según su tipo de pago"></span>
+                <template x-for="(g, i) in proximos" :key="g.clave">
+                    <div class="nom-fila p-4 space-y-3" :style="'animation-delay:' + Math.min(i * 40, 300) + 'ms'">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                    <span class="text-[9px] font-black px-1.5 py-0.5 rounded-md" :class="colorTipo(g.tipo)" x-text="etiquetaTipo(g.tipo)"></span>
+                                    <span class="text-[10px] font-black" :class="g.vence.clase" x-text="g.vence.texto"></span>
+                                </div>
+                                <p class="text-sm font-black text-slate-800 mt-1" x-text="tituloGrupo(g)"></p>
+                                <p class="text-[11px] font-semibold text-slate-500"
+                                   x-text="g.empleados.length + (g.empleados.length === 1 ? ' empleado' : ' empleados') + ' · ' + diasAPagar(g.tipo, g.ini, g.fin) + ' días'"></p>
                             </div>
-                            <p class="text-[10px] font-semibold text-slate-400 mt-1"
-                               x-text="e.ultimo ? 'Último periodo generado hasta el ' + fechaCorta(e.ultimo) : 'Aún no tiene pagos generados'"></p>
-                            <p class="text-[10px] font-black" :class="vencimiento(e).clase" x-text="vencimiento(e).texto"></p>
+                            <div class="text-right shrink-0">
+                                <p class="text-sm font-black text-slate-800 tabular-nums" x-text="dinero(g.total)"></p>
+                                @if ($puedeCrear)
+                                    <button type="button" @click="abrirNuevoGrupo(g)"
+                                            class="mt-1 h-8 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-black inline-flex items-center gap-1.5 transition">
+                                        <i class="bi bi-lightning-charge-fill"></i>
+                                        <span x-text="g.empleados.length === 1 ? 'Generar' : 'Generar para ' + g.empleados.length"></span>
+                                    </button>
+                                @endif
+                            </div>
                         </div>
-                        <div class="text-right shrink-0">
-                            <p class="text-xs font-black text-slate-700 tabular-nums" x-text="e.salario > 0 ? dinero(e.salario * diasAPagar(e.tipo_pago, e.prox_ini, e.prox_fin)) : 'Sin salario'"
-                               :class="e.salario > 0 ? '' : 'text-amber-600'"></p>
-                            @if ($puedeCrear)
-                                <button type="button" @click="abrirNuevoEmpleado(e)"
-                                        class="mt-1 h-7 px-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-black inline-flex items-center gap-1 transition">
-                                    <i class="bi bi-plus-lg"></i> Generar
-                                </button>
-                            @endif
-                        </div>
+                        <ul class="space-y-1">
+                            <template x-for="e in g.empleados" :key="'ge' + e.id">
+                                <li class="flex items-center justify-between gap-2 text-[11px]">
+                                    <a :href="e.ficha" class="font-bold text-slate-700 hover:text-teal-700 truncate" x-text="e.nombre"></a>
+                                    <span class="tabular-nums font-semibold shrink-0" :class="e.salario > 0 ? 'text-slate-500' : 'text-amber-600'"
+                                          x-text="e.salario > 0 ? dinero(e.salario * diasAPagar(g.tipo, g.ini, g.fin)) : 'Sin salario'"></span>
+                                </li>
+                            </template>
+                        </ul>
                     </div>
                 </template>
-                <p x-show="!empleadosFiltrados.length" class="p-8 text-center text-xs font-semibold text-slate-400">No hay empleados con este tipo de pago.</p>
+                <p x-show="!proximos.length" class="p-8 text-center text-xs font-semibold text-slate-400">No hay empleados activos para sugerir pagos.</p>
             </div>
         </section>
 
@@ -201,7 +193,7 @@
             <div x-show="!periodosFiltrados.length" x-cloak class="py-16 text-center px-6">
                 <span class="inline-flex w-16 h-16 rounded-3xl bg-teal-50 text-teal-500 items-center justify-center text-3xl mb-3"><i class="bi bi-cash-coin"></i></span>
                 <p class="text-sm font-black text-slate-600" x-text="periodos.length ? 'No hay periodos con este filtro' : 'Aún no hay pagos registrados'"></p>
-                <p x-show="!periodos.length" class="text-xs text-slate-400 mt-1">Usa “Generar” junto a un empleado o “Nuevo pago”.</p>
+                <p x-show="!periodos.length" class="text-xs text-slate-400 mt-1">Usa “Generar” en Próximos pagos o el botón “Nuevo pago”.</p>
             </div>
         </section>
     </div>
@@ -341,7 +333,6 @@
             empleados: @json($empleados ?? []),
             errores: @json($errors->all()),
             filtro: 'Todos',
-            filtroTipo: 'TODOS',
             modalNuevo: @js($errors->any()),
             buscarEmpleado: '',
             seleccion: @json(array_map('intval', (array) old('personal_ids', []))),
@@ -358,7 +349,6 @@
             },
 
             // ----- Listas -----
-            get empleadosFiltrados() { return this.filtroTipo === 'TODOS' ? this.empleados : this.empleados.filter(e => e.tipo_pago === this.filtroTipo); },
             get periodosFiltrados() {
                 if (this.filtro === 'Pendientes') return this.periodos.filter(p => p.pagados < p.empleados);
                 if (this.filtro === 'Pagado') return this.periodos.filter(p => p.empleados && p.pagados === p.empleados);
@@ -377,6 +367,32 @@
             // ----- Abrir el modal -----
             abrirNuevo() { this.elegirTipo(this.nuevo.tipo || 'QUINCENAL', true); this.buscarEmpleado = ''; this.modalNuevo = true; },
             abrirNuevoTipo(tipo) { this.elegirTipo(tipo, true); this.buscarEmpleado = ''; this.modalNuevo = true; },
+            // Sugerencias agrupadas: mismo tipo de pago y mismas fechas = un solo periodo
+            get proximos() {
+                const grupos = {};
+                for (const e of this.empleados) {
+                    const clave = e.tipo_pago + '|' + e.prox_ini + '|' + e.prox_fin;
+                    const g = grupos[clave] ||= { clave, tipo: e.tipo_pago, ini: e.prox_ini, fin: e.prox_fin, empleados: [], total: 0 };
+                    g.empleados.push(e);
+                    g.total += (e.salario || 0) * this.diasAPagar(e.tipo_pago, e.prox_ini, e.prox_fin);
+                }
+                return Object.values(grupos)
+                    .map(g => ({ ...g, vence: this.vencimiento({ prox_fin: g.fin }) }))
+                    .sort((a, b) => a.fin.localeCompare(b.fin) || a.tipo.localeCompare(b.tipo));
+            },
+            tituloGrupo(g) {
+                const nombre = { SEMANAL: 'Semana', QUINCENAL: 'Quincena', MENSUAL: 'Mes' }[g.tipo] || 'Periodo';
+                return nombre + ' ' + this.rango(g.ini, g.fin);
+            },
+            abrirNuevoGrupo(g) {
+                this.nuevo.tipo = g.tipo;
+                this.nuevo.inicio = g.ini;
+                this.nuevo.fin = g.fin;
+                this.nuevo.pago = g.fin;
+                this.seleccion = g.empleados.map(e => e.id);
+                this.buscarEmpleado = '';
+                this.modalNuevo = true;
+            },
             abrirNuevoEmpleado(e) {
                 this.nuevo.tipo = e.tipo_pago;
                 this.nuevo.inicio = e.prox_ini;

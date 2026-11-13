@@ -494,6 +494,8 @@ function posApp() {
 
         init() {
             setInterval(() => { this.ahora = Date.now(); }, 1000);
+            // Actualización automática: no recargar mientras haya productos en el carrito
+            window.mtOcupado = () => this.carrito.length > 0;
         },
         aviso(m, i = 'success') {
             if (typeof window.notificar === 'function') return window.notificar(m, i);

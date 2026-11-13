@@ -9,6 +9,14 @@ class Cita extends Model
 {
     use HasFactory;
 
+    /** Avisos al médico: nueva cita, reprogramada, cancelada, reasignada o eliminada (App\Services\Notificador). */
+    protected static function booted(): void
+    {
+        static::created(fn (Cita $c) => \App\Services\Notificador::citaCreada($c));
+        static::updated(fn (Cita $c) => \App\Services\Notificador::citaActualizada($c));
+        static::deleted(fn (Cita $c) => \App\Services\Notificador::citaEliminada($c));
+    }
+
     protected $table = 'citas';
 
     protected $fillable = [

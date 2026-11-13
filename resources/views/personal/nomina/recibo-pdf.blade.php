@@ -88,7 +88,11 @@
                     <thead><tr><th>Percepciones</th><th class="num">Importe</th></tr></thead>
                     <tbody>
                         <tr><td>Sueldo</td><td class="num">{{ $m($recibo->sueldo_base) }}</td></tr>
-                        <tr><td>Horas extra</td><td class="num">{{ $m($recibo->horas_extra) }}</td></tr>
+                        @forelse ($recibo->extras as $extra)
+                            <tr><td>{{ $extra->concepto }} ({{ rtrim(rtrim(number_format($extra->horas, 2), '0'), '.') }} h × {{ $m($extra->cuota) }})</td><td class="num">{{ $m($extra->monto) }}</td></tr>
+                        @empty
+                            <tr><td>Horas extra</td><td class="num">{{ $m($recibo->horas_extra) }}</td></tr>
+                        @endforelse
                         <tr><td>Bonos</td><td class="num">{{ $m($recibo->bonos) }}</td></tr>
                     </tbody>
                     <tfoot><tr><td>Total</td><td class="num">{{ $m($recibo->total_percepciones) }}</td></tr></tfoot>

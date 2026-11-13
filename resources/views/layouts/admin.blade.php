@@ -685,6 +685,25 @@ a.ly-link:hover .bi { color: var(--ly-foil); }
 .ly-vacio { display: flex; gap: 12px; padding: 18px 16px 20px; color: var(--ly-media); font-size: 13px; }
 .ly-vacio .bi { font-size: 22px; color: #08734f; }
 .ly-vacio b { display: block; color: var(--ly-tinta); font-weight: 600; margin-bottom: 2px; }
+/* Campana de avisos */
+.ly-notis { width: 360px; }
+.ly-notis-todas { border: 0; background: none; padding: 0; font: 600 12px var(--ly-ui); color: #08734f; cursor: pointer; }
+.ly-notis-todas:hover { text-decoration: underline; }
+.ly-notis-lista { max-height: 420px; overflow-y: auto; }
+.ly-noti { display: flex; gap: 10px; width: 100%; padding: 12px 16px; border: 0; border-bottom: 1px solid var(--ly-linea2); background: transparent; text-align: left; cursor: pointer; position: relative; }
+.ly-noti:hover { background: var(--ly-niebla); }
+.ly-noti.nueva { background: #f3faf7; }
+.ly-noti.nueva:hover { background: #e8f5ef; }
+.ly-noti-ico { flex: none; width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+.ly-noti-ico.t-citas { background: #e6f4f1; color: #0f766e; }
+.ly-noti-ico.t-inventario { background: #fdf3e2; color: #a15c07; }
+.ly-noti-ico.t-caja { background: #e7f6ee; color: #08734f; }
+.ly-noti-ico.t-nomina { background: #eaf2fc; color: #1d5fae; }
+.ly-noti-ico.t-sistema { background: var(--ly-niebla); color: var(--ly-media); }
+.ly-noti-tx { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; font: 400 12.5px/1.35 var(--ly-ui); color: var(--ly-texto); }
+.ly-noti-tx b { font-weight: 650; color: var(--ly-tinta); font-size: 13px; }
+.ly-noti-tx small { font-size: 11px; color: var(--ly-media); }
+.ly-noti-punto { position: absolute; top: 16px; right: 14px; width: 8px; height: 8px; border-radius: 50%; background: var(--ly-rosa); }
 .ly-menu-u { width: 300px; max-width: calc(100vw - 32px); padding: 8px; }
 .ly-gafete { position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 12px; color: #eafaf6; background: linear-gradient(150deg, #0d6a63, var(--ly-cred) 45%, var(--ly-cred2)); }
 .ly-gafete-gl, .ly-gafete-gl svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -1134,7 +1153,8 @@ a.ly-link:hover .bi { color: var(--ly-foil); }
         $folioUsuario  = 'MT-' . str_pad((string) (optional($user)->id ?? 0), 4, '0', STR_PAD_LEFT);
         $puedeConfig   = \Illuminate\Support\Facades\Route::has('configuracion.index') && $puede('Configuración');
 
-        $totalNotificaciones = (int) ($totalNotificaciones ?? 0);
+        // Avisos sin leer del usuario (la campana se actualiza sola después con /notificaciones)
+        $totalNotificaciones = $user ? \App\Models\Notificacion::where('user_id', $user->id)->where('leida', false)->count() : 0;
     @endphp
 
     <!-- FONDO OSCURO EN MÓVIL -->
@@ -1263,16 +1283,33 @@ a.ly-link:hover .bi { color: var(--ly-foil); }
             <span><b class="t" x-text="hora"></b><small x-text="fecha"></small></span>
         </div>
 
-        <!-- Notificaciones -->
-        <div x-data="{ abierto: false }" class="ly-rel" @keydown.escape.stop="abierto = false">
-            <button type="button" class="ly-ico" @click="abierto = !abierto" @click.outside="abierto = false" :aria-expanded="abierto.toString()"
-                    aria-label="Notificaciones{{ $totalNotificaciones ? ': ' . $totalNotificaciones . ' nuevas' : '' }}">
-                <i class="bi bi-bell"></i>
-                @if ($totalNotificaciones > 0)<span class="ly-badge t">{{ $totalNotificaciones > 9 ? '9+' : $totalNotificaciones }}</span>@endif
+        <!-- Notificaciones (campana): avisos de citas, inventario, caja y nómina (App\Services\Notificador) -->
+        <div x-data="campanaAvisos({{ $totalNotificaciones }})" x-init="iniciar()" class="ly-rel" @keydown.escape.stop="abierto = false" @click.outside="abierto = false">
+            <button type="button" class="ly-ico" @click="alternar()" :aria-expanded="String(abierto)"
+                    :aria-label="'Notificaciones' + (sinLeer ? ': ' + sinLeer + (sinLeer === 1 ? ' nueva' : ' nuevas') : '')">
+                <i class="bi" :class="sinLeer ? 'bi-bell-fill' : 'bi-bell'"></i>
+                <span x-show="sinLeer > 0" x-cloak class="ly-badge t" x-text="sinLeer > 9 ? '9+' : sinLeer"></span>
             </button>
             <div x-show="abierto" x-cloak x-transition.origin.top.right class="ly-pop ly-notis">
-                <div class="ly-pop-h"><p>Notificaciones</p><span class="t">{{ $totalNotificaciones }} nuevas</span></div>
-                <div class="ly-vacio"><i class="bi bi-check2-circle"></i><p><b>Todo al día</b>Aquí aparecerán los avisos de citas y de inventario.</p></div>
+                <div class="ly-pop-h">
+                    <p>Notificaciones</p>
+                    <button type="button" x-show="sinLeer > 0" @click="leerTodas()" class="ly-notis-todas">Marcar todas como leídas</button>
+                    <span x-show="!sinLeer" class="t">Sin pendientes</span>
+                </div>
+                <div class="ly-notis-lista">
+                    <template x-for="a in avisos" :key="a.id">
+                        <button type="button" class="ly-noti" :class="{ 'nueva': !a.leida }" @click="abrirAviso(a)">
+                            <span class="ly-noti-ico" :class="'t-' + claseTipo(a.tipo)"><i class="bi" :class="iconoTipo(a.tipo)"></i></span>
+                            <span class="ly-noti-tx">
+                                <b x-text="a.titulo"></b>
+                                <span x-text="a.mensaje"></span>
+                                <small x-text="hace(a.fecha)"></small>
+                            </span>
+                            <i x-show="!a.leida" class="ly-noti-punto" aria-label="Sin leer"></i>
+                        </button>
+                    </template>
+                    <div x-show="cargado && !avisos.length" class="ly-vacio"><i class="bi bi-check2-circle"></i><p><b>Todo al día</b>Aquí aparecerán los avisos de citas, inventario, caja y nómina.</p></div>
+                </div>
             </div>
         </div>
 
@@ -1313,6 +1350,9 @@ a.ly-link:hover .bi { color: var(--ly-foil); }
         <main id="main-content" class="px-4 sm:px-6 lg:px-8 pt-3 pb-8 space-y-6 w-full min-w-0 flex-1 block page-fade-in">
             @yield('content')
         </main>
+
+        {{-- Actualización automática de la pantalla cuando otra persona hace cambios --}}
+        @include('partials.actualizacion-automatica')
     </div>
 
     {{-- Paleta de búsqueda global (Ctrl+K) --}}
@@ -1847,6 +1887,77 @@ a.ly-link:hover .bi { color: var(--ly-foil); }
             // Número que cambia
             window.mtNumero = sel => { const el = elem(sel); if (el && !quieto()) reinicia(el, 'mt-num'); };
         })();
+    </script>
+
+    <!-- CAMPANA DE AVISOS: se actualiza sola y avisa con un mensaje pequeño cuando llega uno nuevo -->
+    <script>
+        function campanaAvisos(inicial) {
+            const URL_AVISOS = @js(route('notificaciones.index'));
+            const URL_TODAS  = @js(route('notificaciones.leer-todas'));
+            const TOKEN      = @js(csrf_token());
+            const ICONOS = { Citas: 'bi-calendar2-week', Inventario: 'bi-box-seam', Caja: 'bi-cash-coin', 'Nómina': 'bi-wallet2' };
+
+            return {
+                abierto: false, cargado: false, sinLeer: inicial, avisos: [], ultimoId: null,
+
+                iniciar() {
+                    this.cargar(false);
+                    setInterval(() => { if (document.visibilityState === 'visible') this.cargar(true); }, 20000);
+                },
+                async cargar(avisarNuevos) {
+                    try {
+                        const r = await fetch(URL_AVISOS, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, cache: 'no-store' });
+                        if (!r.ok) return;
+                        const d = await r.json();
+                        // Los que llegaron desde la última revisión: un mensaje pequeño en la esquina
+                        if (avisarNuevos && this.ultimoId !== null) {
+                            const nuevos = d.avisos.filter(a => a.id > this.ultimoId && !a.leida);
+                            if (nuevos.length && window.Swal) {
+                                Swal.fire({
+                                    toast: true, position: 'top-end', showConfirmButton: false, timer: 6000, timerProgressBar: true,
+                                    icon: 'info', title: nuevos.length === 1 ? nuevos[0].titulo : nuevos.length + ' avisos nuevos',
+                                    text: nuevos.length === 1 ? nuevos[0].mensaje : 'Revisa la campana de notificaciones.',
+                                });
+                            }
+                        }
+                        this.avisos = d.avisos;
+                        this.sinLeer = d.sin_leer;
+                        this.ultimoId = d.avisos.length ? Math.max(...d.avisos.map(a => a.id)) : 0;
+                        this.cargado = true;
+                    } catch (e) { /* sin conexión: se reintenta en la siguiente vuelta */ }
+                },
+                alternar() { this.abierto = !this.abierto; if (this.abierto) this.cargar(false); },
+
+                async abrirAviso(a) {
+                    try {
+                        const r = await fetch(@js(url('notificaciones')) + '/' + a.id + '/leer', {
+                            method: 'POST', headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': TOKEN, 'X-Requested-With': 'XMLHttpRequest' },
+                        });
+                        const d = r.ok ? await r.json() : {};
+                        if (!a.leida) { a.leida = true; this.sinLeer = Math.max(0, this.sinLeer - 1); }
+                        if (d.url) window.location.href = d.url;
+                    } catch (e) {}
+                },
+                async leerTodas() {
+                    try {
+                        await fetch(URL_TODAS, { method: 'POST', headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': TOKEN, 'X-Requested-With': 'XMLHttpRequest' } });
+                        this.avisos.forEach(a => a.leida = true);
+                        this.sinLeer = 0;
+                    } catch (e) {}
+                },
+
+                iconoTipo(t) { return ICONOS[t] || 'bi-info-circle'; },
+                claseTipo(t) { return ({ Citas: 'citas', Inventario: 'inventario', Caja: 'caja', 'Nómina': 'nomina' })[t] || 'sistema'; },
+                hace(iso) {
+                    if (!iso) return '';
+                    const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+                    if (s < 60) return 'hace un momento';
+                    const m = Math.round(s / 60); if (m < 60) return 'hace ' + m + ' min';
+                    const h = Math.round(m / 60); if (h < 24) return 'hace ' + h + (h === 1 ? ' hora' : ' horas');
+                    const d = Math.round(h / 24); return d === 1 ? 'ayer' : 'hace ' + d + ' días';
+                },
+            };
+        }
     </script>
 
     <!-- NOTIFICACIONES TOAST -->

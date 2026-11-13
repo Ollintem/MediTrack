@@ -10,6 +10,12 @@ class ProductoInventario extends Model
 {
     use HasFactory;
 
+    /** Aviso de stock bajo o agotado cuando el estado cruza ese límite (App\Services\Notificador). */
+    protected static function booted(): void
+    {
+        static::updated(fn (ProductoInventario $p) => \App\Services\Notificador::stockCambio($p));
+    }
+
     protected $table = 'productos_inventario';
 
     protected $fillable = [

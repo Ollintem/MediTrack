@@ -408,6 +408,7 @@ class PersonalController extends Controller
             'email'        => $email ?: null,
             'username'     => $email && str_ends_with($email, '@' . self::DOMINIO) ? substr($email, 0, -strlen('@' . self::DOMINIO)) : ($email ? strstr($email, '@', true) : ''),
             'salario'      => (float) ($p->salario_diario ?? 0),
+            'cuota_extra'  => (float) ($p->cuota_hora_extra ?? 0),
             'tipo_pago'    => in_array($p->tipo_pago, self::TIPOS_PAGO, true) ? $p->tipo_pago : 'QUINCENAL',
             'folio'        => 'MT-' . str_pad((string) ($p->user_id ?: $p->id), 4, '0', STR_PAD_LEFT),
             'desde'        => $p->created_at ? $p->created_at->locale('es')->translatedFormat('M Y') : null,
@@ -455,6 +456,7 @@ class PersonalController extends Controller
             'turno'          => 'required|in:' . implode(',', self::TURNOS),
             'estado'         => 'nullable|in:Activo,Inactivo',
             'salario_diario' => 'nullable|numeric|min:0|max:999999',
+            'cuota_hora_extra' => 'nullable|numeric|min:0|max:99999',
             'tipo_pago'      => 'nullable|in:' . implode(',', self::TIPOS_PAGO),
         ];
     }
@@ -472,6 +474,8 @@ class PersonalController extends Controller
             'turno.in'               => 'Elige un turno válido.',
             'salario_diario.numeric' => 'El salario diario debe ser un número.',
             'salario_diario.min'     => 'El salario diario no puede ser negativo.',
+            'cuota_hora_extra.numeric' => 'La cuota por hora extra debe ser un número.',
+            'cuota_hora_extra.min'     => 'La cuota por hora extra no puede ser negativa.',
             'tipo_pago.in'           => 'El tipo de pago debe ser semanal, quincenal o mensual.',
             'username.required'      => 'Escribe el usuario para iniciar sesión.',
             'username.alpha_dash'    => 'El usuario solo admite letras, números, guion y guion bajo.',
@@ -513,13 +517,14 @@ class PersonalController extends Controller
         return $t !== '' ? mb_substr(mb_strtoupper($t, 'UTF-8'), 0, $max) : null;
     }
 
-    /** Salario diario y tipo de pago del bloque "Datos de nómina". */
+    /** Salario diario, cuota por hora extra y tipo de pago del bloque "Datos de nómina". */
     private function datosNomina(Request $request): array
     {
         $tipo = strtoupper((string) $request->input('tipo_pago', 'QUINCENAL'));
 
         return [
-            'salario_diario' => round((float) ($request->input('salario_diario') ?: 0), 2),
+            'salario_diario'   => round((float) ($request->input('salario_diario') ?: 0), 2),
+            'cuota_hora_extra' => round((float) ($request->input('cuota_hora_extra') ?: 0), 2),
             'tipo_pago'      => in_array($tipo, self::TIPOS_PAGO, true) ? $tipo : 'QUINCENAL',
         ];
     }

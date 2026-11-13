@@ -109,13 +109,13 @@ class NominaController extends Controller
 
         $n = $periodo->recibos()->count();
 
-        return redirect()->route('personal.nomina.show', $periodo)
+        return redirect()->route('personal.nomina.show', [$periodo, 'pagar' => 1])   // llega con los recibos marcados para pagar
             ->with('success', $n === 1 ? 'Pago creado para 1 empleado.' : "Periodo creado con {$n} recibos.");
     }
 
     public function show(PeriodoNomina $periodo)
     {
-        $periodo->load('recibos.personal');
+        $periodo->load('recibos.personal', 'recibos.extras');
 
         $incluidos   = $periodo->recibos->pluck('personal_id')->all();
         $disponibles = $this->empleadosActivos()
@@ -258,20 +258,55 @@ class NominaController extends Controller
         }
 
         $data = $request->validate([
-            'salario_diario'    => 'required|numeric|min:0|max:999999',
-            'dias_trabajados'   => 'required|numeric|min:0|max:31',
-            'horas_extra'       => 'nullable|numeric|min:0|max:9999999',
-            'bonos'             => 'nullable|numeric|min:0|max:9999999',
-            'isr'               => 'nullable|numeric|min:0|max:9999999',
-            'imss'              => 'nullable|numeric|min:0|max:9999999',
-            'otras_deducciones' => 'nullable|numeric|min:0|max:9999999',
-            'notas'             => 'nullable|string|max:1000',
-            'guardar_salario'   => 'nullable|boolean',
+            'salario_diario'     => 'required|numeric|min:0|max:999999',
+            'dias_trabajados'    => 'required|numeric|min:0|max:31',
+            'bonos'              => 'nullable|numeric|min:0|max:9999999',
+            'isr'                => 'nullable|numeric|min:0|max:9999999',
+            'imss'               => 'nullable|numeric|min:0|max:9999999',
+            'otras_deducciones'  => 'nullable|numeric|min:0|max:9999999',
+            'notas'              => 'nullable|string|max:1000',
+            'guardar_salario'    => 'nullable|boolean',
+            // Pagos extraordinarios: concepto + horas; el monto lo calcula el servidor con la cuota declarada
+            'extras'             => 'nullable|array|max:30',
+            'extras.*.concepto'  => 'required|string|max:150',
+            'extras.*.horas'     => 'required|numeric|min:0.25|max:200',
+        ], [
+            'extras.*.concepto.required' => 'Escribe el concepto de cada pago extraordinario.',
+            'extras.*.horas.required'    => 'Indica las horas de cada pago extraordinario.',
+            'extras.*.horas.min'         => 'Las horas deben ser al menos 0.25 (15 minutos).',
         ]);
 
-        $recibo->fill(collect($data)->except(['guardar_salario', 'notas'])->map(fn ($v) => $v ?? 0)->all());
-        $recibo->notas = $data['notas'] ?? null;
-        $recibo->recalcular()->save();
+        $extras = collect($data['extras'] ?? []);
+        $cuota  = (float) ($recibo->personal->cuota_hora_extra ?? 0);
+
+        if ($extras->isNotEmpty() && $cuota <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Para agregar pagos extraordinarios, primero declara la cuota por hora extra en la ficha de '
+                           . ($this->nombre($recibo->personal) ?: 'este empleado') . ' (Personal → Datos de nómina).',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($recibo, $data, $extras, $cuota) {
+            $recibo->fill(collect($data)->only(['salario_diario', 'dias_trabajados', 'bonos', 'isr', 'imss', 'otras_deducciones'])
+                ->map(fn ($v) => $v ?? 0)->all());
+            $recibo->notas = $data['notas'] ?? null;
+
+            // Se reemplazan los renglones; cada uno guarda la cuota con que se calculó
+            $recibo->extras()->delete();
+            foreach ($extras as $e) {
+                $horas = round((float) $e['horas'], 2);
+                $recibo->extras()->create([
+                    'concepto' => mb_strtoupper(trim($e['concepto']), 'UTF-8'),
+                    'horas'    => $horas,
+                    'cuota'    => $cuota,
+                    'monto'    => round($horas * $cuota, 2),
+                ]);
+            }
+            $recibo->horas_extra = round($recibo->extras()->sum('monto'), 2);
+
+            $recibo->recalcular()->save();
+        });
 
         if ($request->boolean('guardar_salario') && $recibo->personal) {
             $recibo->personal->forceFill(['salario_diario' => $data['salario_diario']])->save();
@@ -280,7 +315,7 @@ class NominaController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Recibo actualizado.',
-            'recibo'  => $this->reciboParaVista($recibo->fresh('personal')),
+            'recibo'  => $this->reciboParaVista($recibo->fresh(['personal', 'extras'])),
         ]);
     }
 
@@ -324,7 +359,7 @@ class NominaController extends Controller
             $periodo->sincronizarEstado();
         });
 
-        $periodo->load('recibos.personal');
+        $periodo->load('recibos.personal', 'recibos.extras');
         $n = $recibos->count();
 
         return response()->json([
@@ -350,13 +385,13 @@ class NominaController extends Controller
             'success' => true,
             'message' => 'Pago revertido; el recibo vuelve a estar pendiente.',
             'estado'  => $recibo->periodo->estado,
-            'recibo'  => $this->reciboParaVista($recibo->fresh('personal')),
+            'recibo'  => $this->reciboParaVista($recibo->fresh(['personal', 'extras'])),
         ]);
     }
 
     public function pdf(ReciboNomina $recibo)
     {
-        $recibo->load('periodo', 'personal');
+        $recibo->load('periodo', 'personal', 'extras');
 
         $datos = [
             'recibo'   => $recibo,
@@ -380,7 +415,7 @@ class NominaController extends Controller
 
     public function empleado(Personal $personal)
     {
-        $recibos = ReciboNomina::with('periodo')
+        $recibos = ReciboNomina::with('periodo', 'extras')
             ->where('personal_id', $personal->id)
             ->get()
             ->sortByDesc(fn ($r) => optional($r->periodo)->fecha_inicio)
@@ -538,6 +573,8 @@ class NominaController extends Controller
             'dias_trabajados'    => $r->dias_trabajados,
             'sueldo_base'        => $r->sueldo_base,
             'horas_extra'        => $r->horas_extra,
+            'extras'             => $r->extras->map(fn ($e) => ['concepto' => $e->concepto, 'horas' => $e->horas, 'cuota' => $e->cuota, 'monto' => $e->monto])->values(),
+            'cuota_hora_extra'   => (float) (data_get($r->personal, 'cuota_hora_extra') ?? 0),
             'bonos'              => $r->bonos,
             'isr'                => $r->isr,
             'imss'               => $r->imss,

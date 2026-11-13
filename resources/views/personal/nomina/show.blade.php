@@ -60,7 +60,8 @@
                             <span x-text="estado === 'Abierto' ? 'Cerrar edición' : 'Reabrir'"></span>
                         </button>
                     </form>
-                    <button type="button" x-show="pendientes.length" @click="abrirPago(pendientes)"
+                    {{-- Marca todos los pendientes; el pago se registra en la barra de abajo (sin ventanas) --}}
+                    <button type="button" x-show="pendientes.length" @click="marcarParaPagar(pendientes)"
                             class="px-4 py-2.5 rounded-2xl bg-white text-teal-900 hover:bg-emerald-50 text-xs font-black shadow-lg shadow-teal-950/25 flex items-center gap-2 transition">
                         <i class="bi bi-cash-coin"></i> <span x-text="'Pagar a todos (' + pendientes.length + ')'"></span>
                     </button>
@@ -84,7 +85,7 @@
                     <p class="text-[11px] font-bold text-slate-500" x-text="t.titulo"></p>
                     <span class="w-9 h-9 rounded-xl flex items-center justify-center" :class="t.color"><i class="bi" :class="t.icono"></i></span>
                 </div>
-                <p class="text-2xl font-black mt-1 tabular-nums truncate text-slate-800" x-text="t.valor"></p>
+                <p class="text-xl xl:text-2xl font-black mt-1 tabular-nums leading-tight break-words text-slate-800" x-text="t.valor"></p>
             </div>
         </template>
     </div>
@@ -122,12 +123,6 @@
             {{-- Barra de acciones --}}
             @if ($puedeEditar)
                 <div class="flex flex-wrap items-center gap-2">
-                    <div x-show="marcados.length" x-cloak x-transition.opacity class="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-teal-600 text-white text-xs font-bold">
-                        <span x-text="marcados.length + ' seleccionado(s) · ' + dinero(sumaNeto(recibosMarcados))"></span>
-                        <button type="button" @click="abrirPago(recibosMarcados)" class="px-3 py-1 rounded-xl bg-white text-teal-800 font-black hover:bg-emerald-50"><i class="bi bi-cash-coin"></i> Pagar</button>
-                        <button type="button" @click="marcados = []" class="px-2 py-1 rounded-xl hover:bg-white/15" title="Quitar selección"><i class="bi bi-x-lg"></i></button>
-                    </div>
-
                     <form x-show="estado === 'Abierto' && disponibles.length" method="POST" action="{{ route('personal.nomina.agregar', $periodo) }}" class="ml-auto flex items-center gap-2">
                         @csrf
                         <select name="personal_id" required class="h-9 pl-3 pr-8 rounded-2xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:border-teal-500 outline-none">
@@ -154,8 +149,8 @@
                         @endif
                         <th class="py-3.5 px-4">Empleado</th>
                         <th class="py-3.5 px-4 text-center hidden md:table-cell">Días</th>
-                        <th class="py-3.5 px-4 text-right hidden lg:table-cell">Percepciones</th>
-                        <th class="py-3.5 px-4 text-right hidden lg:table-cell">Deducciones</th>
+                        <th class="py-3.5 px-4 text-right hidden xl:table-cell">Percepciones</th>
+                        <th class="py-3.5 px-4 text-right hidden xl:table-cell">Deducciones</th>
                         <th class="py-3.5 px-4 text-right">Neto</th>
                         <th class="py-3.5 px-4">Pago</th>
                         <th class="py-3.5 px-4 text-right">Acciones</th>
@@ -184,8 +179,8 @@
                                 </div>
                             </td>
                             <td class="py-3.5 px-4 text-center tabular-nums hidden md:table-cell" x-text="r.dias_trabajados"></td>
-                            <td class="py-3.5 px-4 text-right tabular-nums hidden lg:table-cell" x-text="dinero(r.total_percepciones)"></td>
-                            <td class="py-3.5 px-4 text-right tabular-nums text-rose-600 hidden lg:table-cell" x-text="'-' + dinero(r.total_deducciones)"></td>
+                            <td class="py-3.5 px-4 text-right tabular-nums hidden xl:table-cell" x-text="dinero(r.total_percepciones)"></td>
+                            <td class="py-3.5 px-4 text-right tabular-nums text-rose-600 hidden xl:table-cell" x-text="menos(r.total_deducciones)"></td>
                             <td class="py-3.5 px-4 text-right tabular-nums font-black text-slate-900" x-text="dinero(r.neto)"></td>
                             <td class="py-3.5 px-4">
                                 <template x-if="r.estado === 'Pagado'">
@@ -198,35 +193,25 @@
                                     <span class="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-700"><span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Pendiente</span>
                                 </template>
                             </td>
-                            <td class="py-3.5 px-4 text-right whitespace-nowrap">
-                                <div class="inline-flex items-center gap-1">
+                            <td class="py-3.5 pl-2 pr-4 text-right whitespace-nowrap">
+                                <div class="inline-flex items-center gap-1.5">
+                                    {{-- Acción principal con texto: Pagar (pendiente) o Ver (pagado) --}}
                                     @if ($puedeEditar)
-                                        <button type="button" x-show="r.estado !== 'Pagado'" @click="abrirPago([r])" title="Registrar pago"
-                                                class="h-8 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black flex items-center gap-1 transition">
-                                            <i class="bi bi-cash"></i><span class="hidden xl:inline">Pagar</span>
+                                        <button type="button" x-show="r.estado !== 'Pagado'" @click="marcarParaPagar([r])"
+                                                class="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black flex items-center gap-1.5 transition">
+                                            <i class="bi bi-cash"></i> Pagar
                                         </button>
                                     @endif
-                                    <button type="button" @click="editar(r)" :title="editable(r) ? 'Editar recibo' : 'Ver detalle'"
-                                            class="w-8 h-8 rounded-xl flex items-center justify-center transition"
-                                            :class="editable(r) ? 'bg-sky-50 text-sky-600 hover:bg-sky-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'">
-                                        <i class="bi text-[11px]" :class="editable(r) ? 'bi-pencil-fill' : 'bi-eye-fill'"></i>
+                                    <button type="button" x-show="r.estado === 'Pagado'{{ $puedeEditar ? '' : ' || true' }}" @click="editar(r)"
+                                            class="h-8 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-black flex items-center gap-1.5 transition">
+                                        <i class="bi bi-eye"></i> Ver
                                     </button>
-                                    <a :href="URL_RECIBOS + '/' + r.id + '/pdf'" target="_blank" title="Recibo en PDF"
-                                       class="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center transition">
-                                        <i class="bi bi-file-earmark-pdf-fill text-[12px]"></i>
-                                    </a>
-                                    @if ($puedeEditar)
-                                        <button type="button" x-show="r.estado === 'Pagado'" @click="revertir(r)" title="Revertir pago"
-                                                class="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 hover:bg-amber-100 flex items-center justify-center transition">
-                                            <i class="bi bi-arrow-counterclockwise text-[12px]"></i>
-                                        </button>
-                                    @endif
-                                    @if ($puedeEditar || $puedeEliminar)
-                                        <button type="button" x-show="puedeBorrar(r)" @click="quitar(r)" title="Eliminar recibo"
-                                                class="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center transition">
-                                            <i class="bi bi-trash-fill text-[11px]"></i>
-                                        </button>
-                                    @endif
+                                    {{-- Lo demás, con su nombre escrito, en el menú "⋯" --}}
+                                    <button type="button" @click="abrirMenu(r, $event)" :aria-expanded="String(!!(menu.r && menu.r.id === r.id))"
+                                            class="w-8 h-8 rounded-xl hover:bg-slate-100 text-slate-500 flex items-center justify-center transition"
+                                            :aria-label="'Más acciones para ' + r.empleado" title="Más acciones">
+                                        <i class="bi bi-three-dots"></i>
+                                    </button>
                                 </div>
                             </td>
                         </tr>
@@ -237,8 +222,8 @@
                         @if ($puedeEditar)<td></td>@endif
                         <td class="py-3.5 px-4">Totales</td>
                         <td class="hidden md:table-cell"></td>
-                        <td class="py-3.5 px-4 text-right tabular-nums hidden lg:table-cell" x-text="dinero(totales.percepciones)"></td>
-                        <td class="py-3.5 px-4 text-right tabular-nums text-rose-600 hidden lg:table-cell" x-text="'-' + dinero(totales.deducciones)"></td>
+                        <td class="py-3.5 px-4 text-right tabular-nums hidden xl:table-cell" x-text="dinero(totales.percepciones)"></td>
+                        <td class="py-3.5 px-4 text-right tabular-nums text-rose-600 hidden xl:table-cell" x-text="menos(totales.deducciones)"></td>
                         <td class="py-3.5 px-4 text-right tabular-nums text-teal-700" x-text="dinero(totales.neto)"></td>
                         <td colspan="2"></td>
                     </tr>
@@ -252,69 +237,84 @@
         </div>
     </div>
 
-    {{-- ===================== MODAL: REGISTRAR PAGO ===================== --}}
-    <template x-teleport="body">
-        <div x-show="modalPago" x-cloak @keydown.escape.window="modalPago = false"
-             class="fixed inset-0 z-[9999] bg-slate-950/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4" x-transition.opacity>
-            <div class="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-lg max-h-[94vh] flex flex-col overflow-hidden" @click.outside="modalPago = false" x-show="modalPago"
-                 x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-8 sm:scale-95" x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100">
-                <div class="px-6 py-5 border-b border-slate-100 flex items-center gap-3 shrink-0">
-                    <span class="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center"><i class="bi bi-cash-coin text-lg"></i></span>
-                    <div class="flex-1">
-                        <h3 class="text-base font-black text-slate-800" x-text="pago.recibos.length === 1 ? 'Pagar a ' + pago.recibos[0].empleado : 'Pagar a ' + pago.recibos.length + ' empleados'"></h3>
-                        <p class="text-[11px] text-slate-400 font-semibold">Se registrará como pagado cada recibo</p>
-                    </div>
-                    <button type="button" @click="modalPago = false" class="w-8 h-8 rounded-xl hover:bg-slate-100 text-slate-400"><i class="bi bi-x-lg"></i></button>
-                </div>
-
-                <div class="p-6 overflow-y-auto space-y-5 text-xs">
-                    <div class="rounded-2xl border border-slate-200 divide-y divide-slate-100 max-h-48 overflow-y-auto">
-                        <template x-for="r in pago.recibos" :key="'p' + r.id">
-                            <div class="flex items-center justify-between px-3.5 py-2">
-                                <span class="font-bold text-slate-700 truncate pr-2" x-text="r.empleado"></span>
-                                <span class="font-black tabular-nums" :class="r.neto < 0 ? 'text-rose-600' : 'text-slate-800'" x-text="dinero(r.neto)"></span>
-                            </div>
+    {{-- ===================== BARRA DE PAGO (sin ventanas) ===================== --}}
+    {{-- Aparece al marcar recibos; se queda pegada abajo mientras te mueves por la tabla --}}
+    @if ($puedeEditar)
+        <div x-show="marcados.length" x-cloak x-transition.opacity x-ref="barraPago"
+             class="sticky bottom-3 z-30 bg-slate-900 text-white rounded-3xl shadow-2xl shadow-slate-900/30 p-4 flex flex-col xl:flex-row xl:items-end gap-3">
+            <div class="min-w-0 xl:w-56 shrink-0">
+                <p class="text-[10px] font-bold text-slate-400 uppercase">A pagar</p>
+                <p class="text-xl font-black tabular-nums" x-text="dinero(sumaNeto(recibosMarcados))"></p>
+                <p class="text-[11px] font-semibold text-slate-300 truncate"
+                   x-text="recibosMarcados.length === 1 ? recibosMarcados[0].empleado : recibosMarcados.length + ' empleados seleccionados'"></p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">
+                <label class="block">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase">Fecha de pago</span>
+                    <input type="date" x-model="pago.fecha" max="{{ today()->toDateString() }}" x-ref="fechaPago"
+                           class="mt-1 w-full rounded-xl border-0 bg-white/10 text-white text-xs font-bold px-3 py-2 focus:ring-2 focus:ring-emerald-400 [color-scheme:dark]">
+                </label>
+                <div>
+                    <span class="text-[10px] font-bold text-slate-400 uppercase">Forma de pago</span>
+                    <div class="mt-1 grid grid-cols-3 gap-1 p-1 rounded-xl bg-white/10" role="radiogroup" aria-label="Forma de pago">
+                        <template x-for="m in [['EFECTIVO','Efectivo'],['TRANSFERENCIA','Transfer.'],['CHEQUE','Cheque']]" :key="m[0]">
+                            <button type="button" role="radio" :aria-checked="String(pago.metodo === m[0])" @click="pago.metodo = m[0]" :title="metodoTexto(m[0])"
+                                    class="py-1 rounded-lg text-[11px] font-black transition"
+                                    :class="pago.metodo === m[0] ? 'bg-emerald-500 text-white' : 'text-slate-300 hover:bg-white/10'" x-text="m[1]"></button>
                         </template>
                     </div>
-
-                    <div class="grid grid-cols-2 gap-3">
-                        <label class="block"><span class="nom-label">Fecha de pago *</span><input type="date" x-model="pago.fecha" max="{{ today()->toDateString() }}" class="nom-input"></label>
-                        <label class="block"><span class="nom-label">Referencia</span><input type="text" x-model="pago.referencia" maxlength="100" class="nom-input" placeholder="Folio, núm. de transferencia…"></label>
-                    </div>
-
-                    <div>
-                        <span class="nom-label">Forma de pago *</span>
-                        <div class="grid grid-cols-3 gap-2">
-                            <template x-for="m in [['EFECTIVO','bi-cash-stack'],['TRANSFERENCIA','bi-bank'],['CHEQUE','bi-journal-check']]" :key="m[0]">
-                                <button type="button" @click="pago.metodo = m[0]"
-                                        class="p-3 rounded-2xl border-2 text-center transition"
-                                        :class="pago.metodo === m[0] ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-500 hover:border-emerald-200'">
-                                    <i class="bi text-lg" :class="m[1]"></i>
-                                    <p class="text-[10px] font-black mt-1" x-text="metodoTexto(m[0])"></p>
-                                </button>
-                            </template>
-                        </div>
-                    </div>
-
-                    <div class="rounded-2xl bg-slate-900 text-white p-4 flex items-center justify-between">
-                        <span class="text-[11px] font-bold text-slate-300 uppercase">Total a pagar</span>
-                        <span class="text-xl font-black tabular-nums" x-text="dinero(sumaNeto(pago.recibos))"></span>
-                    </div>
                 </div>
-
-                <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2 shrink-0">
-                    <button type="button" @click="modalPago = false" class="px-5 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-100">Cancelar</button>
-                    <button type="button" @click="confirmarPago()" :disabled="guardando || !pago.fecha || !pago.metodo"
-                            class="px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black shadow-lg shadow-emerald-600/20 flex items-center gap-2">
-                        <span x-show="guardando" class="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
-                        <i x-show="!guardando" class="bi bi-check2-circle"></i> Registrar pago
-                    </button>
-                </div>
+                <label class="block">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase">Referencia <span class="normal-case font-semibold">(opcional)</span></span>
+                    <input type="text" x-model="pago.referencia" maxlength="100" placeholder="Folio o núm. de transferencia"
+                           class="mt-1 w-full rounded-xl border-0 bg-white/10 text-white placeholder-slate-400 text-xs font-bold px-3 py-2 focus:ring-2 focus:ring-emerald-400">
+                </label>
             </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <button type="button" @click="marcados = []" class="h-10 px-3 rounded-xl hover:bg-white/10 text-slate-300 text-xs font-bold">Cancelar</button>
+                <button type="button" @click="confirmarPago()" :disabled="guardando || !pago.fecha || !pago.metodo"
+                        class="h-10 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white text-xs font-black flex items-center gap-2 shadow-lg shadow-emerald-900/30">
+                    <span x-show="guardando" class="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                    <i x-show="!guardando" class="bi bi-check2-circle"></i>
+                    <span x-text="recibosMarcados.length === 1 ? 'Registrar pago' : 'Registrar ' + recibosMarcados.length + ' pagos'"></span>
+                </button>
+            </div>
+        </div>
+    @endif
+
+    {{-- Menú "⋯" de cada recibo: se dibuja sobre la página (no lo recorta la tabla) --}}
+    <template x-teleport="body">
+        <div x-show="menu.r" x-cloak @click.outside="cerrarMenu()" @keydown.escape.window="cerrarMenu()" @scroll.window="cerrarMenu()" @resize.window="cerrarMenu()"
+             class="fixed z-[9998] w-52 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 text-xs font-bold text-slate-700"
+             :style="'top:' + menu.y + 'px; left:' + menu.x + 'px'" role="menu">
+            <template x-if="menu.r">
+                <div>
+                    <button type="button" role="menuitem" @click="const r = menu.r; cerrarMenu(); editar(r)"
+                            class="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5">
+                        <i class="bi w-4" :class="editable(menu.r) ? 'bi-pencil text-sky-600' : 'bi-eye text-slate-500'"></i>
+                        <span x-text="editable(menu.r) ? 'Editar recibo' : 'Ver detalle'"></span>
+                    </button>
+                    <a role="menuitem" :href="URL_RECIBOS + '/' + menu.r.id + '/pdf'" target="_blank" @click="cerrarMenu()"
+                       class="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5">
+                        <i class="bi bi-file-earmark-pdf text-rose-600 w-4"></i> Recibo en PDF
+                    </a>
+                    @if ($puedeEditar)
+                        <button type="button" role="menuitem" x-show="menu.r.estado === 'Pagado'" @click="const r = menu.r; cerrarMenu(); revertir(r)"
+                                class="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5">
+                            <i class="bi bi-arrow-counterclockwise text-amber-600 w-4"></i> Revertir pago
+                        </button>
+                    @endif
+                    @if ($puedeEditar || $puedeEliminar)
+                        <button type="button" role="menuitem" x-show="puedeBorrar(menu.r)" @click="const r = menu.r; cerrarMenu(); quitar(r)"
+                                class="w-full px-3.5 py-2 text-left hover:bg-rose-50 text-rose-700 flex items-center gap-2.5 border-t border-slate-100 mt-1 pt-2">
+                            <i class="bi bi-trash w-4"></i> Eliminar recibo
+                        </button>
+                    @endif
+                </div>
+            </template>
         </div>
     </template>
 
-    {{-- ===================== MODAL: RECIBO ===================== --}}
     <template x-teleport="body">
         <div x-show="modal" x-cloak @keydown.escape.window="modal = false"
              class="fixed inset-0 z-[9999] bg-slate-950/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4" x-transition.opacity>
@@ -340,16 +340,47 @@
 
                     <div class="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100 space-y-3">
                         <h4 class="text-[11px] font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1.5"><i class="bi bi-plus-circle-fill"></i> Percepciones</h4>
-                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div class="grid grid-cols-3 gap-3">
                             <label class="block"><span class="nom-label">Salario diario</span><input type="number" step="0.01" min="0" x-model.number="form.salario_diario" class="nom-input"></label>
                             <label class="block"><span class="nom-label">Días</span><input type="number" step="0.5" min="0" max="31" x-model.number="form.dias_trabajados" class="nom-input"></label>
-                            <label class="block"><span class="nom-label">Horas extra ($)</span><input type="number" step="0.01" min="0" x-model.number="form.horas_extra" class="nom-input"></label>
                             <label class="block"><span class="nom-label">Bonos ($)</span><input type="number" step="0.01" min="0" x-model.number="form.bonos" class="nom-input"></label>
                         </div>
                         <label class="flex items-center gap-2 text-[11px] font-bold text-emerald-800 cursor-pointer" x-show="editable(form)">
                             <input type="checkbox" x-model="form.guardar_salario" class="rounded border-emerald-300 text-teal-600 focus:ring-teal-500">
                             Guardar como salario del empleado para próximos pagos
                         </label>
+
+                        {{-- Pagos extraordinarios: concepto + horas; el monto sale de la cuota declarada del empleado --}}
+                        <div class="pt-3 border-t border-emerald-100 space-y-2">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="nom-label !mb-0">Pagos extraordinarios (horas extra)</span>
+                                <span class="text-[10px] font-bold" :class="num(form.cuota_hora_extra) > 0 ? 'text-emerald-800' : 'text-amber-700'"
+                                      x-text="num(form.cuota_hora_extra) > 0 ? 'Cuota declarada: ' + dinero(form.cuota_hora_extra) + ' por hora' : 'Sin cuota declarada'"></span>
+                            </div>
+                            <template x-for="(e, i) in (form.extras || [])" :key="'ex' + i">
+                                <div class="grid grid-cols-12 gap-2 items-center">
+                                    <input type="text" x-model="e.concepto" maxlength="150" placeholder="Concepto (ej. guardia del sábado)" class="nom-input col-span-6 uppercase" :aria-label="'Concepto del pago extraordinario ' + (i + 1)">
+                                    <label class="col-span-2 relative">
+                                        <input type="number" step="0.25" min="0.25" max="200" x-model.number="e.horas" class="nom-input pr-7" :aria-label="'Horas del pago extraordinario ' + (i + 1)">
+                                        <span class="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">h</span>
+                                    </label>
+                                    <span class="col-span-3 text-right text-xs font-black tabular-nums text-slate-800" x-text="dinero(num(e.horas) * num(form.cuota_hora_extra))"></span>
+                                    <button type="button" x-show="editable(form)" @click="form.extras.splice(i, 1)" class="col-span-1 w-8 h-8 rounded-xl hover:bg-rose-50 text-slate-400 hover:text-rose-600" :aria-label="'Quitar pago extraordinario ' + (i + 1)"><i class="bi bi-x-lg"></i></button>
+                                </div>
+                            </template>
+                            <p x-show="!(form.extras || []).length" class="text-[11px] text-slate-500">Sin pagos extraordinarios en este recibo.</p>
+                            <template x-if="editable(form)">
+                                <div>
+                                    <button type="button" x-show="num(form.cuota_hora_extra) > 0" @click="form.extras.push({ concepto: '', horas: 1 })"
+                                            class="text-[11px] font-black text-teal-700 hover:text-teal-800 flex items-center gap-1.5">
+                                        <i class="bi bi-plus-circle"></i> Agregar pago extraordinario
+                                    </button>
+                                    <p x-show="num(form.cuota_hora_extra) <= 0" class="text-[11px] font-semibold text-amber-700">
+                                        <i class="bi bi-info-circle"></i> Para agregar horas extra, declara la cuota por hora en la ficha del empleado (Personal → Datos de nómina).
+                                    </p>
+                                </div>
+                            </template>
+                        </div>
                     </div>
 
                     <div class="p-4 rounded-2xl bg-rose-50/60 border border-rose-100 space-y-3">
@@ -364,9 +395,27 @@
 
                     <label class="block"><span class="nom-label">Notas</span><textarea x-model="form.notas" rows="2" class="nom-input resize-none" placeholder="Opcional"></textarea></label>
 
+                    {{-- Pago: para "Guardar y pagar" sin abrir otra ventana --}}
+                    <div x-show="editable(form)" class="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                        <h4 class="text-[11px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5"><i class="bi bi-cash-coin"></i> Pago <span class="normal-case font-semibold text-slate-400">(solo si usas “Guardar y pagar”)</span></h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <label class="block"><span class="nom-label">Fecha</span><input type="date" x-model="pago.fecha" max="{{ today()->toDateString() }}" class="nom-input"></label>
+                            <div class="sm:col-span-2">
+                                <span class="nom-label">Forma de pago</span>
+                                <div class="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Forma de pago">
+                                    <template x-for="m in [['EFECTIVO','Efectivo'],['TRANSFERENCIA','Transferencia'],['CHEQUE','Cheque']]" :key="'fp' + m[0]">
+                                        <button type="button" role="radio" :aria-checked="String(pago.metodo === m[0])" @click="pago.metodo = m[0]"
+                                                class="py-2 rounded-xl border text-[11px] font-black transition"
+                                                :class="pago.metodo === m[0] ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-200'" x-text="m[1]"></button>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="rounded-2xl bg-slate-900 text-white p-4 grid grid-cols-3 gap-3 text-center">
                         <div><p class="text-[10px] font-bold text-slate-400 uppercase">Percepciones</p><p class="text-sm font-black tabular-nums text-emerald-300" x-text="dinero(calc.percepciones)"></p></div>
-                        <div><p class="text-[10px] font-bold text-slate-400 uppercase">Deducciones</p><p class="text-sm font-black tabular-nums text-rose-300" x-text="'-' + dinero(calc.deducciones)"></p></div>
+                        <div><p class="text-[10px] font-bold text-slate-400 uppercase">Deducciones</p><p class="text-sm font-black tabular-nums text-rose-300" x-text="menos(calc.deducciones)"></p></div>
                         <div><p class="text-[10px] font-bold text-slate-400 uppercase">Neto a pagar</p><p class="text-lg font-black tabular-nums" :class="calc.neto < 0 ? 'text-rose-400' : 'text-white'" x-text="dinero(calc.neto)"></p></div>
                     </div>
                 </fieldset>
@@ -378,9 +427,23 @@
                     <div class="flex gap-2">
                         <button type="button" @click="modal = false" class="px-5 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-100">Cerrar</button>
                         <button type="button" x-show="editable(form)" @click="guardar()" :disabled="guardando || calc.neto < 0"
-                                class="px-5 py-2.5 rounded-2xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-black shadow-lg shadow-teal-600/20 flex items-center gap-2">
-                            <span x-show="guardando" class="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                                class="px-5 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 disabled:opacity-50"
+                                :class="siguienteRecibo ? 'bg-white border border-teal-200 text-teal-700 hover:bg-teal-50' : 'bg-teal-600 hover:bg-teal-700 text-white shadow-lg shadow-teal-600/20'">
+                            <span x-show="guardando" class="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
                             <i x-show="!guardando" class="bi bi-check2-circle"></i> Guardar
+                        </button>
+                        @if ($puedeEditar)
+                            {{-- Revisar y pagar en el mismo lugar --}}
+                            <button type="button" x-show="editable(form)" @click="guardar('pagar')" :disabled="guardando || calc.neto < 0 || !pago.fecha || !pago.metodo"
+                                    class="px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black shadow-lg shadow-emerald-600/20 flex items-center gap-2">
+                                <i class="bi bi-cash-coin"></i> Guardar y pagar
+                            </button>
+                        @endif
+                        {{-- Revisar varios empleados sin cerrar la ventana --}}
+                        <button type="button" x-show="editable(form) && siguienteRecibo" @click="guardar('siguiente')" :disabled="guardando || calc.neto < 0"
+                                class="px-5 py-2.5 rounded-2xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-black shadow-lg shadow-teal-600/20 flex items-center gap-2"
+                                :title="siguienteRecibo ? 'Siguiente: ' + siguienteRecibo.empleado : ''">
+                            Guardar y siguiente <i class="bi bi-arrow-right"></i>
                         </button>
                     </div>
                 </div>
@@ -446,14 +509,22 @@
             filtro: 'Todos',
             marcados: [],
             modal: false,
-            modalPago: false,
+            menu: { r: null, x: 0, y: 0 },
             guardando: false,
             form: {},
-            pago: { recibos: [], fecha: '', metodo: 'TRANSFERENCIA', referencia: '' },
+            // Datos de la barra de pago (se conservan entre pagos: misma fecha y forma para todos)
+            pago: { fecha: PERIODO_NOM.pago && PERIODO_NOM.pago <= hoyIso() ? PERIODO_NOM.pago : hoyIso(), metodo: 'TRANSFERENCIA', referencia: '' },
 
             init() {
                 @if (session('success')) setTimeout(() => avisoNomina(@js(session('success'))), 300); @endif
                 @if (session('error')) setTimeout(() => avisoNomina(@js(session('error')), 'error'), 300); @endif
+                // Actualización automática: no recargar mientras hay recibos marcados para pagar o una ventana abierta
+                window.mtOcupado = () => this.marcados.length > 0 || this.modal || !!this.menu.r;
+                // Recién generado (?pagar=1): llega con los pendientes marcados y la barra de pago lista
+                if (new URLSearchParams(location.search).get('pagar') === '1' && this.puedeEditar) {
+                    this.marcarParaPagar(this.pendientes, false);
+                    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+                }
             },
 
             // ----- Listas -----
@@ -489,6 +560,9 @@
                     { titulo: 'Empleados',         valor: this.recibos.length,                       icono: 'bi-people-fill',     color: 'bg-sky-500 text-white' },
                 ];
             },
+            // Deducciones: "−$120.00"; en cero se muestra "$0.00" (antes salía "-$0.00")
+            num(v) { return n(v); },   // n() solo existe en el script; las expresiones del HTML usan num()
+            menos(v) { return n(v) > 0 ? '−' + this.dinero(v) : this.dinero(0); },
             sumaNeto(lista) { return lista.reduce((s, r) => s + n(r.neto), 0); },
 
             // ----- Edición del recibo -----
@@ -496,24 +570,70 @@
             get calc() {
                 const f = this.form;
                 const base = n(f.salario_diario) * n(f.dias_trabajados);
-                const percepciones = base + n(f.horas_extra) + n(f.bonos);
+                // Igual que el servidor: cada pago extraordinario = horas × cuota declarada del empleado
+                const extras = (f.extras || []).reduce((s, e) => s + n(e.horas) * n(f.cuota_hora_extra), 0);
+                const percepciones = base + extras + n(f.bonos);
                 const deducciones = n(f.isr) + n(f.imss) + n(f.otras_deducciones);
-                return { base, percepciones, deducciones, neto: percepciones - deducciones };
+                return { base, extras, percepciones, deducciones, neto: percepciones - deducciones };
             },
-            editar(r) { this.form = { ...r, guardar_salario: r.salario_diario <= 0 }; this.modal = true; },
+            editar(r) {
+                this.form = {
+                    ...r,
+                    guardar_salario: r.salario_diario <= 0,
+                    extras: (r.extras || []).map(e => ({ concepto: e.concepto, horas: e.horas })),
+                };
+                this.modal = true;
+            },
+            // ----- Menú "⋯" de cada recibo -----
+            abrirMenu(r, ev) {
+                if (this.menu.r && this.menu.r.id === r.id) { this.cerrarMenu(); return; }
+                const b = ev.currentTarget.getBoundingClientRect(), ancho = 208, alto = 124;   // medidas del menú
+                this.menu = {
+                    r,
+                    x: Math.max(8, Math.min(b.right - ancho, window.innerWidth - ancho - 8)),
+                    // Abre hacia abajo; si no cabe, hacia arriba
+                    y: b.bottom + alto + 8 > window.innerHeight ? Math.max(8, b.top - alto - 4) : b.bottom + 4,
+                };
+                ev.stopPropagation();
+            },
+            cerrarMenu() { this.menu = { r: null, x: 0, y: 0 }; },
 
-            async guardar() {
+            // Próximo recibo editable (en el orden de la tabla) para "Guardar y siguiente"
+            get siguienteRecibo() {
+                const i = this.recibos.findIndex(r => r.id === this.form.id);
+                return i < 0 ? null : (this.recibos.slice(i + 1).find(r => this.editable(r)) || null);
+            },
+
+            // accion: null = solo guardar · 'siguiente' = guardar y abrir el próximo · 'pagar' = guardar y registrar el pago
+            async guardar(accion = null) {
+                const siguiente = accion === 'siguiente', pagar = accion === 'pagar';
+                const f = this.form;
+                if ((f.extras || []).some(e => !String(e.concepto || '').trim() || n(e.horas) <= 0)) {
+                    avisoNomina('Cada pago extraordinario necesita un concepto y sus horas.', 'error');
+                    return;
+                }
+                const proximo = siguiente ? this.siguienteRecibo : null;
                 this.guardando = true;
                 try {
-                    const f = this.form;
                     const data = await peticion(`${URL_RECIBOS}/${f.id}`, 'PUT', {
                         salario_diario: n(f.salario_diario), dias_trabajados: n(f.dias_trabajados),
-                        horas_extra: n(f.horas_extra), bonos: n(f.bonos),
+                        bonos: n(f.bonos),
                         isr: n(f.isr), imss: n(f.imss), otras_deducciones: n(f.otras_deducciones),
                         notas: f.notas || null, guardar_salario: !!f.guardar_salario,
+                        extras: (f.extras || []).map(e => ({ concepto: String(e.concepto).trim(), horas: n(e.horas) })),
                     });
                     this.reemplazar(data.recibo);
-                    this.modal = false;
+                    if (pagar) {
+                        // Guardar y pagar: se registra el pago con la fecha y forma elegidas, sin abrir otra ventana
+                        this.guardando = false;
+                        if (await this.confirmarPago([f.id])) this.modal = false;
+                        return;
+                    }
+                    if (proximo) {
+                        this.editar(this.recibos.find(r => r.id === proximo.id) || proximo);
+                    } else {
+                        this.modal = false;
+                    }
                     avisoNomina(data.message || 'Recibo actualizado.');
                 } catch (e) {
                     avisoNomina(e.message, 'error');
@@ -523,26 +643,31 @@
             },
 
             // ----- Pagos -----
-            abrirPago(lista) {
-                if (!lista.length) return;
-                this.pago = { recibos: lista, fecha: PERIODO_NOM.pago && PERIODO_NOM.pago <= hoyIso() ? PERIODO_NOM.pago : hoyIso(), metodo: this.pago.metodo || 'TRANSFERENCIA', referencia: '' };
-                this.modalPago = true;
+            // Marca recibos para pagarlos desde la barra de abajo (no abre ninguna ventana)
+            marcarParaPagar(lista, enfocar = true) {
+                const ids = lista.filter(r => r.estado !== 'Pagado').map(r => r.id);
+                if (!ids.length) return;
+                this.marcados = [...new Set([...this.marcados, ...ids])];
+                if (enfocar) this.$nextTick(() => this.$refs.barraPago && this.$refs.barraPago.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
             },
-            async confirmarPago() {
+            async confirmarPago(ids = null) {
+                const pagar = ids || this.recibosMarcados.map(r => r.id);
+                if (!pagar.length) return;
                 this.guardando = true;
                 try {
                     const data = await peticion(URL_PAGAR, 'POST', {
-                        recibo_ids: this.pago.recibos.map(r => r.id),
+                        recibo_ids: pagar,
                         fecha_pago: this.pago.fecha, metodo_pago: this.pago.metodo, referencia: this.pago.referencia || null,
                     });
-                    const pagadosAhora = this.pago.recibos.map(r => r.id);
-                    data.recibos.forEach(r => this.reemplazar(r, pagadosAhora.includes(r.id)));
+                    data.recibos.forEach(r => this.reemplazar(r, pagar.includes(r.id)));
                     this.estado = data.estado;
-                    this.marcados = this.marcados.filter(id => !pagadosAhora.includes(id));
-                    this.modalPago = false;
+                    this.marcados = this.marcados.filter(id => !pagar.includes(id));
+                    this.pago.referencia = '';
                     avisoNomina(data.estado === 'Pagado' ? '¡Periodo pagado por completo!' : data.message);
+                    return true;
                 } catch (e) {
                     avisoNomina(e.message, 'error');
+                    return false;
                 } finally {
                     this.guardando = false;
                 }

@@ -43,6 +43,12 @@ class ReciboNomina extends Model
         return $this->belongsTo(Personal::class, 'personal_id');
     }
 
+    /** Pagos extraordinarios (horas extra con concepto). Su suma es horas_extra. */
+    public function extras()
+    {
+        return $this->hasMany(ReciboExtra::class, 'recibo_id')->orderBy('id');
+    }
+
     public function estaPagado(): bool
     {
         return $this->estado === 'Pagado';

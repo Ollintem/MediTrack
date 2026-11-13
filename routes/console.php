@@ -22,3 +22,15 @@ Artisan::command('tickets:expirar', function () {
 })->purpose('Marca como expirados los tickets pendientes cuya reserva de 25 minutos venció');
 
 Schedule::command('tickets:expirar')->everyMinute()->withoutOverlapping();
+
+/*
+ * Avisos diarios de la campana: nómina con recibos por pagar (fecha de pago hoy o vencida)
+ * y limpieza de avisos ya leídos con más de 60 días.
+ */
+Artisan::command('notificaciones:diarias', function () {
+    $avisos = \App\Services\Notificador::nominaPorPagar();
+    $borrados = \App\Services\Notificador::limpiar(60);
+    $this->info("Avisos de nómina creados: {$avisos} · avisos viejos borrados: {$borrados}");
+})->purpose('Crea los avisos diarios de nómina por pagar y borra avisos leídos con más de 60 días');
+
+Schedule::command('notificaciones:diarias')->dailyAt('08:00')->withoutOverlapping();

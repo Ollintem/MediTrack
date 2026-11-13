@@ -10,6 +10,12 @@ class TicketVenta extends Model
 {
     use HasFactory;
 
+    /** Aviso al POS cuando Caja cobra el ticket (App\Services\Notificador). */
+    protected static function booted(): void
+    {
+        static::updated(fn (TicketVenta $t) => \App\Services\Notificador::ticketCambio($t));
+    }
+
     protected $table = 'tickets_venta';
 
     protected $fillable = [

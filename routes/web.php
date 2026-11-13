@@ -228,6 +228,14 @@ Route::middleware(['auth'])->group(function () {
     // --- MÓDULO BITÁCORA (solo lectura) ---
     Route::get('/bitacora', [BitacoraController::class, 'index'])->name('bitacora.index')->middleware('permiso:Bitácora,ver');
 
+    // --- NOTIFICACIONES (campana): cada usuario solo ve y marca las suyas ---
+    Route::get('/notificaciones', [\App\Http\Controllers\NotificacionController::class, 'index'])->name('notificaciones.index');
+    Route::post('/notificaciones/leer-todas', [\App\Http\Controllers\NotificacionController::class, 'leerTodas'])->name('notificaciones.leer-todas');
+    Route::post('/notificaciones/{id}/leer', [\App\Http\Controllers\NotificacionController::class, 'leer'])->whereNumber('id')->name('notificaciones.leer');
+
+    // --- ACTUALIZACIÓN AUTOMÁTICA: ¿cambió algo en el módulo? (solo una firma, sin datos) ---
+    Route::get('/cambios', \App\Http\Controllers\CambiosController::class)->name('cambios');
+
     // --- UTILIDAD Y MONITOR DE ESTADO ---
     Route::get('/ping', function () {
         return response()->json(['status' => 'ok']);
